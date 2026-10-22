@@ -10,6 +10,10 @@
   z-index: 1000;
 }
 
+.orientation-hint {
+  display: none;
+}
+
 .aim-dot {
   position: absolute;
   top: 50%;
@@ -451,6 +455,10 @@
   gap: 8px;
 }
 
+.crafting-toggle {
+  display: none;
+}
+
 .crafting-hint,
 .recipe-ingredients {
   color: #9bb1c5;
@@ -623,6 +631,11 @@
   gap: 14px;
   align-items: center;
   justify-content: center;
+}
+
+.saboteur-top-row .health-container,
+.saboteur-top-row .progress-container {
+  width: 180px;
 }
 
 .energy-container {
@@ -2026,6 +2039,434 @@
   .crafting-panel {
     width: min(360px, calc(100vw - 24px));
     max-height: 32vh;
+  }
+
+  .crafting-toggle {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 9px;
+    border: 1px solid rgba(121, 242, 223, 0.24);
+    border-radius: 7px;
+    background: rgba(121, 242, 223, 0.08);
+    color: #dff8eb;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+  }
+
+  .crafting-panel .recipe-list {
+    display: none;
+  }
+
+  .crafting-panel.is-expanded .recipe-list {
+    display: block;
+  }
+
+  .orientation-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 1024px) and (max-height: 600px) and (orientation: landscape) {
+  .view-controls-panel,
+  #cursor-unlock-hint,
+  .saboteur-instructions {
+    display: none !important;
+  }
+
+  .modal-overlay {
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    align-items: flex-start;
+  }
+
+  .role-select-card {
+    width: min(760px, 100%);
+    max-height: calc(100dvh - 16px);
+    padding: 14px 20px;
+    overflow-y: auto;
+  }
+
+  .menu-kicker {
+    margin-bottom: 6px;
+  }
+
+  .role-select-card .modal-title {
+    font-size: clamp(28px, 6vh, 38px);
+  }
+
+  .role-select-card .modal-subtitle {
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+
+  .room-selector-box {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    padding: 7px 10px;
+  }
+
+  .role-cards {
+    flex-direction: row;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .role-option-card {
+    min-height: 124px;
+    padding: 10px;
+  }
+
+  .card-icon {
+    position: absolute;
+    top: 36px;
+    right: 10px;
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    font-size: 17px;
+  }
+
+  .card-desc {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .role-card-cta {
+    padding-top: 6px;
+  }
+
+  .local-play-button {
+    padding: 8px;
+  }
+
+  .menu-footer {
+    margin-top: 8px;
+  }
+
+  #top-hud {
+    top: max(6px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    width: auto;
+    max-width: 48vw;
+    transform: none;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 4px;
+  }
+
+  #top-hud > .hud-panel {
+    padding: 4px 7px;
+  }
+
+  #top-hud > .hud-panel:first-child,
+  #top-hud > .hud-panel:nth-child(n + 4) {
+    display: none;
+  }
+
+  #timer-box {
+    min-width: 0;
+    flex-direction: row;
+  }
+
+  #timer-box .hud-label {
+    display: none;
+  }
+
+  #hud-timer {
+    font-size: 17px;
+  }
+
+  .role-tag {
+    padding: 3px 6px;
+    font-size: 9px;
+  }
+
+  #runner-hud {
+    top: calc(max(6px, env(safe-area-inset-top)) + 38px);
+    bottom: auto;
+    left: max(8px, env(safe-area-inset-left));
+    width: min(58vw, 410px);
+    max-width: none;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .compass-container {
+    gap: 5px;
+    padding: 4px 6px;
+  }
+
+  .compass-dial {
+    width: 28px;
+    height: 28px;
+  }
+
+  #compass-arrow {
+    height: 20px;
+  }
+
+  #distance-meter {
+    font-size: 13px;
+  }
+
+  #runner-hud .hud-label {
+    font-size: 8px;
+    letter-spacing: 0.7px;
+  }
+
+  #runner-hud .progress-container .hud-label {
+    font-size: 7px;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+  }
+
+  .health-container,
+  .progress-container {
+    width: 105px;
+    padding: 5px 7px;
+  }
+
+  .health-text {
+    font-size: 9px;
+  }
+
+  .crafting-panel {
+    width: min(190px, 34vw);
+    max-height: 42dvh;
+    padding: 6px 7px;
+  }
+
+  .crafting-toggle {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 7px;
+    border: 1px solid rgba(121, 242, 223, 0.24);
+    border-radius: 7px;
+    background: rgba(121, 242, 223, 0.08);
+    color: #dff8eb;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+  }
+
+  .crafting-panel .recipe-list {
+    display: none;
+  }
+
+  .crafting-panel.is-expanded .recipe-list {
+    display: block;
+  }
+
+  .crafting-title-row {
+    gap: 4px;
+  }
+
+  .crafting-toggle {
+    min-height: 36px;
+    padding: 0 7px;
+  }
+
+  .resource-inventory {
+    gap: 3px;
+    margin: 4px 0 0;
+  }
+
+  .resource-count {
+    gap: 3px;
+    padding: 3px 5px;
+    font-size: 10px;
+  }
+
+  .crafting-panel.is-expanded {
+    width: min(280px, 42vw);
+  }
+
+  .crafting-panel .recipe-row {
+    gap: 5px;
+    padding: 5px 0;
+  }
+
+  .crafting-panel .recipe-name {
+    font-size: 10px;
+  }
+
+  .crafting-panel .recipe-ingredients {
+    font-size: 8px;
+  }
+
+  .crafting-panel .recipe-button {
+    min-height: 30px;
+    padding: 4px 6px;
+    font-size: 9px;
+  }
+
+  .buff-container {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin: 0;
+  }
+
+  .buff-badge {
+    padding: 3px 5px;
+    font-size: 9px;
+  }
+
+  .virtual-joystick-base {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: max(10px, env(safe-area-inset-left));
+    width: 92px;
+    height: 92px;
+  }
+
+  .virtual-joystick-knob {
+    width: 42px;
+    height: 42px;
+  }
+
+  .knob-inner-ring {
+    width: 18px;
+    height: 18px;
+  }
+
+  .mobile-action-cluster {
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    gap: 5px;
+  }
+
+  .mobile-action-aux-row {
+    gap: 4px;
+  }
+
+  .mobile-aux-btn {
+    min-height: 40px;
+    padding: 4px 7px;
+    font-size: 9px;
+  }
+
+  .mobile-action-main-row {
+    gap: 6px;
+  }
+
+  .mobile-round-btn {
+    width: 46px;
+    height: 46px;
+    font-size: 9px;
+  }
+
+  .mobile-round-btn.deploy-btn {
+    width: 52px;
+    height: 52px;
+    font-size: 10px;
+  }
+
+  .mobile-fullscreen-btn {
+    top: max(6px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    width: 36px;
+    height: 36px;
+    font-size: 15px;
+  }
+
+  #saboteur-hud {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: max(112px, calc(env(safe-area-inset-left) + 108px));
+    width: min(44vw, 360px);
+    max-width: none;
+    align-items: flex-start;
+    transform: none;
+    gap: 4px;
+  }
+
+  .saboteur-top-row {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  #saboteur-hud > .view-buttons-row,
+  #saboteur-hud .recon-panel,
+  #saboteur-hud .saboteur-instructions {
+    display: none;
+  }
+
+  .saboteur-top-row .health-container,
+  .saboteur-top-row .progress-container,
+  .energy-container {
+    width: 92px;
+    padding: 4px 6px;
+  }
+
+  .recon-btn {
+    padding: 5px 7px;
+    font-size: 9px;
+  }
+
+  .hotbar-container {
+    gap: 4px;
+  }
+
+  .hotbar-item {
+    width: 48px;
+    height: 48px;
+  }
+
+  .hotbar-icon {
+    font-size: 16px;
+  }
+
+  .hotbar-name,
+  .hotbar-cost,
+  .hotkey-badge {
+    font-size: 8px;
+  }
+
+  .placement-indicator {
+    top: max(6px, env(safe-area-inset-top)) !important;
+    bottom: auto !important;
+    left: 50% !important;
+    transform: translateX(-50%) scale(0.82);
+    max-width: 35vw;
+    padding: 4px 8px;
+    font-size: 9px;
+  }
+
+  #local-dual-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .orientation-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 24px;
+    background: rgba(9, 15, 17, 0.96);
+    color: #e5f4e9;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .orientation-icon {
+    color: #9df1d3;
+    font-size: 48px;
+    line-height: 1;
   }
 }
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CRAFTING_RECIPES, RESOURCES } from '../game/config.js';
 
 export function RunnerHud({
@@ -10,6 +10,7 @@ export function RunnerHud({
   onCraft,
   onUse,
 }) {
+  const [isCraftingOpen, setIsCraftingOpen] = useState(false);
   const {
     health = 100,
     maxHealth = 100,
@@ -99,10 +100,19 @@ export function RunnerHud({
         </div>
       )}
 
-      <section className="hud-panel crafting-panel" aria-label="Crafting inventory">
+      <section className={`hud-panel crafting-panel${isCraftingOpen ? ' is-expanded' : ''}`} aria-label="Crafting inventory">
         <div className="crafting-title-row">
           <span className="hud-label">FIELD CRAFTING</span>
           <span className="crafting-hint">Gather ingredients, craft, then use</span>
+          <button
+            type="button"
+            className="crafting-toggle interactive"
+            aria-expanded={isCraftingOpen}
+            aria-controls="recipe-list"
+            onClick={() => setIsCraftingOpen((open) => !open)}
+          >
+            {isCraftingOpen ? 'CLOSE' : 'CRAFT'}
+          </button>
         </div>
         <div className="resource-inventory">
           {Object.values(RESOURCES).map((resource) => (
@@ -112,7 +122,7 @@ export function RunnerHud({
             </span>
           ))}
         </div>
-        <div className="recipe-list">
+        <div className="recipe-list" id="recipe-list">
           {Object.values(CRAFTING_RECIPES).map((recipe) => {
             const itemCount = craftingInventory.items?.[recipe.id] || 0;
             const canCraft = Object.entries(recipe.ingredients).every(

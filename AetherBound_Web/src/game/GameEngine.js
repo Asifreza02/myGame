@@ -409,7 +409,7 @@ export class GameEngine {
       document.body.classList.remove('saboteur-placing');
       document.body.classList.remove('cursor-unlocked');
       this.obstacleManager.hidePreview();
-      try { this.renderer.domElement.requestPointerLock(); } catch(e) {}
+      this.requestPointerLock();
     } else if (role === 'saboteur') {
       this.runner.enabled = false;
       this.saboteur.enabled = true;
@@ -421,7 +421,7 @@ export class GameEngine {
         document.body.classList.remove('saboteur-placing');
       }
       this.saboteur.refreshPreview();
-      try { this.renderer.domElement.requestPointerLock(); } catch(e) {}
+      this.requestPointerLock();
     } else {
       this.runner.enabled = false;
       this.saboteur.enabled = false;
@@ -590,7 +590,11 @@ export class GameEngine {
     if (!document.fullscreenElement) {
       const docEl = document.documentElement;
       if (docEl.requestFullscreen) {
-        docEl.requestFullscreen().catch(() => {});
+        docEl.requestFullscreen().then(() => {
+          if (screen.orientation?.lock) {
+            screen.orientation.lock('landscape').catch(() => {});
+          }
+        }).catch(() => {});
       } else if (docEl.webkitRequestFullscreen) {
         docEl.webkitRequestFullscreen();
       }
@@ -608,6 +612,7 @@ export class GameEngine {
   }
 
   requestPointerLock() {
+    if (navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches) return;
     try {
       this.renderer.domElement.requestPointerLock();
     } catch(e) {}

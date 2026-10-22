@@ -41,7 +41,7 @@ export function SaboteurHud({
       {/* Top row with Health, Stamina, Energy, Recon */}
       <div className="saboteur-top-row">
         {/* Saboteur Health */}
-        <div className="hud-panel health-container" style={{ width: '180px' }}>
+        <div className="hud-panel health-container">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="hud-label">HEALTH</span>
             <span
@@ -62,7 +62,7 @@ export function SaboteurHud({
         </div>
 
         {/* Saboteur Stamina */}
-        <div className="hud-panel progress-container" style={{ width: '180px' }}>
+        <div className="hud-panel progress-container">
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span className="hud-label">STAMINA [SHIFT]</span>
           </div>

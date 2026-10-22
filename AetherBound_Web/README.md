@@ -71,6 +71,9 @@ Gather visible resources as the Runner to add them to your inventory, then use t
 | **Aether Ward** | 1 Aether Essence + 1 Ember Ore | Blocks one hazard hit |
 | **Vitality Draught** | 1 Aether Essence + 2 Moon Herbs | Restores 30 health |
 
+#### Mobile Controls
+Play in landscape for the full touch layout. Tap the fullscreen button during a match to enter fullscreen and request landscape orientation where the browser supports it; otherwise rotate your device manually. Use the left virtual joystick to move, drag the right side of the screen to aim, and use the on-screen action buttons to sprint, jump, slide, and turn. The Runner's **CRAFT** button opens the recipe list. The Saboteur can select hazards from the hotbar, then use **PLACE** and **45°** to build the gauntlet.
+
 🏆 **Instant Victory**: The moment you step into the Beacon Goal platform, victory triggers immediately with celebration fireworks and win audio!
 
 ---

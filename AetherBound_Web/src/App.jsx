@@ -238,6 +238,10 @@ export function App() {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       {/* Three.js Container */}
       <div id="canvas-container" ref={containerRef} />
+      <div className="orientation-hint" role="status">
+        <span className="orientation-icon" aria-hidden="true">↻</span>
+        <span>Rotate your device to play in landscape</span>
+      </div>
 
       {/* Reticle */}
       <AimReticle
