@@ -16,13 +16,13 @@ export function GameOverModal({ data = null, onRestart }) {
 
   const {
     dist = 0,
-    crystals = 0,
+    resources = 0,
     traps = 0,
     timeElapsed = 0,
     bestDist = dist,
-    bestCrystals = crystals,
+    bestResources = resources,
     isNewBestDist = false,
-    isNewBestCrystals = false,
+    isNewBestResources = false,
   } = metrics;
 
   return (
@@ -59,9 +59,9 @@ export function GameOverModal({ data = null, onRestart }) {
             </div>
 
             <div className="stat-item">
-              <span className="stat-name">💎 Crystals Collected:</span>
+              <span className="stat-name">🧰 Resources Gathered:</span>
               <span className="stat-value">
-                {crystals} {isNewBestCrystals && <span className="stat-best">★ RECORD</span>}
+                {resources} {isNewBestResources && <span className="stat-best">★ RECORD</span>}
               </span>
             </div>
 
@@ -83,9 +83,9 @@ export function GameOverModal({ data = null, onRestart }) {
             </div>
 
             <div className="stat-item">
-              <span className="stat-name">⭐ All-Time Record Crystals:</span>
+              <span className="stat-name">⭐ All-Time Resource Record:</span>
               <span className="stat-value" style={{ color: '#00d4ff' }}>
-                {bestCrystals}
+                {bestResources}
               </span>
             </div>
           </div>

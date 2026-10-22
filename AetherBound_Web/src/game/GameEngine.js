@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GAME_CONFIG, OBSTACLES, DAY_NIGHT_CONFIG } from './config.js';
+import { GAME_CONFIG, OBSTACLES, DAYLIGHT_CONFIG } from './config.js';
 import { WorldManager } from './world.js';
 import { GoalBeacon } from './goal.js';
 import { ObstacleManager } from './obstacles.js';
@@ -37,13 +37,12 @@ export class GameEngine {
     this.lastSaboteurSync = 0;
     this.lastStateEmit = 0;
 
-    // Phase 3: Dynamic World Time & Match Performance Statistics
-    this.worldTime = 40.0;
-    this.todName = '☀️ MIDDAY';
+    this.todName = '☀️ DAYTIME';
     this.todClass = 'noon';
     this.stats = {
       distanceTraversed: 0,
-      powerupsCollected: 0,
+      resourcesCollected: 0,
+      itemsCrafted: 0,
       obstaclesPlaced: 0,
     };
     this.lastRunnerPosForDist = null;
@@ -196,7 +195,7 @@ export class GameEngine {
       this.worldManager,
       this.particles,
       (id, type, role) => {
-        this.stats.powerupsCollected += 1;
+        this.stats.resourcesCollected += 1;
         if (this.network) {
           this.network.sendPowerupCollect(id, type, role);
         }
@@ -490,6 +489,29 @@ export class GameEngine {
     }
   }
 
+  craftPowerUp(recipeId) {
+    if (this.activeRole !== 'runner' || !this.powerUpManager) return;
+    const result = this.powerUpManager.craft(recipeId);
+    if (result.success) {
+      this.stats.itemsCrafted += 1;
+      this.showToast(`Crafted ${result.item.name}.`);
+    } else {
+      this.showToast(result.reason);
+    }
+    this.emitState();
+  }
+
+  usePowerUp(itemId) {
+    if (this.activeRole !== 'runner' || !this.powerUpManager) return;
+    const result = this.powerUpManager.useItem(itemId, this.runner);
+    if (result.success) {
+      this.showToast(`Used ${result.item.name}.`);
+    } else {
+      this.showToast(result.reason);
+    }
+    this.emitState();
+  }
+
   // Mobile Touch & Virtual Joystick Support
   setJoystick(x, y) {
     if (this.activeRole === 'runner' || (this.isLocalDual && this.activeRole === 'runner')) {
@@ -604,25 +626,26 @@ export class GameEngine {
 
     const timeElapsed = Math.max(1, Math.round(GAME_CONFIG.ROUND_TIME - this.timeRemaining));
     const dist = Math.round(this.stats.distanceTraversed);
-    const crystals = this.stats.powerupsCollected;
+    const resources = this.stats.resourcesCollected;
     const traps = this.stats.obstaclesPlaced;
 
-    let bestStats = { bestDist: 0, bestCrystals: 0, bestTime: 999 };
+    let bestStats = { bestDist: 0, bestResources: 0, bestTime: 999 };
     try {
       const saved = localStorage.getItem('aetherbound_best_stats');
       if (saved) bestStats = JSON.parse(saved);
     } catch (e) {}
 
     let isNewBestDist = false;
-    let isNewBestCrystals = false;
+    let isNewBestResources = false;
 
     if (dist > (bestStats.bestDist || 0)) {
       bestStats.bestDist = dist;
       isNewBestDist = true;
     }
-    if (crystals > (bestStats.bestCrystals || 0)) {
-      bestStats.bestCrystals = crystals;
-      isNewBestCrystals = true;
+    const previousBestResources = bestStats.bestResources || bestStats.bestCrystals || 0;
+    if (resources > previousBestResources) {
+      bestStats.bestResources = resources;
+      isNewBestResources = true;
     }
     if (msg.winner === 'runner' && timeElapsed < (bestStats.bestTime || 999)) {
       bestStats.bestTime = timeElapsed;
@@ -644,13 +667,13 @@ export class GameEngine {
       scores: msg.scores || { runner: 0, saboteur: 0 },
       metrics: {
         dist,
-        crystals,
+        resources,
         traps,
         timeElapsed,
         bestDist: bestStats.bestDist || dist,
-        bestCrystals: bestStats.bestCrystals || crystals,
+        bestResources: bestStats.bestResources || resources,
         isNewBestDist,
-        isNewBestCrystals,
+        isNewBestResources,
       }
     };
 
@@ -663,7 +686,8 @@ export class GameEngine {
 
     this.stats = {
       distanceTraversed: 0,
-      powerupsCollected: 0,
+      resourcesCollected: 0,
+      itemsCrafted: 0,
       obstaclesPlaced: 0,
     };
     this.lastRunnerPosForDist = null;
@@ -712,67 +736,24 @@ export class GameEngine {
     this.emitState();
   }
 
-  updateDayNightCycle(dt) {
-    this.worldTime += dt;
-    const cycle = DAY_NIGHT_CONFIG.CYCLE_DURATION || 180;
-    const progress = (this.worldTime % cycle) / cycle;
-
-    const C = DAY_NIGHT_CONFIG.COLORS;
-    let from, to, t, todLabel, todClass;
-
-    if (progress < 0.25) {
-      from = C.DAWN;
-      to = C.NOON;
-      t = progress / 0.25;
-      todLabel = '🌅 DAWN';
-      todClass = 'dawn';
-    } else if (progress < 0.50) {
-      from = C.NOON;
-      to = C.DUSK;
-      t = (progress - 0.25) / 0.25;
-      todLabel = '☀️ MIDDAY';
-      todClass = 'noon';
-    } else if (progress < 0.75) {
-      from = C.DUSK;
-      to = C.NIGHT;
-      t = (progress - 0.50) / 0.25;
-      todLabel = '🌇 SUNSET';
-      todClass = 'dusk';
-    } else {
-      from = C.NIGHT;
-      to = C.DAWN;
-      t = (progress - 0.75) / 0.25;
-      todLabel = '🌙 STARRY NIGHT';
-      todClass = 'night';
-    }
-
-    this.todName = todLabel;
-    this.todClass = todClass;
-
-    const sunColor = new THREE.Color(from.sun).lerp(new THREE.Color(to.sun), t);
-    const skyColor = new THREE.Color(from.sky).lerp(new THREE.Color(to.sky), t);
-    const fogColor = new THREE.Color(from.fog).lerp(new THREE.Color(to.fog), t);
-    const ambColor = new THREE.Color(from.ambient).lerp(new THREE.Color(to.ambient), t);
-    const ambInt = THREE.MathUtils.lerp(from.ambientIntensity, to.ambientIntensity, t);
-
-    const sunAngle = progress * Math.PI * 2;
-    const dist = DAY_NIGHT_CONFIG.SUN_DISTANCE || 180;
+  updateDaylight() {
+    this.todName = '☀️ DAYTIME';
+    this.todClass = 'noon';
     const charPos = this.activeRole === 'saboteur' ? this.saboteur.position : this.runner.position;
 
     this.sunLight.position.set(
-      charPos.x + Math.cos(sunAngle) * dist,
-      Math.max(15, Math.sin(sunAngle) * dist + 20),
-      charPos.z + Math.sin(sunAngle * 0.5) * (dist * 0.4)
+      charPos.x + DAYLIGHT_CONFIG.sunOffset.x,
+      charPos.y + DAYLIGHT_CONFIG.sunOffset.y,
+      charPos.z + DAYLIGHT_CONFIG.sunOffset.z
     );
     this.sunLight.target.position.copy(charPos);
     this.sunLight.target.updateMatrixWorld();
-    this.sunLight.color.copy(sunColor);
-    this.sunLight.intensity = Math.max(0.35, Math.sin(sunAngle) * 1.8 + 0.6);
-
-    this.ambientLight.color.copy(ambColor);
-    this.ambientLight.intensity = ambInt;
-    this.scene.background.copy(skyColor);
-    this.scene.fog.color.copy(fogColor);
+    this.sunLight.color.setHex(DAYLIGHT_CONFIG.sun);
+    this.sunLight.intensity = DAYLIGHT_CONFIG.sunIntensity;
+    this.ambientLight.color.setHex(DAYLIGHT_CONFIG.ambient);
+    this.ambientLight.intensity = DAYLIGHT_CONFIG.ambientIntensity;
+    this.scene.background.setHex(DAYLIGHT_CONFIG.sky);
+    this.scene.fog.color.setHex(DAYLIGHT_CONFIG.fog);
   }
 
   animate() {
@@ -782,13 +763,14 @@ export class GameEngine {
     const elapsedTime = this.clock.getElapsedTime();
 
     if (this.gameState === 'PLAYING') {
-      this.updateDayNightCycle(dt);
+      this.updateDaylight();
 
       this.goalBeacon.update(dt, elapsedTime);
       this.obstacleManager.update(dt);
 
       if (this.powerUpManager) {
-        this.powerUpManager.update(dt, [this.runner, this.saboteur], elapsedTime);
+        const pickupCharacters = this.activeRole === 'runner' ? [this.runner] : [];
+        this.powerUpManager.update(dt, pickupCharacters, elapsedTime);
       }
 
       if (this.particles) {
@@ -866,6 +848,7 @@ export class GameEngine {
         this.saboteur.update(dt, this.runner.position);
       }
 
+      this.physics.resolveCharacterCollision(this.runner, this.saboteur);
       this.worldManager.update([this.runner.position, this.saboteur.position, this.camera.position], elapsedTime);
 
       // Throttle React state emission to ~20Hz
@@ -911,6 +894,7 @@ export class GameEngine {
         compassAngle,
         sensitivity: this.runner.mouseSensitivity,
         buffs: this.runner.getActiveBuffs(),
+        craftingInventory: this.powerUpManager.getInventory(),
       },
       saboteurStats: {
         health: this.saboteur.health,

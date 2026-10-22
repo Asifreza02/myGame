@@ -1,12 +1,6 @@
 import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
@@ -14,27 +8,8 @@ const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 3000;
 
-// Serve built React frontend from dist/, fallback to public/ if not yet built
-const distPath = path.join(__dirname, '../dist');
-const publicPath = path.join(__dirname, '../public');
-
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-} else {
-  app.use(express.static(publicPath));
-}
-
-// Fallback for HTML5 client-side routing
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/ws')) return next();
-  const indexPath = fs.existsSync(distPath)
-    ? path.join(distPath, 'index.html')
-    : path.join(publicPath, 'index.html');
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    next();
-  }
+app.get('/health', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 // Game State Definition
@@ -340,7 +315,7 @@ wss.on('connection', (ws, req) => {
 
 server.listen(PORT, () => {
   console.log(`=======================================================`);
-  console.log(` AetherBound: Sabotage Game Server running on port ${PORT}`);
-  console.log(` Local access: http://localhost:${PORT}`);
+  console.log(` AetherBound: Sabotage WebSocket server running on port ${PORT}`);
+  console.log(` Health check: http://localhost:${PORT}/health`);
   console.log(`=======================================================`);
 });

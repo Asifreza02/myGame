@@ -2,23 +2,22 @@
   "name": "aetherbound-sabotage",
   "version": "1.0.0",
   "description": "Two-Player Open-World 3D Asymmetric Game - Runner vs. Saboteur",
-  "main": "server/server.js",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "start": "node server/server.js",
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
     "server": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   },
   "dependencies": {
     "express": "^4.21.2",
+    "next": "^16.4.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.170.0",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^6.1.2",
-    "vite": "^8.3.4"
   }
 }

@@ -338,7 +338,7 @@ class SoundSystem {
     osc.stop(now + 0.25);
   }
 
-  // Phase 3: Shimmering power-up crystal pickup chime
+  // Phase 3: Shimmering resource pickup chime.
   playPowerupPickup() {
     if (!this.enabled) return;
     this.ensureContext();

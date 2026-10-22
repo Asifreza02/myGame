@@ -177,7 +177,7 @@ export class ParticleSystem {
     }
   }
 
-  // Phase 3: Shimmering crystal burst on power-up collection
+  // Phase 3: Resource burst on collectible pickup.
   emitPowerupBurst(pos, color = 0x00ffcc, count = 28) {
     for (let i = 0; i < count; i++) {
       if (this.particles.length >= this.maxParticles) break;

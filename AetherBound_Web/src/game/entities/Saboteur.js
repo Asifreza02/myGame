@@ -121,136 +121,139 @@ export class SaboteurController {
     this.setupInputs();
   }
 
-  // Build the 3D Cyber-Operative Character Mesh for the Saboteur
+  // Build the human adventurer mesh for the Saboteur.
   buildCharacterMesh() {
     this.mesh = new THREE.Group();
 
-    // 1. Torso / Chassis (Heavy dark carbon armor with glowing orange seams)
-    const torsoGeo = new THREE.BoxGeometry(0.85, 1.15, 0.55);
-    const armorMat = new THREE.MeshStandardMaterial({
-      color: 0x18202d,
-      roughness: 0.35,
-      metalness: 0.8,
-    });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xb97955, roughness: 0.9 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x241b22, roughness: 0.92 });
+    const coatMat = new THREE.MeshStandardMaterial({ color: 0x382d48, roughness: 0.9 });
+    const clothMat = new THREE.MeshStandardMaterial({ color: 0x25232f, roughness: 0.94 });
+    const leatherMat = new THREE.MeshStandardMaterial({ color: 0x513c32, roughness: 0.92 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0xc45a32, roughness: 0.72 });
+
+    // Layered travel clothes distinguish the saboteur without hiding their face.
+    const torsoGeo = new THREE.CapsuleGeometry(0.34, 0.48, 4, 10);
+    const armorMat = coatMat;
     this.torso = new THREE.Mesh(torsoGeo, armorMat);
-    this.torso.position.y = 1.35;
+    this.torso.position.y = 1.08;
     this.torso.castShadow = true;
     this.torso.receiveShadow = true;
     this.mesh.add(this.torso);
 
-    // Glowing orange energy conduit / chest core
-    const coreGeo = new THREE.BoxGeometry(0.4, 0.5, 0.58);
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0xff5500 });
-    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-    coreMesh.position.y = 1.35;
-    this.mesh.add(coreMesh);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.12, 0.22, 10), skinMat);
+    neck.position.y = 1.67;
+    this.mesh.add(neck);
 
-    // 2. Head & Tactical Visor (Angular helmet with glowing ocular visor)
-    const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-    const helmetMat = new THREE.MeshStandardMaterial({
-      color: 0x121722,
-      roughness: 0.3,
-      metalness: 0.85,
-    });
-    this.head = new THREE.Mesh(headGeo, helmetMat);
-    this.head.position.y = 2.15;
+    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.235, 14, 12), skinMat);
+    this.head.position.y = 1.87;
     this.head.castShadow = true;
     this.mesh.add(this.head);
 
-    // Glowing orange visor band
-    const visorGeo = new THREE.BoxGeometry(0.48, 0.14, 0.25);
-    const visorMat = new THREE.MeshBasicMaterial({ color: 0xff3300 });
-    const visor = new THREE.Mesh(visorGeo, visorMat);
-    visor.position.set(0, 2.15, 0.22);
-    this.mesh.add(visor);
+    const earGeo = new THREE.SphereGeometry(0.07, 8, 6);
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x261d1b, roughness: 0.55 });
+    [-1, 1].forEach((side) => {
+      const ear = new THREE.Mesh(earGeo, skinMat);
+      ear.position.set(side * 0.22, 1.87, 0);
+      this.mesh.add(ear);
 
-    // Tech antenna fin
-    const antGeo = new THREE.BoxGeometry(0.06, 0.35, 0.1);
-    const antMat = new THREE.MeshBasicMaterial({ color: 0xff7700 });
-    const antenna = new THREE.Mesh(antGeo, antMat);
-    antenna.position.set(0.2, 2.45, -0.1);
-    this.mesh.add(antenna);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.027, 8, 6), eyeMat);
+      eye.position.set(side * 0.085, 1.89, 0.213);
+      this.mesh.add(eye);
+    });
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), skinMat);
+    nose.scale.set(0.72, 0.8, 0.8);
+    nose.position.set(0, 1.82, 0.23);
+    this.mesh.add(nose);
 
-    // 3. Arms & Holographic Gauntlet Projector
-    const armMat = new THREE.MeshStandardMaterial({
-      color: 0x242e40,
-      roughness: 0.4,
-      metalness: 0.7,
+    const hair = new THREE.Mesh(
+      new THREE.SphereGeometry(0.247, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.58),
+      hairMat
+    );
+    hair.position.set(0, 1.91, -0.005);
+    this.mesh.add(hair);
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), coatMat);
+    hood.scale.set(1.08, 0.72, 0.72);
+    hood.position.set(0, 1.89, -0.12);
+    this.mesh.add(hood);
+
+    const collar = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 0.12, 3, 8), leatherMat);
+    collar.rotation.z = Math.PI / 2;
+    collar.position.set(0, 1.56, 0);
+    this.mesh.add(collar);
+
+    const capeShape = new THREE.Shape();
+    capeShape.moveTo(-0.3, 1.5);
+    capeShape.lineTo(0.3, 1.5);
+    capeShape.lineTo(0.42, 0.7);
+    capeShape.lineTo(0, 0.82);
+    capeShape.lineTo(-0.42, 0.7);
+    capeShape.closePath();
+    const cape = new THREE.Mesh(
+      new THREE.ShapeGeometry(capeShape),
+      new THREE.MeshStandardMaterial({ color: 0x30273a, roughness: 0.96, side: THREE.DoubleSide })
+    );
+    cape.position.z = -0.34;
+    cape.castShadow = true;
+    this.mesh.add(cape);
+
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.12, 0.45), leatherMat);
+    belt.position.set(0, 0.61, 0);
+    this.mesh.add(belt);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.12, 0.045), accentMat);
+    buckle.position.set(0, 0.61, 0.24);
+    this.mesh.add(buckle);
+    [-1, 1].forEach((side) => {
+      const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.16), leatherMat);
+      pouch.position.set(side * 0.31, 0.58, 0.04);
+      this.mesh.add(pouch);
     });
 
-    // Left arm
-    const leftArmGeo = new THREE.BoxGeometry(0.24, 0.85, 0.26);
-    this.leftArm = new THREE.Mesh(leftArmGeo, armMat);
-    this.leftArm.position.set(-0.62, 1.3, 0);
-    this.leftArm.geometry.translate(0, -0.3, 0);
-    this.leftArm.castShadow = true;
-    this.mesh.add(this.leftArm);
+    const makeArm = (x, withGauntlet = false) => {
+      const arm = new THREE.Group();
+      arm.position.set(x, 1.43, 0);
+      const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.125, 0.34, 4, 8), coatMat);
+      sleeve.position.y = -0.27;
+      sleeve.castShadow = true;
+      arm.add(sleeve);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), skinMat);
+      hand.position.y = -0.57;
+      arm.add(hand);
+      if (withGauntlet) {
+        const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.17, 8), leatherMat);
+        cuff.position.y = -0.47;
+        arm.add(cuff);
+      }
+      return arm;
+    };
+    this.leftArm = makeArm(-0.48);
 
-    // Right arm with Gauntlet Projector
-    this.rightArmGroup = new THREE.Group();
-    this.rightArmGroup.position.set(0.62, 1.7, 0);
+    this.rightArmGroup = makeArm(0.48, true);
 
-    const rightArmGeo = new THREE.BoxGeometry(0.26, 0.85, 0.28);
-    const rightArmMesh = new THREE.Mesh(rightArmGeo, armMat);
-    rightArmMesh.position.y = -0.4;
-    rightArmMesh.castShadow = true;
-    this.rightArmGroup.add(rightArmMesh);
-
-    // Gauntlet projector emitter lens
-    const emitterGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.3, 12);
-    const emitterMat = new THREE.MeshBasicMaterial({ color: 0xff7700 });
+    const emitterGeo = new THREE.SphereGeometry(0.12, 10, 8);
+    const emitterMat = new THREE.MeshStandardMaterial({ color: 0xc45a32, roughness: 0.7 });
     this.gauntletEmitter = new THREE.Mesh(emitterGeo, emitterMat);
-    this.gauntletEmitter.position.set(0, -0.85, 0.1);
-    this.gauntletEmitter.rotation.x = Math.PI / 2;
+    this.gauntletEmitter.position.set(0, -0.49, 0.1);
     this.rightArmGroup.add(this.gauntletEmitter);
 
-    this.mesh.add(this.rightArmGroup);
+    this.mesh.add(this.leftArm, this.rightArmGroup);
 
-    // 4. Cybernetic Legs
-    const legGeo = new THREE.BoxGeometry(0.28, 0.85, 0.32);
-    const legMat = new THREE.MeshStandardMaterial({
-      color: 0x18202d,
-      roughness: 0.5,
-      metalness: 0.7,
-    });
-
-    this.leftLeg = new THREE.Mesh(legGeo, legMat);
-    this.leftLeg.position.set(-0.25, 0.45, 0);
-    this.leftLeg.geometry.translate(0, -0.4, 0);
-    this.leftLeg.castShadow = true;
-    this.mesh.add(this.leftLeg);
-
-    this.rightLeg = new THREE.Mesh(legGeo, legMat);
-    this.rightLeg.position.set(0.25, 0.45, 0);
-    this.rightLeg.geometry.translate(0, -0.4, 0);
-    this.rightLeg.castShadow = true;
-    this.mesh.add(this.rightLeg);
-
-    // 5. Twin Jetpack Thruster Pods (mounted on back)
-    const packGeo = new THREE.BoxGeometry(0.6, 0.7, 0.3);
-    const packMat = new THREE.MeshStandardMaterial({ color: 0x10151f, metalness: 0.9, roughness: 0.2 });
-    const jetpack = new THREE.Mesh(packGeo, packMat);
-    jetpack.position.set(0, 1.45, -0.38);
-    this.mesh.add(jetpack);
-
-    // Thruster nozzles
-    this.thrusters = [];
-    const nozzleGeo = new THREE.CylinderGeometry(0.14, 0.18, 0.45, 12);
-    const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x222a38, metalness: 0.9 });
-    const flameGeo = new THREE.ConeGeometry(0.14, 0.45, 8);
-    const flameMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.85 });
-
-    [-0.22, 0.22].forEach((xOffset) => {
-      const nozzle = new THREE.Mesh(nozzleGeo, nozzleMat);
-      nozzle.position.set(xOffset, 1.35, -0.48);
-      this.mesh.add(nozzle);
-
-      const flame = new THREE.Mesh(flameGeo, flameMat);
-      flame.rotation.x = Math.PI; // point down
-      flame.position.set(xOffset, 1.05, -0.48);
-      this.mesh.add(flame);
-      this.thrusters.push(flame);
-    });
+    const makeLeg = (x) => {
+      const leg = new THREE.Group();
+      leg.position.set(x, 0.62, 0);
+      const trousers = new THREE.Mesh(new THREE.CapsuleGeometry(0.145, 0.36, 4, 8), clothMat);
+      trousers.position.y = -0.3;
+      trousers.castShadow = true;
+      leg.add(trousers);
+      const boot = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), leatherMat);
+      boot.scale.set(0.9, 0.62, 1.35);
+      boot.position.set(0, -0.57, 0.065);
+      leg.add(boot);
+      return leg;
+    };
+    this.leftLeg = makeLeg(-0.19);
+    this.rightLeg = makeLeg(0.19);
+    this.mesh.add(this.leftLeg, this.rightLeg);
 
     // 6. Ground Shadow Disc
     const shadowGeo = new THREE.CircleGeometry(0.85, 16);

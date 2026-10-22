@@ -92,68 +92,108 @@ export class RunnerController {
   buildAvatar() {
     this.group = new THREE.Group();
 
-    // Stylized Cyber-Runner Avatar
-    // Torso
-    const torsoGeo = new THREE.BoxGeometry(0.8, 1.0, 0.5);
-    const torsoMat = new THREE.MeshStandardMaterial({
-      color: 0x00d2ff,
-      metalness: 0.8,
-      roughness: 0.2,
-    });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xc98661, roughness: 0.88 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x39251d, roughness: 0.92 });
+    const jacketMat = new THREE.MeshStandardMaterial({ color: 0x087f91, roughness: 0.86 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x37d6d0, roughness: 0.7 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x263443, roughness: 0.92 });
+    const bootMat = new THREE.MeshStandardMaterial({ color: 0x49342c, roughness: 0.94 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x332720, roughness: 0.8 });
+
+    // A fitted travel jacket gives the runner a clear human silhouette.
+    const torsoGeo = new THREE.CapsuleGeometry(0.34, 0.48, 4, 10);
+    const torsoMat = jacketMat;
     this.torso = new THREE.Mesh(torsoGeo, torsoMat);
-    this.torso.position.y = 1.1;
+    this.torso.position.y = 1.08;
     this.torso.castShadow = true;
     this.group.add(this.torso);
 
-    // Glowing Core Reactor on chest
-    const coreGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.1, 16);
-    coreGeo.rotateX(Math.PI / 2);
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
-    const core = new THREE.Mesh(coreGeo, coreMat);
-    core.position.set(0, 1.2, 0.28);
-    this.group.add(core);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.12, 0.22, 10), skinMat);
+    neck.position.y = 1.67;
+    this.group.add(neck);
 
-    // Head + Visor
-    const headGeo = new THREE.BoxGeometry(0.45, 0.45, 0.45);
-    const headMat = new THREE.MeshStandardMaterial({ color: 0x22222b, metalness: 0.5 });
-    this.head = new THREE.Mesh(headGeo, headMat);
-    this.head.position.y = 1.85;
+    // Face, ears, eyes and hair keep the character recognizably human at game distance.
+    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.235, 14, 12), skinMat);
+    this.head.position.y = 1.87;
     this.head.castShadow = true;
     this.group.add(this.head);
 
-    const visorGeo = new THREE.BoxGeometry(0.46, 0.14, 0.25);
-    const visorMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
-    const visor = new THREE.Mesh(visorGeo, visorMat);
-    visor.position.set(0, 1.87, 0.16);
-    this.group.add(visor);
+    const earGeo = new THREE.SphereGeometry(0.07, 8, 6);
+    [-1, 1].forEach((side) => {
+      const ear = new THREE.Mesh(earGeo, skinMat);
+      ear.position.set(side * 0.22, 1.87, 0);
+      this.group.add(ear);
 
-    // Left & Right Arms
-    const armGeo = new THREE.BoxGeometry(0.24, 0.8, 0.24);
-    const limbMat = new THREE.MeshStandardMaterial({ color: 0x1a2b3c, metalness: 0.6 });
+      const eye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.027, 8, 6),
+        new THREE.MeshStandardMaterial({ color: 0x29211d, roughness: 0.55 })
+      );
+      eye.position.set(side * 0.085, 1.89, 0.213);
+      this.group.add(eye);
+    });
 
-    this.leftArm = new THREE.Mesh(armGeo, limbMat);
-    this.leftArm.position.set(-0.55, 1.1, 0);
-    this.leftArm.geometry.translate(0, -0.3, 0);
-    this.group.add(this.leftArm);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), skinMat);
+    nose.scale.set(0.72, 0.8, 0.8);
+    nose.position.set(0, 1.82, 0.23);
+    this.group.add(nose);
 
-    this.rightArm = new THREE.Mesh(armGeo, limbMat);
-    this.rightArm.position.set(0.55, 1.1, 0);
-    this.rightArm.geometry.translate(0, -0.3, 0);
-    this.group.add(this.rightArm);
+    const hair = new THREE.Mesh(
+      new THREE.SphereGeometry(0.247, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.58),
+      hairMat
+    );
+    hair.position.set(0, 1.91, -0.005);
+    this.group.add(hair);
+    const fringe = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 6), hairMat);
+    fringe.scale.set(1.35, 0.42, 0.8);
+    fringe.position.set(0, 2.025, 0.145);
+    this.group.add(fringe);
 
-    // Left & Right Legs
-    const legGeo = new THREE.BoxGeometry(0.28, 0.9, 0.28);
-    this.leftLeg = new THREE.Mesh(legGeo, limbMat);
-    this.leftLeg.position.set(-0.25, 0.6, 0);
-    this.leftLeg.geometry.translate(0, -0.4, 0);
-    this.leftLeg.castShadow = true;
-    this.group.add(this.leftLeg);
+    const jacketZip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.48, 0.025), trimMat);
+    jacketZip.position.set(0, 1.12, 0.328);
+    this.group.add(jacketZip);
 
-    this.rightLeg = new THREE.Mesh(legGeo, limbMat);
-    this.rightLeg.position.set(0.25, 0.6, 0);
-    this.rightLeg.geometry.translate(0, -0.4, 0);
-    this.rightLeg.castShadow = true;
-    this.group.add(this.rightLeg);
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.11, 0.44), darkMat);
+    belt.position.set(0, 0.61, 0);
+    this.group.add(belt);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.12, 0.045), trimMat);
+    buckle.position.set(0, 0.61, 0.235);
+    this.group.add(buckle);
+
+    const makeArm = (x) => {
+      const arm = new THREE.Group();
+      arm.position.set(x, 1.43, 0);
+      const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.125, 0.34, 4, 8), jacketMat);
+      sleeve.position.y = -0.27;
+      sleeve.castShadow = true;
+      arm.add(sleeve);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), skinMat);
+      hand.position.y = -0.57;
+      arm.add(hand);
+      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.128, 0.128, 0.09, 8), trimMat);
+      cuff.position.y = -0.48;
+      arm.add(cuff);
+      return arm;
+    };
+    this.leftArm = makeArm(-0.48);
+    this.rightArm = makeArm(0.48);
+    this.group.add(this.leftArm, this.rightArm);
+
+    const makeLeg = (x) => {
+      const leg = new THREE.Group();
+      leg.position.set(x, 0.62, 0);
+      const trousers = new THREE.Mesh(new THREE.CapsuleGeometry(0.145, 0.36, 4, 8), pantsMat);
+      trousers.position.y = -0.3;
+      trousers.castShadow = true;
+      leg.add(trousers);
+      const boot = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), bootMat);
+      boot.scale.set(0.9, 0.62, 1.35);
+      boot.position.set(0, -0.57, 0.065);
+      leg.add(boot);
+      return leg;
+    };
+    this.leftLeg = makeLeg(-0.19);
+    this.rightLeg = makeLeg(0.19);
+    this.group.add(this.leftLeg, this.rightLeg);
 
     // Phase 3: 3D Aegis Energy Shield Bubble
     const shieldGeo = new THREE.IcosahedronGeometry(1.35, 2);

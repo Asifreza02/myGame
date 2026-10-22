@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from './game/GameEngine.js';
 import { AimReticle } from './components/AimReticle.jsx';
@@ -11,8 +13,6 @@ import { GameOverModal } from './components/GameOverModal.jsx';
 import { VirtualJoystick } from './components/mobile/VirtualJoystick.jsx';
 import { TouchLookZone } from './components/mobile/TouchLookZone.jsx';
 import { MobileActionPad } from './components/mobile/MobileActionPad.jsx';
-import './styles/index.css';
-import './styles/hud.css';
 
 export function App() {
   const containerRef = useRef(null);
@@ -25,7 +25,7 @@ export function App() {
     roomCode: 'default',
     timeRemaining: 120,
     playerCounts: { runner: 1, saboteur: 0, spectator: 0 },
-    environment: { biome: null, todName: '☀️ MIDDAY', todClass: 'noon' },
+    environment: { biome: null, todName: '☀️ DAYTIME', todClass: 'noon' },
     runnerStats: {
       health: 100,
       maxHealth: 100,
@@ -35,6 +35,7 @@ export function App() {
       compassAngle: 0,
       sensitivity: 1.2,
       buffs: [],
+      craftingInventory: { resources: {}, items: {} },
     },
     saboteurStats: {
       health: 100,
@@ -134,6 +135,14 @@ export function App() {
 
   const handleCycleRunnerSens = useCallback(() => {
     if (engineRef.current) engineRef.current.cycleRunnerSensitivity();
+  }, []);
+
+  const handleCraftPowerUp = useCallback((recipeId) => {
+    if (engineRef.current) engineRef.current.craftPowerUp(recipeId);
+  }, []);
+
+  const handleUsePowerUp = useCallback((itemId) => {
+    if (engineRef.current) engineRef.current.usePowerUp(itemId);
   }, []);
 
   const handleCycleSaboteurSens = useCallback(() => {
@@ -264,6 +273,8 @@ export function App() {
           onLookBehind={handleLookBehind}
           onToggleSteering={handleToggleSteering}
           onCycleSens={handleCycleRunnerSens}
+          onCraft={handleCraftPowerUp}
+          onUse={handleUsePowerUp}
         />
       )}
 

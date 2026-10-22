@@ -430,6 +430,103 @@
   width: 240px;
 }
 
+.crafting-panel {
+  width: 340px;
+  max-height: 34vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  pointer-events: auto;
+}
+
+.crafting-title-row,
+.resource-inventory,
+.recipe-row,
+.recipe-actions {
+  display: flex;
+  align-items: center;
+}
+
+.crafting-title-row {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.crafting-hint,
+.recipe-ingredients {
+  color: #9bb1c5;
+  font-size: 10px;
+}
+
+.resource-inventory {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.resource-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.38);
+  color: #e5f5ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.recipe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.recipe-row {
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid rgba(135, 190, 220, 0.16);
+}
+
+.recipe-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.recipe-name {
+  color: #e6f8ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.recipe-actions {
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.recipe-button {
+  border: 1px solid rgba(0, 229, 255, 0.48);
+  border-radius: 5px;
+  padding: 4px 7px;
+  background: rgba(0, 100, 130, 0.35);
+  color: #d9fbff;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.recipe-button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.use-recipe-button:not(:disabled) {
+  border-color: rgba(255, 206, 82, 0.55);
+  background: rgba(130, 85, 0, 0.35);
+}
+
 .bar-track {
   width: 100%;
   height: 10px;
@@ -1258,6 +1355,28 @@
     padding: 5px 10px;
   }
 
+  .crafting-panel {
+    width: 220px;
+    max-height: 31vh;
+    padding: 7px;
+  }
+
+  .crafting-hint {
+    display: none;
+  }
+
+  .recipe-row {
+    gap: 4px;
+  }
+
+  .recipe-ingredients {
+    font-size: 9px;
+  }
+
+  .recipe-button {
+    padding: 4px;
+  }
+
   /* Saboteur HUD on Mobile */
   #saboteur-hud {
     bottom: 125px;
@@ -1373,4 +1492,3 @@
     font-size: 11px;
   }
 }
-

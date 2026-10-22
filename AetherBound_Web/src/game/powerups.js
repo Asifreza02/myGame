@@ -1,6 +1,93 @@
 import * as THREE from 'three';
-import { POWERUPS } from './config.js';
+import { CRAFTING_RECIPES, POWERUPS, RESOURCES } from './config.js';
 import { audio } from './audio.js';
+
+function createResourceModels() {
+  const material = (color, options = {}) => new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.58,
+    metalness: 0.12,
+    ...options,
+  });
+  const models = {};
+
+  const essence = new THREE.Group();
+  const essenceCore = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 10, 8),
+    material(0x7df5ff, { emissive: 0x12cce8, emissiveIntensity: 1.15, roughness: 0.2 }),
+  );
+  essence.add(essenceCore);
+  const essenceHalo = new THREE.Mesh(
+    new THREE.TorusGeometry(0.42, 0.025, 5, 20),
+    new THREE.MeshBasicMaterial({ color: 0x8dfaff }),
+  );
+  essenceHalo.rotation.x = Math.PI / 2.8;
+  essence.add(essenceHalo);
+  models.AETHER_ESSENCE = essence;
+
+  const ore = new THREE.Group();
+  ore.add(new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.36, 0),
+    material(0x56423d, { roughness: 0.87 }),
+  ));
+  const oreGlowMaterial = material(0xff7437, {
+    emissive: 0xd33412,
+    emissiveIntensity: 1.1,
+    roughness: 0.3,
+  });
+  [[-0.1, 0.13, 0.27], [0.2, -0.06, 0.2], [-0.2, -0.1, -0.2]].forEach(([x, y, z]) => {
+    const fleck = new THREE.Mesh(new THREE.SphereGeometry(0.075, 6, 5), oreGlowMaterial);
+    fleck.position.set(x, y, z);
+    ore.add(fleck);
+  });
+  models.EMBER_ORE = ore;
+
+  const wood = new THREE.Group();
+  const woodMaterial = material(0x81572f, { roughness: 0.84 });
+  [[0, 0, 0, 0.5], [0.22, 0.04, 0.02, -0.8], [-0.2, 0.08, -0.02, 0.9]].forEach(
+    ([x, y, z, rotation]) => {
+      const twig = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.075, 0.12, 0.62, 6),
+        woodMaterial,
+      );
+      twig.position.set(x, y, z);
+      twig.rotation.z = rotation;
+      wood.add(twig);
+    },
+  );
+  const barkBand = new THREE.Mesh(
+    new THREE.TorusGeometry(0.11, 0.025, 5, 8),
+    material(0xd1a86a),
+  );
+  barkBand.rotation.x = Math.PI / 2;
+  wood.add(barkBand);
+  models.IRONWOOD = wood;
+
+  const herb = new THREE.Group();
+  const stemMaterial = material(0x537b3d);
+  const leafMaterial = material(0x81dc69, { roughness: 0.42 });
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.65, 5), stemMaterial);
+  herb.add(stem);
+  [-1, 1].forEach((side, index) => {
+    const leaf = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 7, 5),
+      leafMaterial,
+    );
+    leaf.scale.set(0.65, 0.42, 1.3);
+    leaf.position.set(side * 0.13, index === 0 ? 0.03 : -0.15, 0);
+    leaf.rotation.z = side * -0.52;
+    herb.add(leaf);
+  });
+  const bud = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 7, 6),
+    material(0xd6f98b, { emissive: 0x5fae43, emissiveIntensity: 0.35 }),
+  );
+  bud.position.y = 0.36;
+  herb.add(bud);
+  models.MOON_HERB = herb;
+
+  return models;
+}
 
 export class PowerUpManager {
   constructor(scene, worldManager, particles, onCollectCallback) {
@@ -8,70 +95,50 @@ export class PowerUpManager {
     this.worldManager = worldManager;
     this.particles = particles;
     this.onCollectCallback = onCollectCallback;
-
-    this.crystals = new Map(); // id -> { id, type, mesh, innerMesh, ringMesh, position, def, active, respawnTimer }
+    this.resources = new Map();
     this.spawnedChunks = new Set();
-    this.types = ['SPEED', 'JUMP', 'SHIELD', 'HEALTH'];
+    this.resourceTypes = Object.keys(RESOURCES);
+    this.resourceModels = createResourceModels();
+    this.inventoryVersion = 0;
+    this.inventory = {
+      resources: Object.fromEntries(this.resourceTypes.map((type) => [type, 0])),
+      items: Object.fromEntries(Object.keys(CRAFTING_RECIPES).map((type) => [type, 0])),
+    };
 
-    // Shared crystal geometries
-    this.crystalGeo = new THREE.OctahedronGeometry(0.55, 0);
-    this.outerWireGeo = new THREE.OctahedronGeometry(0.75, 0);
-    this.glowRingGeo = new THREE.RingGeometry(0.4, 0.9, 16);
+    this.glowRingGeo = new THREE.RingGeometry(0.36, 0.72, 16);
     this.glowRingGeo.rotateX(-Math.PI / 2);
-
     this.group = new THREE.Group();
     this.scene.add(this.group);
   }
 
-  // Create a 3D glowing energy crystal in the world
-  spawnCrystal(id, type, x, z) {
-    const def = POWERUPS[type] || POWERUPS.SPEED;
-    const y = this.worldManager.getHeightAt(x, z) + 1.25;
+  spawnResource(id, type, x, z) {
+    const def = RESOURCES[type];
+    if (!def) return null;
 
-    const crystalGroup = new THREE.Group();
-    crystalGroup.position.set(x, y, z);
+    const y = this.worldManager.getHeightAt(x, z) + 0.48;
+    const resourceGroup = new THREE.Group();
+    resourceGroup.position.set(x, y, z);
+    const itemMesh = this.resourceModels[type].clone(true);
+    resourceGroup.add(itemMesh);
 
-    // Inner glowing solid core
-    const coreMat = new THREE.MeshStandardMaterial({
-      color: def.color,
-      emissive: def.color,
-      emissiveIntensity: 0.85,
-      roughness: 0.2,
-      metalness: 0.8,
-    });
-    const coreMesh = new THREE.Mesh(this.crystalGeo, coreMat);
-    coreMesh.scale.set(0.7, 1.2, 0.7);
-    crystalGroup.add(coreMesh);
+    const ringMesh = new THREE.Mesh(
+      this.glowRingGeo,
+      new THREE.MeshBasicMaterial({
+        color: def.color,
+        transparent: true,
+        opacity: 0.42,
+        side: THREE.DoubleSide,
+      }),
+    );
+    ringMesh.position.y = -0.43;
+    resourceGroup.add(ringMesh);
+    this.group.add(resourceGroup);
 
-    // Outer rotating holographic wireframe
-    const wireMat = new THREE.MeshBasicMaterial({
-      color: def.color,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const wireMesh = new THREE.Mesh(this.outerWireGeo, wireMat);
-    crystalGroup.add(wireMesh);
-
-    // Base aura ring on terrain
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: def.color,
-      transparent: true,
-      opacity: 0.6,
-      side: THREE.DoubleSide,
-    });
-    const ringMesh = new THREE.Mesh(this.glowRingGeo, ringMat);
-    ringMesh.position.y = -1.15;
-    crystalGroup.add(ringMesh);
-
-    this.group.add(crystalGroup);
-
-    const crystalData = {
+    const resource = {
       id,
       type,
-      mesh: crystalGroup,
-      coreMesh,
-      wireMesh,
+      mesh: resourceGroup,
+      itemMesh,
       position: new THREE.Vector3(x, y, z),
       baseY: y,
       def,
@@ -79,12 +146,10 @@ export class PowerUpManager {
       respawnTimer: 0,
       animOffset: Math.random() * Math.PI * 2,
     };
-
-    this.crystals.set(id, crystalData);
-    return crystalData;
+    this.resources.set(id, resource);
+    return resource;
   }
 
-  // Generate crystals in chunk if applicable
   populateChunk(cx, cz) {
     const chunkKey = `${cx},${cz}`;
     if (this.spawnedChunks.has(chunkKey)) return;
@@ -93,121 +158,147 @@ export class PowerUpManager {
     const chunkSize = this.worldManager.chunkSize;
     const originX = cx * chunkSize;
     const originZ = cz * chunkSize;
-
-    let seed = Math.abs(cx * 15485863 ^ cz * 32452843 ^ this.worldManager.seed);
+    let seed = Math.abs(cx * 15485863 ^ cz * 32452843 ^ this.worldManager.seed) || 1;
     const rng = () => {
       seed = (seed * 16807) % 2147483647;
       return (seed - 1) / 2147483646;
     };
 
-    // ~35% chance to spawn an energy crystal in this chunk
-    if (rng() > 0.65) {
-      const lx = (rng() - 0.5) * (chunkSize - 8);
-      const lz = (rng() - 0.5) * (chunkSize - 8);
-      const wx = originX + lx;
-      const wz = originZ + lz;
-
-      // Don't spawn on spawn area
-      if (Math.sqrt(wx * wx + wz * wz) > 24) {
-        const typeIdx = Math.floor(rng() * this.types.length);
-        const type = this.types[typeIdx];
-        const crystalId = `crystal_${cx}_${cz}`;
-        this.spawnCrystal(crystalId, type, wx, wz);
+    if (rng() < 0.72) {
+      const count = rng() > 0.82 ? 2 : 1;
+      for (let index = 0; index < count; index += 1) {
+        const x = originX + (rng() - 0.5) * (chunkSize - 8);
+        const z = originZ + (rng() - 0.5) * (chunkSize - 8);
+        if (Math.hypot(x, z) <= 24) continue;
+        const biomeId = this.worldManager.getDominantBiome(x, z)?.id;
+        const biomeResources = {
+          LUSH: ['IRONWOOD', 'MOON_HERB'],
+          DESERT: ['EMBER_ORE', 'AETHER_ESSENCE'],
+          SNOW: ['AETHER_ESSENCE', 'MOON_HERB'],
+          VOLCANIC: ['EMBER_ORE', 'IRONWOOD'],
+        };
+        const resourcePool = biomeResources[biomeId] || this.resourceTypes;
+        const type = resourcePool[Math.floor(rng() * resourcePool.length)];
+        this.spawnResource(`resource_${cx}_${cz}_${index}`, type, x, z);
       }
     }
   }
 
-  // Update crystal rotation, bobbing, and collision check with characters
   update(dt, characters = [], elapsedTime = 0) {
-    for (const [id, c] of this.crystals.entries()) {
-      if (!c.active) {
-        if (c.respawnTimer > 0) {
-          c.respawnTimer -= dt;
-          if (c.respawnTimer <= 0) {
-            c.active = true;
-            c.mesh.visible = true;
+    for (const [id, resource] of this.resources.entries()) {
+      if (!resource.active) {
+        if (resource.respawnTimer > 0) {
+          resource.respawnTimer -= dt;
+          if (resource.respawnTimer <= 0) {
+            resource.active = true;
+            resource.mesh.visible = true;
           }
         }
         continue;
       }
 
-      // 1. Continuous rotation & hovering bobbing motion
-      c.coreMesh.rotation.y += 2.2 * dt;
-      c.wireMesh.rotation.y -= 1.6 * dt;
-      c.wireMesh.rotation.x += 0.8 * dt;
+      resource.itemMesh.rotation.y += 1.1 * dt;
+      resource.itemMesh.rotation.x = Math.sin(elapsedTime * 1.4 + resource.animOffset) * 0.08;
+      resource.mesh.position.y = resource.baseY
+        + Math.sin(elapsedTime * 2.4 + resource.animOffset) * 0.13;
 
-      const bob = Math.sin(elapsedTime * 2.8 + c.animOffset) * 0.22;
-      c.mesh.position.y = c.baseY + bob;
-
-      // 2. Collision check against active characters
-      for (const char of characters) {
-        if (!char || !char.position) continue;
-        const dx = char.position.x - c.position.x;
-        const dz = char.position.z - c.position.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-
-        // Pickup threshold: 2.2 meters
-        if (dist < 2.2) {
-          this.collectCrystal(id, char);
+      for (const character of characters) {
+        if (!character || character.role !== 'runner' || !character.position) continue;
+        const dx = character.position.x - resource.position.x;
+        const dz = character.position.z - resource.position.z;
+        if (dx * dx + dz * dz < 2.2 * 2.2) {
+          this.collectResource(id, character);
           break;
         }
       }
     }
   }
 
-  collectCrystal(id, char) {
-    const c = this.crystals.get(id);
-    if (!c || !c.active) return;
+  collectResource(id, character) {
+    const resource = this.resources.get(id);
+    if (!resource || !resource.active || character?.role !== 'runner') return false;
 
-    c.active = false;
-    c.mesh.visible = false;
-    c.respawnTimer = 35.0; // Respawns after 35 seconds
-
-    // Audio & Particle Shockwave
+    resource.active = false;
+    resource.mesh.visible = false;
+    resource.respawnTimer = 45;
+    this.inventory.resources[resource.type] += 1;
+    this.inventoryVersion += 1;
     audio.playPowerupPickup();
     if (this.particles) {
-      this.particles.emitPowerupBurst(c.position, c.def.color, 24);
+      this.particles.emitPowerupBurst(resource.position, resource.def.color, 18);
     }
-
-    // Apply specific buff to character
-    if (char) {
-      if (c.type === 'SPEED' && char.applySpeedBuff) {
-        char.applySpeedBuff(c.def.duration, c.def.multiplier);
-      } else if (c.type === 'JUMP' && char.applyJumpBuff) {
-        char.applyJumpBuff(c.def.duration, c.def.jumpForce);
-      } else if (c.type === 'SHIELD' && char.applyShield) {
-        char.applyShield(c.def.duration);
-      } else if (c.type === 'HEALTH' && char.applyHealth) {
-        char.applyHealth(c.def.amount);
-      }
-    }
-
-    // Broadcast collection via callback
     if (this.onCollectCallback) {
-      this.onCollectCallback(id, c.type, char ? char.role : 'runner');
+      this.onCollectCallback(id, resource.type, character.role);
     }
+    return true;
   }
 
-  // Handle remote crystal collection from network WebSocket
+  craft(recipeId) {
+    const recipe = CRAFTING_RECIPES[recipeId];
+    if (!recipe) return { success: false, reason: 'Unknown recipe.' };
+
+    const missing = Object.entries(recipe.ingredients)
+      .filter(([type, amount]) => this.inventory.resources[type] < amount)
+      .map(([type, amount]) => `${RESOURCES[type].name} x${amount - this.inventory.resources[type]}`);
+    if (missing.length > 0) {
+      return { success: false, reason: `Need ${missing.join(', ')}.` };
+    }
+
+    Object.entries(recipe.ingredients).forEach(([type, amount]) => {
+      this.inventory.resources[type] -= amount;
+    });
+    this.inventory.items[recipeId] += 1;
+    this.inventoryVersion += 1;
+    return { success: true, item: recipe };
+  }
+
+  useItem(itemId, character) {
+    if (!POWERUPS[itemId] || !character || this.inventory.items[itemId] < 1) {
+      return { success: false, reason: 'Craft this item first.' };
+    }
+    const def = POWERUPS[itemId];
+    if (itemId === 'HEALTH' && character.health >= character.maxHealth) {
+      return { success: false, reason: 'Health is already full.' };
+    }
+
+    if (itemId === 'SPEED') character.applySpeedBuff(def.duration, def.multiplier);
+    if (itemId === 'JUMP') character.applyJumpBuff(def.duration, def.jumpForce);
+    if (itemId === 'SHIELD') character.applyShield(def.duration);
+    if (itemId === 'HEALTH') character.applyHealth(def.amount);
+    this.inventory.items[itemId] -= 1;
+    this.inventoryVersion += 1;
+    return { success: true, item: CRAFTING_RECIPES[itemId] };
+  }
+
+  getInventory() {
+    return {
+      resources: { ...this.inventory.resources },
+      items: { ...this.inventory.items },
+    };
+  }
+
   handleRemoteCollect(id) {
-    const c = this.crystals.get(id);
-    if (!c || !c.active) return;
-
-    c.active = false;
-    c.mesh.visible = false;
-    c.respawnTimer = 35.0;
-
+    const resource = this.resources.get(id);
+    if (!resource || !resource.active) return;
+    resource.active = false;
+    resource.mesh.visible = false;
+    resource.respawnTimer = 45;
     audio.playPowerupPickup();
     if (this.particles) {
-      this.particles.emitPowerupBurst(c.position, c.def.color, 18);
+      this.particles.emitPowerupBurst(resource.position, resource.def.color, 14);
     }
   }
 
   clear() {
-    for (const c of this.crystals.values()) {
-      this.group.remove(c.mesh);
+    for (const resource of this.resources.values()) {
+      this.group.remove(resource.mesh);
     }
-    this.crystals.clear();
+    this.resources.clear();
     this.spawnedChunks.clear();
+    this.inventory.resources = Object.fromEntries(this.resourceTypes.map((type) => [type, 0]));
+    this.inventory.items = Object.fromEntries(
+      Object.keys(CRAFTING_RECIPES).map((type) => [type, 0]),
+    );
+    this.inventoryVersion += 1;
   }
 }

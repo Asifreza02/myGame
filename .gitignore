@@ -26,6 +26,9 @@ sysinfo.txt
 # Web & Node
 **/node_modules/
 **/dist/
+**/.next/
+**/.vercel/
+**/out/
 .env.local
 .env.*.local
 npm-debug.log*

@@ -5,11 +5,12 @@
 
 ## 🎮 How to Play
 
-### 1. Start the Server
+### 1. Start the Game Locally
+Run the Next.js frontend and WebSocket game server in separate terminals:
 ```bash
-npm start
+npm run dev
 ```
-The server is live at: **`http://localhost:3000`**
+The game is available at **`http://localhost:3001`**. Start the multiplayer server with `npm run server` in the other terminal; it listens on port `3000`.
 
 ---
 
@@ -17,12 +18,28 @@ The server is live at: **`http://localhost:3000`**
 
 #### Mode A: Multi-Room Networked Multiplayer
 - Rooms isolate match timers, world seeds, goal coordinates, and players.
-- **Player 1 (The Runner)**: `http://localhost:3000?role=runner&room=match1`
-- **Player 2 (The Saboteur)**: `http://localhost:3000?role=saboteur&room=match1`
+- **Player 1 (The Runner)**: `http://localhost:3001?role=runner&room=match1`
+- **Player 2 (The Saboteur)**: `http://localhost:3001?role=saboteur&room=match1`
 - Or use the in-game modal to type a custom code or click **`🎲 Random`**.
 
 #### Mode B: Local Dual Mode
 - Play both characters locally on one computer. Role-switching via **`[Tab]`** is exclusively available in Local Dual Mode.
+
+---
+
+## 🚀 Deploy to Vercel
+
+The frontend is a Next.js App Router app. In Vercel, set the project **Root Directory** to `AetherBound_Web`; use the default Next.js framework preset and `npm run build` as the build command.
+
+The multiplayer server uses persistent WebSocket connections and must be deployed separately on a Node.js host that supports WebSockets (for example, Render or Railway). Deploy the `server/` service with the repository root set to `AetherBound_Web` and the start command `npm run server`. The server uses the host-provided `PORT`.
+
+In the Vercel project settings, set this environment variable to the public secure WebSocket URL of that server, then redeploy:
+
+```text
+NEXT_PUBLIC_GAME_SERVER_URL=wss://your-game-server.example.com
+```
+
+Local development defaults to `ws://localhost:3000`. Local Dual mode does not require the multiplayer server. Vercel serverless functions do not host this stateful WebSocket server.
 
 ---
 
@@ -43,6 +60,16 @@ The Runner possesses **only** Runner abilities. All Saboteur tools, energy meter
 | **F** | Snap aim direction toward Beacon Goal |
 | **C** | Look Behind (spin 180°) |
 | **HUD Compass & Distance** | Real-time vector and distance meter to Beacon Goal |
+
+#### Field Crafting
+Gather visible resources as the Runner to add them to your inventory, then use the **FIELD CRAFTING** panel to craft and activate items when needed. Resource types are tied to biomes: Ironwood and Moon Herb in Lush areas, Ember Ore and Aether Essence in Desert areas, Aether Essence and Moon Herb in Snow areas, and Ember Ore and Ironwood in Volcanic areas.
+
+| Crafted item | Ingredients | Effect |
+|---|---|---|
+| **Windrunner Boots** | 1 Aether Essence + 1 Ironwood | +60% speed for 6 seconds |
+| **Springstep Boots** | 1 Ironwood + 1 Moon Herb | Powerful jumps for 8 seconds |
+| **Aether Ward** | 1 Aether Essence + 1 Ember Ore | Blocks one hazard hit |
+| **Vitality Draught** | 1 Aether Essence + 2 Moon Herbs | Restores 30 health |
 
 🏆 **Instant Victory**: The moment you step into the Beacon Goal platform, victory triggers immediately with celebration fireworks and win audio!
 

@@ -189,7 +189,7 @@ export const BIOMES = {
   }
 };
 
-// Phase 3: Collectible Energy Crystals & Power-Ups
+// Phase 3: Collectible Items & Power-Ups
 export const POWERUPS = {
   SPEED: {
     id: 'SPEED',
@@ -225,6 +225,64 @@ export const POWERUPS = {
     icon: '❤️',
     description: '+30 Integrity Restoration',
   }
+};
+
+export const RESOURCES = {
+  AETHER_ESSENCE: {
+    id: 'AETHER_ESSENCE',
+    name: 'Aether Essence',
+    icon: '🔹',
+    color: 0x55eaff,
+  },
+  EMBER_ORE: {
+    id: 'EMBER_ORE',
+    name: 'Ember Ore',
+    icon: '🪨',
+    color: 0xff7138,
+  },
+  IRONWOOD: {
+    id: 'IRONWOOD',
+    name: 'Ironwood',
+    icon: '🪵',
+    color: 0xb58a54,
+  },
+  MOON_HERB: {
+    id: 'MOON_HERB',
+    name: 'Moon Herb',
+    icon: '🌿',
+    color: 0x83e879,
+  },
+};
+
+export const CRAFTING_RECIPES = {
+  SPEED: {
+    id: 'SPEED',
+    name: 'Windrunner Boots',
+    icon: '🥾',
+    description: '+60% speed for 6 seconds',
+    ingredients: { AETHER_ESSENCE: 1, IRONWOOD: 1 },
+  },
+  JUMP: {
+    id: 'JUMP',
+    name: 'Springstep Boots',
+    icon: '🦘',
+    description: 'Powerful jumps for 8 seconds',
+    ingredients: { IRONWOOD: 1, MOON_HERB: 1 },
+  },
+  SHIELD: {
+    id: 'SHIELD',
+    name: 'Aether Ward',
+    icon: '🛡️',
+    description: 'Block one hazard hit',
+    ingredients: { AETHER_ESSENCE: 1, EMBER_ORE: 1 },
+  },
+  HEALTH: {
+    id: 'HEALTH',
+    name: 'Vitality Draught',
+    icon: '🧪',
+    description: 'Restore 30 health',
+    ingredients: { AETHER_ESSENCE: 1, MOON_HERB: 2 },
+  },
 };
 
 // Phase 3: Dynamic Day/Night & Atmosphere Configuration

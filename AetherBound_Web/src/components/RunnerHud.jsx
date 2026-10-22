@@ -1,4 +1,5 @@
 import React from 'react';
+import { CRAFTING_RECIPES, RESOURCES } from '../game/config.js';
 
 export function RunnerHud({
   stats = {},
@@ -6,6 +7,8 @@ export function RunnerHud({
   onLookBehind,
   onToggleSteering,
   onCycleSens,
+  onCraft,
+  onUse,
 }) {
   const {
     health = 100,
@@ -16,6 +19,7 @@ export function RunnerHud({
     compassAngle = 0,
     sensitivity = 1.2,
     buffs = [],
+    craftingInventory = { resources: {}, items: {} },
   } = stats;
 
   const healthPct = Math.max(0, Math.min(100, (health / maxHealth) * 100));
@@ -94,6 +98,61 @@ export function RunnerHud({
           ))}
         </div>
       )}
+
+      <section className="hud-panel crafting-panel" aria-label="Crafting inventory">
+        <div className="crafting-title-row">
+          <span className="hud-label">FIELD CRAFTING</span>
+          <span className="crafting-hint">Gather ingredients, craft, then use</span>
+        </div>
+        <div className="resource-inventory">
+          {Object.values(RESOURCES).map((resource) => (
+            <span className="resource-count" key={resource.id} title={resource.name}>
+              <span aria-hidden="true">{resource.icon}</span>
+              <span>{craftingInventory.resources?.[resource.id] || 0}</span>
+            </span>
+          ))}
+        </div>
+        <div className="recipe-list">
+          {Object.values(CRAFTING_RECIPES).map((recipe) => {
+            const itemCount = craftingInventory.items?.[recipe.id] || 0;
+            const canCraft = Object.entries(recipe.ingredients).every(
+              ([resourceId, amount]) => (craftingInventory.resources?.[resourceId] || 0) >= amount,
+            );
+            const ingredients = Object.entries(recipe.ingredients)
+              .map(([resourceId, amount]) => `${RESOURCES[resourceId].icon} ${amount}`)
+              .join(' + ');
+
+            return (
+              <div className="recipe-row" key={recipe.id}>
+                <div className="recipe-info">
+                  <span className="recipe-name">{recipe.icon} {recipe.name}</span>
+                  <span className="recipe-ingredients">{ingredients} · {recipe.description}</span>
+                </div>
+                <div className="recipe-actions">
+                  <button
+                    type="button"
+                    className="recipe-button interactive"
+                    onClick={() => onCraft(recipe.id)}
+                    disabled={!canCraft}
+                    title={`Craft ${recipe.name}: ${ingredients}`}
+                  >
+                    Craft
+                  </button>
+                  <button
+                    type="button"
+                    className="recipe-button use-recipe-button interactive"
+                    onClick={() => onUse(recipe.id)}
+                    disabled={itemCount < 1}
+                    title={`Use ${recipe.name} (${itemCount} available)`}
+                  >
+                    Use {itemCount > 0 ? `(${itemCount})` : ''}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Quick Aim / Traversal Controls */}
       <div className="hud-panel view-controls-panel">

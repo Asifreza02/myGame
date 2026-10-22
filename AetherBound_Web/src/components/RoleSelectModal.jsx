@@ -60,7 +60,7 @@ export function RoleSelectModal({
               THE RUNNER
             </div>
             <div className="card-desc">
-              Sprint across rugged procedural biomes, slide under obstacles, vault barricades, collect power crystals, and conquer the glowing Beacon Goal.
+              Search the terrain for Aether Essence, Ember Ore, Ironwood, and Moon Herb. Combine resources to craft boots, wards, and healing draughts before reaching the Beacon.
             </div>
           </div>
 

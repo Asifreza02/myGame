@@ -73,7 +73,8 @@ An endless, procedurally generated 3D world where two players compete in an asym
   - Procedural wildlife (neutral creatures that can be startled toward the runner).
   - Day/night cycle and dynamic weather storms (sandstorms, blizzards) impacting visibility and traction.
 - **Runner Power-Ups & Items**:
-  - Scattered crystal pick-ups: Speed Boost, Double Jump, Grappling Hook, Wall-Breaker hammer.
+  - Gather Aether Essence, Ember Ore, Ironwood, and Moon Herb from distinct world drops.
+  - Craft Windrunner Boots, Springstep Boots, Aether Wards, and Vitality Draughts from ingredient combinations; choose when to use each crafted item.
 - **Persistent Progression & Score**:
   - Match history, best times, evasion score for Runners, obstacle efficiency rating for Saboteurs.
 

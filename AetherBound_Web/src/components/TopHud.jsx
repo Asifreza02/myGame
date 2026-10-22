@@ -63,10 +63,10 @@ export function TopHud({
           </div>
         )}
 
-        {/* Day/Night Celestial Cycle Badge */}
+        {/* Fixed daytime lighting badge */}
         <div className="hud-panel">
           <span className={`tod-tag ${todClass || 'noon'}`}>
-            {todName || '☀️ MIDDAY'}
+            {todName || '☀️ DAYTIME'}
           </span>
         </div>
 

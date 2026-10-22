@@ -188,7 +188,7 @@ export const BIOMES = {
   }
 };
 
-// Phase 3: Collectible Energy Crystals & Power-Ups
+// Phase 3: Collectible Items & Power-Ups
 export const POWERUPS = {
   SPEED: {
     id: 'SPEED',
@@ -226,38 +226,71 @@ export const POWERUPS = {
   }
 };
 
-// Phase 3: Dynamic Day/Night & Atmosphere Configuration
-export const DAY_NIGHT_CONFIG = {
-  CYCLE_DURATION: 180,
-  SUN_DISTANCE: 180,
-  COLORS: {
-    DAWN: {
-      sun: 0xffaa66,
-      sky: 0xd88866,
-      fog: 0xd88866,
-      ambient: 0x886655,
-      ambientIntensity: 0.9,
-    },
-    NOON: {
-      sun: 0xfff7e2,
-      sky: 0x7eaec9,
-      fog: 0x7eaec9,
-      ambient: 0xdde8f0,
-      ambientIntensity: 1.35,
-    },
-    DUSK: {
-      sun: 0xff4422,
-      sky: 0x883344,
-      fog: 0x883344,
-      ambient: 0x663333,
-      ambientIntensity: 0.85,
-    },
-    NIGHT: {
-      sun: 0x224488,
-      sky: 0x060b14,
-      fog: 0x060b14,
-      ambient: 0x142036,
-      ambientIntensity: 0.45,
-    }
-  }
+export const RESOURCES = {
+  AETHER_ESSENCE: {
+    id: 'AETHER_ESSENCE',
+    name: 'Aether Essence',
+    icon: '🔹',
+    color: 0x55eaff,
+  },
+  EMBER_ORE: {
+    id: 'EMBER_ORE',
+    name: 'Ember Ore',
+    icon: '🪨',
+    color: 0xff7138,
+  },
+  IRONWOOD: {
+    id: 'IRONWOOD',
+    name: 'Ironwood',
+    icon: '🪵',
+    color: 0xb58a54,
+  },
+  MOON_HERB: {
+    id: 'MOON_HERB',
+    name: 'Moon Herb',
+    icon: '🌿',
+    color: 0x83e879,
+  },
+};
+
+export const CRAFTING_RECIPES = {
+  SPEED: {
+    id: 'SPEED',
+    name: 'Windrunner Boots',
+    icon: '🥾',
+    description: '+60% speed for 6 seconds',
+    ingredients: { AETHER_ESSENCE: 1, IRONWOOD: 1 },
+  },
+  JUMP: {
+    id: 'JUMP',
+    name: 'Springstep Boots',
+    icon: '🦘',
+    description: 'Powerful jumps for 8 seconds',
+    ingredients: { IRONWOOD: 1, MOON_HERB: 1 },
+  },
+  SHIELD: {
+    id: 'SHIELD',
+    name: 'Aether Ward',
+    icon: '🛡️',
+    description: 'Block one hazard hit',
+    ingredients: { AETHER_ESSENCE: 1, EMBER_ORE: 1 },
+  },
+  HEALTH: {
+    id: 'HEALTH',
+    name: 'Vitality Draught',
+    icon: '🧪',
+    description: 'Restore 30 health',
+    ingredients: { AETHER_ESSENCE: 1, MOON_HERB: 2 },
+  },
+};
+
+// Fixed daylight keeps the world clearly visible throughout every match.
+export const DAYLIGHT_CONFIG = {
+  sun: 0xfff7e2,
+  sky: 0x7eaec9,
+  fog: 0x7eaec9,
+  ambient: 0xdde8f0,
+  ambientIntensity: 1.35,
+  sunIntensity: 2.2,
+  sunOffset: { x: 70, y: 130, z: 60 },
 };

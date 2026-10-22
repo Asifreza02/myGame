@@ -234,6 +234,10 @@ export class WorldManager {
           chunk.waterMesh.geometry.dispose();
         }
         if (chunk.propsGroup) this.scene.remove(chunk.propsGroup);
+        for (const collider of chunk.colliders || []) {
+          const colliderIndex = this.colliders.indexOf(collider);
+          if (colliderIndex !== -1) this.colliders.splice(colliderIndex, 1);
+        }
         this.chunks.delete(key);
       } else {
         // Animate water ripple
@@ -348,7 +352,13 @@ export class WorldManager {
     // Generate biome-specific props & monoliths
     const propsGroup = this.createChunkProps(cx, cz);
 
-    this.chunks.set(key, { mesh, waterMesh, propsGroup, key });
+    this.chunks.set(key, {
+      mesh,
+      waterMesh,
+      propsGroup,
+      colliders: propsGroup ? propsGroup.userData.colliders : [],
+      key,
+    });
     if (this.onChunkCreated) {
       this.onChunkCreated(cx, cz);
     }
@@ -356,6 +366,7 @@ export class WorldManager {
 
   createChunkProps(cx, cz) {
     const group = new THREE.Group();
+    group.userData.colliders = [];
     const worldOriginX = cx * this.chunkSize;
     const worldOriginZ = cz * this.chunkSize;
 
@@ -391,7 +402,7 @@ export class WorldManager {
 
           const rotY = rng() * Math.PI * 2;
           rockMesh.rotation.set(rng() * 0.2, rotY, rng() * 0.2);
-          rockMesh.position.set(wx, wy + ry * 0.4, wz);
+          rockMesh.position.set(wx, wy + ry, wz);
           rockMesh.castShadow = true;
           rockMesh.receiveShadow = true;
           group.add(rockMesh);
@@ -400,11 +411,12 @@ export class WorldManager {
           const collider = {
             id: `rock_${cx}_${cz}`,
             type: 'CYLINDER',
-            center: { x: wx, y: wy + ry / 2, z: wz },
-            radius: Math.max(rx, rz) * 0.65,
-            height: ry,
+            center: { x: wx, y: wy + ry, z: wz },
+            radius: Math.max(rx, rz) * 1.05,
+            height: ry * 2,
           };
           this.colliders.push(collider);
+          group.userData.colliders.push(collider);
         }
       }
     }
@@ -439,6 +451,15 @@ export class WorldManager {
         tree.scale.set(s, s, s);
         tree.position.set(wx, wy, wz);
         group.add(tree);
+        const collider = {
+          id: `tree_${cx}_${cz}_${i}`,
+          type: 'CYLINDER',
+          center: { x: wx, y: wy + 1.5 * s, z: wz },
+          radius: 0.5 * s,
+          height: 3 * s,
+        };
+        this.colliders.push(collider);
+        group.userData.colliders.push(collider);
       } else if (dominantBiome === BIOMES.SNOW) {
         // Snow-capped conifer
         const tree = new THREE.Group();
@@ -454,6 +475,15 @@ export class WorldManager {
         tree.scale.set(s, s, s);
         tree.position.set(wx, wy, wz);
         group.add(tree);
+        const collider = {
+          id: `tree_${cx}_${cz}_${i}`,
+          type: 'CYLINDER',
+          center: { x: wx, y: wy + 1.5 * s, z: wz },
+          radius: 0.5 * s,
+          height: 3 * s,
+        };
+        this.colliders.push(collider);
+        group.userData.colliders.push(collider);
       } else if (dominantBiome === BIOMES.DESERT) {
         // Sandstone pillar / desert scrub
         const shrubGeo = new THREE.DodecahedronGeometry(0.9, 0);
@@ -461,12 +491,30 @@ export class WorldManager {
         shrub.position.set(wx, wy + 0.8, wz);
         shrub.scale.set(1.2 + rng() * 0.8, 1.4 + rng() * 1.2, 1.2 + rng() * 0.8);
         group.add(shrub);
+        const collider = {
+          id: `shrub_${cx}_${cz}_${i}`,
+          type: 'CYLINDER',
+          center: { x: wx, y: wy + shrub.scale.y * 0.9, z: wz },
+          radius: Math.max(shrub.scale.x, shrub.scale.z) * 0.65,
+          height: shrub.scale.y * 1.8,
+        };
+        this.colliders.push(collider);
+        group.userData.colliders.push(collider);
       } else if (dominantBiome === BIOMES.VOLCANIC) {
         // Glowing magma vent / basalt spire
         const ventGeo = new THREE.CylinderGeometry(0.8, 1.4, 1.2, 6);
         const vent = new THREE.Mesh(ventGeo, this.obsidianMat);
         vent.position.set(wx, wy + 0.6, wz);
         group.add(vent);
+        const collider = {
+          id: `vent_${cx}_${cz}_${i}`,
+          type: 'CYLINDER',
+          center: { x: wx, y: wy + 0.6, z: wz },
+          radius: 1.4,
+          height: 1.2,
+        };
+        this.colliders.push(collider);
+        group.userData.colliders.push(collider);
 
         const coreGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 6);
         const core = new THREE.Mesh(coreGeo, this.lavaVentMat);

@@ -1,5 +1,13 @@
 import * as THREE from '/three/three.module.js';
-import { GAME_CONFIG, OBSTACLES, ROLE_DEFINITIONS, DAY_NIGHT_CONFIG, BIOMES } from './config.js';
+import {
+  GAME_CONFIG,
+  OBSTACLES,
+  ROLE_DEFINITIONS,
+  DAY_NIGHT_CONFIG,
+  BIOMES,
+  CRAFTING_RECIPES,
+  RESOURCES,
+} from './config.js';
 import { WorldManager } from './world.js';
 import { GoalBeacon } from './goal.js';
 import { ObstacleManager } from './obstacles.js';
@@ -33,7 +41,8 @@ class GameApp {
     this.todName = '☀️ MIDDAY';
     this.stats = {
       distanceTraversed: 0,
-      powerupsCollected: 0,
+      resourcesCollected: 0,
+      itemsCrafted: 0,
       obstaclesPlaced: 0,
     };
     this.lastRunnerPosForDist = null;
@@ -133,20 +142,20 @@ class GameApp {
     this.saboteur.goalBeacon = this.goalBeacon;
     this.saboteur.worldManager = this.worldManager;
 
-    // Phase 3: Power-Ups & Collectible Crystals Manager
+    // Phase 3: Power-Up Items Manager
     this.powerUpManager = new PowerUpManager(
       this.scene,
       this.worldManager,
       this.particles,
       (id, type, role) => {
-        this.stats.powerupsCollected += 1;
+        this.stats.resourcesCollected += 1;
         if (this.network) {
           this.network.sendPowerupCollect(id, type, role);
         }
       }
     );
 
-    // Stream crystal spawning on chunk generation
+    // Spawn power-up items as terrain chunks are generated.
     this.worldManager.onChunkCreated = (cx, cz) => {
       this.powerUpManager.populateChunk(cx, cz);
     };
@@ -445,6 +454,29 @@ class GameApp {
       });
     };
 
+    const recipeList = document.getElementById('recipe-list');
+    if (recipeList) {
+      recipeList.addEventListener('click', (event) => {
+        const button = event.target.closest('.recipe-button');
+        if (!button || button.disabled || this.activeRole !== 'runner') return;
+        if (button.dataset.action === 'craft') {
+          const result = this.powerUpManager.craft(button.dataset.item);
+          if (result.success) {
+            this.stats.itemsCrafted += 1;
+            this.showCraftingMessage(`Crafted ${result.item.name}.`);
+          } else {
+            this.showCraftingMessage(result.reason);
+          }
+        } else if (button.dataset.action === 'use') {
+          const result = this.powerUpManager.useItem(button.dataset.item, this.runner);
+          this.showCraftingMessage(
+            result.success ? `Used ${result.item.name}.` : result.reason,
+          );
+        }
+        this.updateCraftingHUD();
+      });
+    }
+
     document.querySelectorAll('.hotbar-item').forEach((item) => {
       item.addEventListener('click', () => {
         if (!this.saboteur.enabled) return;
@@ -606,6 +638,52 @@ class GameApp {
     this.network.sendPlaceObstacle(type, pos, rot);
   }
 
+  showCraftingMessage(message) {
+    const element = document.getElementById('crafting-message');
+    if (element) element.innerText = message;
+  }
+
+  updateCraftingHUD() {
+    if (!this.powerUpManager) return;
+    if (this.lastCraftingInventoryVersion === this.powerUpManager.inventoryVersion) return;
+    this.lastCraftingInventoryVersion = this.powerUpManager.inventoryVersion;
+    const inventory = this.powerUpManager.getInventory();
+
+    const resourceInventory = document.getElementById('resource-inventory');
+    if (resourceInventory) {
+      resourceInventory.innerHTML = Object.values(RESOURCES).map((resource) => `
+        <span class="resource-count" title="${resource.name}">
+          <span aria-hidden="true">${resource.icon}</span>
+          <span>${inventory.resources[resource.id] || 0}</span>
+        </span>
+      `).join('');
+    }
+
+    const recipeList = document.getElementById('recipe-list');
+    if (!recipeList) return;
+    recipeList.innerHTML = Object.values(CRAFTING_RECIPES).map((recipe) => {
+      const itemCount = inventory.items[recipe.id] || 0;
+      const canCraft = Object.entries(recipe.ingredients).every(
+        ([resourceId, amount]) => (inventory.resources[resourceId] || 0) >= amount,
+      );
+      const ingredients = Object.entries(recipe.ingredients)
+        .map(([resourceId, amount]) => `${RESOURCES[resourceId].icon} ${amount}`)
+        .join(' + ');
+      return `
+        <div class="recipe-row">
+          <div class="recipe-info">
+            <span class="recipe-name">${recipe.icon} ${recipe.name}</span>
+            <span class="recipe-ingredients">${ingredients} · ${recipe.description}</span>
+          </div>
+          <div class="recipe-actions">
+            <button type="button" class="recipe-button" data-action="craft" data-item="${recipe.id}" ${canCraft ? '' : 'disabled'}>Craft</button>
+            <button type="button" class="recipe-button use-recipe-button" data-action="use" data-item="${recipe.id}" ${itemCount > 0 ? '' : 'disabled'}>Use${itemCount > 0 ? ` (${itemCount})` : ''}</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
   handleGameOver(msg) {
     this.gameState = 'FINISHED';
     const modal = document.getElementById('game-over-modal');
@@ -636,26 +714,27 @@ class GameApp {
       if (statsContainer) {
         const timeElapsed = Math.max(1, Math.round(GAME_CONFIG.ROUND_TIME - this.timeRemaining));
         const dist = Math.round(this.stats.distanceTraversed);
-        const crystals = this.stats.powerupsCollected;
+        const resources = this.stats.resourcesCollected;
         const traps = this.stats.obstaclesPlaced;
 
         // Retrieve best records from localStorage
-        let bestStats = { bestDist: 0, bestCrystals: 0, bestTime: 999 };
+        let bestStats = { bestDist: 0, bestResources: 0, bestTime: 999 };
         try {
           const saved = localStorage.getItem('aetherbound_best_stats');
           if (saved) bestStats = JSON.parse(saved);
         } catch (e) {}
 
         let isNewBestDist = false;
-        let isNewBestCrystals = false;
+        let isNewBestResources = false;
 
         if (dist > (bestStats.bestDist || 0)) {
           bestStats.bestDist = dist;
           isNewBestDist = true;
         }
-        if (crystals > (bestStats.bestCrystals || 0)) {
-          bestStats.bestCrystals = crystals;
-          isNewBestCrystals = true;
+        const previousBestResources = bestStats.bestResources || bestStats.bestCrystals || 0;
+        if (resources > previousBestResources) {
+          bestStats.bestResources = resources;
+          isNewBestResources = true;
         }
         if (msg.winner === 'runner' && timeElapsed < (bestStats.bestTime || 999)) {
           bestStats.bestTime = timeElapsed;
@@ -673,8 +752,8 @@ class GameApp {
               <span class="stat-value">${dist}m ${isNewBestDist ? '<span class="stat-best">★ RECORD</span>' : ''}</span>
             </div>
             <div class="stat-item">
-              <span class="stat-name">💎 Crystals Collected:</span>
-              <span class="stat-value">${crystals} ${isNewBestCrystals ? '<span class="stat-best">★ RECORD</span>' : ''}</span>
+              <span class="stat-name">🧰 Resources Gathered:</span>
+              <span class="stat-value">${resources} ${isNewBestResources ? '<span class="stat-best">★ RECORD</span>' : ''}</span>
             </div>
             <div class="stat-item">
               <span class="stat-name">🧱 Traps Deployed:</span>
@@ -689,8 +768,8 @@ class GameApp {
               <span class="stat-value" style="color: #ffaa00;">${bestStats.bestDist || dist}m</span>
             </div>
             <div class="stat-item">
-              <span class="stat-name">⭐ All-Time Record Crystals:</span>
-              <span class="stat-value" style="color: #00d4ff;">${bestStats.bestCrystals || crystals}</span>
+              <span class="stat-name">⭐ All-Time Resource Record:</span>
+              <span class="stat-value" style="color: #00d4ff;">${bestStats.bestResources || resources}</span>
             </div>
           </div>
         `;
@@ -706,7 +785,8 @@ class GameApp {
     // Reset stats
     this.stats = {
       distanceTraversed: 0,
-      powerupsCollected: 0,
+      resourcesCollected: 0,
+      itemsCrafted: 0,
       obstaclesPlaced: 0,
     };
     this.lastRunnerPosForDist = null;
@@ -719,7 +799,7 @@ class GameApp {
       this.saboteur.goalBeacon = this.goalBeacon;
     }
 
-    // Reset obstacles & crystals
+    // Reset obstacles and power-up items.
     this.obstacleManager.clear();
     if (this.powerUpManager) {
       this.powerUpManager.clear();
@@ -863,9 +943,10 @@ class GameApp {
       // 2. Update Obstacle Physics (e.g. Rolling Boulders)
       this.obstacleManager.update(dt);
 
-      // Phase 3: Update Power-Up Energy Crystals
+      // Phase 3: Update power-up items.
       if (this.powerUpManager) {
-        this.powerUpManager.update(dt, [this.runner, this.saboteur], elapsedTime);
+        const pickupCharacters = this.activeRole === 'runner' ? [this.runner] : [];
+        this.powerUpManager.update(dt, pickupCharacters, elapsedTime);
       }
 
       // GPU Particle System
@@ -964,6 +1045,7 @@ class GameApp {
   }
 
   updateHUD(time) {
+    this.updateCraftingHUD();
     const activeChar = (this.activeRole === 'saboteur') ? this.saboteur : this.runner;
 
     // Phase 3: Current Biome Detection & Badge

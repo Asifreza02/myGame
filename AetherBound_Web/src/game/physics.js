@@ -17,27 +17,19 @@ export class PhysicsSystem {
     character.velocity.y -= GAME_CONFIG.RUNNER.GRAVITY * dt;
     pos.y += character.velocity.y * dt;
 
-    // Terrain ground check
-    const terrainHeight = this.worldManager.getHeightAt(pos.x, pos.z);
-
-    if (pos.y <= terrainHeight) {
-      pos.y = terrainHeight;
-      character.velocity.y = 0;
-      character.isGrounded = true;
-    } else {
-      // Small tolerance for grounded state
-      character.isGrounded = (pos.y - terrainHeight < 0.2);
-    }
-
     // Check obstacle collisions & damage
     let inMud = false;
+    const characterHeight = GAME_CONFIG.RUNNER.HEIGHT || 1.8;
 
     for (const obs of this.obstacleManager.obstacles.values()) {
       const def = obs.definition;
 
       switch (def.type) {
         case 'SOLID': { // Wall
-          this.resolveBoxCollision(pos, radius, obs.mesh.position, def.size, obs.rotation.y);
+          this.resolveBoxCollision(pos, radius, obs.mesh.position, def.size, obs.rotation.y, {
+            bottom: obs.mesh.position.y,
+            top: obs.mesh.position.y + def.size.height,
+          }, characterHeight);
           break;
         }
 
@@ -55,7 +47,15 @@ export class PhysicsSystem {
           const dx = pos.x - obs.position.x;
           const dz = pos.z - obs.position.z;
           const dist2D = Math.sqrt(dx * dx + dz * dz);
-          if (dist2D < def.size.width / 2 + radius && Math.abs(pos.y - obs.position.y) < def.size.height) {
+          if (pos.y < obs.position.y + def.size.height && pos.y + characterHeight > obs.position.y) {
+            this.resolveBoxCollision(pos, radius, obs.mesh.position, def.size, obs.rotation.y, {
+              bottom: obs.mesh.position.y,
+              top: obs.mesh.position.y + def.size.height,
+            }, characterHeight);
+          }
+          if (dist2D < def.size.width / 2 + radius &&
+              pos.y < obs.position.y + def.size.height &&
+              pos.y + characterHeight > obs.position.y) {
             // Apply knockback away from spikes
             const knockAngle = Math.atan2(dz, dx);
             character.velocity.x = Math.cos(knockAngle) * def.knockback;
@@ -68,14 +68,21 @@ export class PhysicsSystem {
         }
 
         case 'DYNAMIC': { // Boulder
-          const dx = pos.x - obs.position.x;
-          const dy = (pos.y + 0.9) - obs.position.y;
-          const dz = pos.z - obs.position.z;
-          const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (dist3D < def.radius + radius) {
+          const boulderContact = this.resolveSphereCollision(
+            pos,
+            radius,
+            characterHeight,
+            obs.mesh.position,
+            def.radius
+          );
+          if (boulderContact) {
             // Boulder hit!
-            const hitDir = new THREE.Vector3(dx, 0.5, dz).normalize();
-            character.velocity.addScaledVector(hitDir, 16.0);
+            const dx = pos.x - obs.position.x;
+            const dz = pos.z - obs.position.z;
+            const hitLength = Math.sqrt(dx * dx + 0.25 + dz * dz) || 1;
+            character.velocity.x += (dx || 0.001) / hitLength * 16.0;
+            character.velocity.y += 0.5 / hitLength * 16.0;
+            character.velocity.z += (dz || 0.001) / hitLength * 16.0;
             if (character.takeDamage) character.takeDamage(35, 'boulder');
             else if (character.onHazardHit) character.onHazardHit();
           }
@@ -84,7 +91,7 @@ export class PhysicsSystem {
 
         case 'EXPLOSIVE': { // Explosive Barrel
           const dx = pos.x - obs.position.x;
-          const dy = (pos.y + 0.9) - obs.position.y;
+          const dy = (pos.y + characterHeight / 2) - (obs.position.y + def.size.height / 2);
           const dz = pos.z - obs.position.z;
           const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
           const triggerDist = (def.size ? def.size.radius : 1.1) + radius + 0.6;
@@ -141,17 +148,32 @@ export class PhysicsSystem {
       for (const col of this.worldManager.colliders) {
         if (!col) continue;
         if (col.type === 'BOX') {
-          this.resolveBoxCollision(pos, radius, col.center, col.size, col.rotationY);
+          this.resolveBoxCollision(pos, radius, col.center, col.size, col.rotationY, {
+            bottom: col.center.y - col.size.height / 2,
+            top: col.center.y + col.size.height / 2,
+          }, characterHeight);
         } else if (col.type === 'CYLINDER') {
-          this.resolveCylinderCollision(pos, radius, col.center, col.radius);
+          this.resolveCylinderCollision(pos, radius, col.center, col.radius, col.height, characterHeight);
         }
       }
+    }
+
+    // Resolve terrain after horizontal collision pushes so the feet follow the final position.
+    const terrainHeight = this.worldManager.getHeightAt(pos.x, pos.z);
+    if (pos.y <= terrainHeight) {
+      pos.y = terrainHeight;
+      character.velocity.y = 0;
+      character.isGrounded = true;
+    } else {
+      character.isGrounded = pos.y - terrainHeight < 0.2;
     }
 
     // Water wading detection
     const isInWater = (pos.y <= this.worldManager.waterLevel + 0.25);
     character.isInWater = isInWater;
     character.isSlowed = inMud;
+    const characterMesh = character.group || character.mesh;
+    if (characterMesh) characterMesh.position.copy(pos);
   }
 
   // Alias for backward compatibility
@@ -160,23 +182,31 @@ export class PhysicsSystem {
   }
 
   // Cylindrical collision resolution for big monolithic rocks
-  resolveCylinderCollision(playerPos, playerRadius, cylCenter, cylRadius) {
+  resolveCylinderCollision(playerPos, playerRadius, cylCenter, cylRadius, cylHeight = Infinity, playerHeight = 1.8) {
+    if (playerPos.y >= cylCenter.y + cylHeight / 2 ||
+        playerPos.y + playerHeight <= cylCenter.y - cylHeight / 2) return;
+
     const dx = playerPos.x - cylCenter.x;
     const dz = playerPos.z - cylCenter.z;
     const distSq = dx * dx + dz * dz;
     const minDist = cylRadius + playerRadius;
 
-    if (distSq < minDist * minDist && distSq > 0.0001) {
-      const dist = Math.sqrt(distSq);
-      const pushX = (dx / dist) * (minDist - dist);
-      const pushZ = (dz / dist) * (minDist - dist);
+    if (distSq < minDist * minDist) {
+      const dist = Math.sqrt(distSq) || 0.001;
+      const normalX = distSq > 0.0001 ? dx / dist : 1;
+      const normalZ = distSq > 0.0001 ? dz / dist : 0;
+      const pushX = normalX * (minDist - dist);
+      const pushZ = normalZ * (minDist - dist);
       playerPos.x += pushX;
       playerPos.z += pushZ;
     }
   }
 
   // AABB / Oriented Box collision resolution
-  resolveBoxCollision(playerPos, playerRadius, boxCenter, boxSize, boxRotationY = 0) {
+  resolveBoxCollision(playerPos, playerRadius, boxCenter, boxSize, boxRotationY = 0, verticalBounds = null, playerHeight = 1.8) {
+    if (verticalBounds &&
+        (playerPos.y >= verticalBounds.top || playerPos.y + playerHeight <= verticalBounds.bottom)) return;
+
     // Relative vector from box center to player
     let rx = playerPos.x - boxCenter.x;
     let rz = playerPos.z - boxCenter.z;
@@ -218,6 +248,69 @@ export class PhysicsSystem {
         playerPos.z = boxCenter.z + rz;
       }
     }
+  }
+
+  resolveCharacterCollision(first, second) {
+    if (!first || !second) return;
+
+    const characterHeight = GAME_CONFIG.RUNNER.HEIGHT || 1.8;
+    if (first.position.y >= second.position.y + characterHeight ||
+        second.position.y >= first.position.y + characterHeight) return;
+
+    const minDistance = (GAME_CONFIG.RUNNER.RADIUS || 0.8) * 2;
+    let dx = first.position.x - second.position.x;
+    let dz = first.position.z - second.position.z;
+    const distanceSq = dx * dx + dz * dz;
+    if (distanceSq >= minDistance * minDistance) return;
+
+    let distance = Math.sqrt(distanceSq);
+    if (distance < 0.001) {
+      dx = 1;
+      dz = 0;
+      distance = 0.001;
+    }
+
+    const push = (minDistance - distance) / 2;
+    const pushX = (dx / distance) * push;
+    const pushZ = (dz / distance) * push;
+    first.position.x += pushX;
+    first.position.z += pushZ;
+    second.position.x -= pushX;
+    second.position.z -= pushZ;
+
+    this.syncAfterCharacterCollision(first);
+    this.syncAfterCharacterCollision(second);
+  }
+
+  resolveSphereCollision(playerPos, playerRadius, playerHeight, sphereBase, sphereRadius) {
+    const sphereCenterY = sphereBase.y + sphereRadius;
+    const capsuleBottom = playerPos.y + playerRadius;
+    const capsuleTop = playerPos.y + playerHeight - playerRadius;
+    const closestY = THREE.MathUtils.clamp(sphereCenterY, capsuleBottom, capsuleTop);
+    const dy = closestY - sphereCenterY;
+    const dx = playerPos.x - sphereBase.x;
+    const dz = playerPos.z - sphereBase.z;
+    const combinedRadius = playerRadius + sphereRadius;
+    const horizontalDistanceSq = dx * dx + dz * dz;
+    const horizontalContactRadiusSq = combinedRadius * combinedRadius - dy * dy;
+
+    if (horizontalContactRadiusSq <= 0 || horizontalDistanceSq >= horizontalContactRadiusSq) return false;
+
+    const horizontalDistance = Math.sqrt(horizontalDistanceSq);
+    const directionX = horizontalDistance > 0.001 ? dx / horizontalDistance : 1;
+    const directionZ = horizontalDistance > 0.001 ? dz / horizontalDistance : 0;
+    const penetration = Math.sqrt(horizontalContactRadiusSq) - horizontalDistance;
+    playerPos.x += directionX * penetration;
+    playerPos.z += directionZ * penetration;
+    return true;
+  }
+
+  syncAfterCharacterCollision(character) {
+    if (character.isGrounded) {
+      character.position.y = this.worldManager.getHeightAt(character.position.x, character.position.z);
+    }
+    const mesh = character.group || character.mesh;
+    if (mesh) mesh.position.copy(character.position);
   }
 
   // Exact Raycast from camera and normalized mouse screen coordinates to open-world terrain

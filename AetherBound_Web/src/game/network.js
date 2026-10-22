@@ -14,8 +14,13 @@ export class NetworkClient {
   }
 
   connect() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}?role=${encodeURIComponent(this.role)}&room=${encodeURIComponent(this.room)}`;
+    const pageProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const isLocalDevelopment = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const serverUrl = process.env.NEXT_PUBLIC_GAME_SERVER_URL ||
+      (isLocalDevelopment ? `${pageProtocol}//localhost:3000` : `${pageProtocol}//${window.location.host}`);
+    const wsUrl = new URL(serverUrl);
+    wsUrl.searchParams.set('role', this.role);
+    wsUrl.searchParams.set('room', this.room);
 
     this.ws = new WebSocket(wsUrl);
 
