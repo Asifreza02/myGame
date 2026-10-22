@@ -4,9 +4,9 @@
   "description": "Two-Player Open-World 3D Asymmetric Game - Runner vs. Saboteur",
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start -p 3001",
+    "start": "next start ",
     "server": "node server/server.js"
   },
   "engines": {

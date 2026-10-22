@@ -23,7 +23,6 @@ export class WorldManager {
     this.terrainMaterial = new THREE.MeshLambertMaterial({
       vertexColors: true,
       flatShading: true,
-      roughness: 0.9,
     });
 
     this.waterMaterial = new THREE.MeshStandardMaterial({

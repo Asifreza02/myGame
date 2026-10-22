@@ -18,76 +18,82 @@ export function RoleSelectModal({
   };
 
   return (
-    <div className="modal-overlay" id="modal-role-select">
-      <div className="modal-card">
-        <h1 className="modal-title">AETHERBOUND</h1>
+    <div className="modal-overlay" id="modal-role-select" role="dialog" aria-modal="true" aria-labelledby="role-select-title">
+      <div className="modal-card role-select-card">
+        <div className="menu-kicker"><span className="brand-mark">A</span> AN ASYMMETRIC OPEN-WORLD SHOWDOWN</div>
+        <h1 className="modal-title" id="role-select-title">AETHERBOUND</h1>
         <p className="modal-subtitle">
-          Real-Time Asymmetric Survival &amp; Sabotage. Choose your combat operative class and join a match.
+          One world. Two sides. Choose how the run unfolds.
         </p>
 
-        {/* Room Code Selector */}
         <div className="room-selector-box">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span className="hud-label">MATCHMAKING ROOM CODE:</span>
-            <span
-              className="hotkey-pill interactive"
-              onClick={handleRandomRoom}
-              style={{ cursor: 'pointer' }}
-            >
-              🎲 GENERATE RANDOM
-            </span>
+          <div className="room-selector-heading">
+            <label className="hud-label" htmlFor="room-input">MATCH ROOM</label>
+            <span className="room-helper">Share this code to play together</span>
           </div>
           <div className="room-input-row">
             <input
               id="room-input"
               type="text"
-              placeholder="default"
+              placeholder="Enter a room name"
               value={room}
+              maxLength={24}
+              autoComplete="off"
               onChange={(e) => setRoom(e.target.value)}
             />
+            <button
+              type="button"
+              className="generate-room-button interactive"
+              onClick={handleRandomRoom}
+              aria-label="Generate a random room code"
+              title="Generate a random room code"
+            >
+              DICE
+            </button>
           </div>
         </div>
 
-        {/* Role Cards */}
         <div className="role-cards">
-          <div
-            className="role-option-card interactive"
+          <button
+            type="button"
+            className="role-option-card runner-card interactive"
             id="btn-select-runner"
             onClick={() => onSelectRole('runner', room)}
           >
-            <div className="card-icon">🏃</div>
-            <div className="card-title" style={{ color: 'var(--neon-cyan)' }}>
-              THE RUNNER
-            </div>
-            <div className="card-desc">
-              Search the terrain for Aether Essence, Ember Ore, Ironwood, and Moon Herb. Combine resources to craft boots, wards, and healing draughts before reaching the Beacon.
-            </div>
-          </div>
+            <span className="role-card-topline"><span>01 / RUN THE GAUNTLET</span><span className="role-card-arrow">↗</span></span>
+            <span className="card-icon" aria-hidden="true">🏃</span>
+            <span className="card-title">THE RUNNER</span>
+            <span className="card-desc">
+              Outrun the traps. Scavenge rare resources, craft your edge, and reach the Beacon.
+            </span>
+            <span className="role-card-cta">PLAY AS RUNNER <span aria-hidden="true">→</span></span>
+          </button>
 
-          <div
+          <button
+            type="button"
             className="role-option-card saboteur-card interactive"
             id="btn-select-saboteur"
             onClick={() => onSelectRole('saboteur', room)}
           >
-            <div className="card-icon">⚡</div>
-            <div className="card-title" style={{ color: 'var(--neon-orange)' }}>
-              THE SABOTEUR
-            </div>
-            <div className="card-desc">
-              Maneuver in full 3D, deploy walls, mud traps, spikes, boulders &amp; explosive barrels along your aim POV to halt the runner before time expires.
-            </div>
-          </div>
+            <span className="role-card-topline"><span>02 / CONTROL THE TERRAIN</span><span className="role-card-arrow">↗</span></span>
+            <span className="card-icon" aria-hidden="true">⚡</span>
+            <span className="card-title">THE SABOTEUR</span>
+            <span className="card-desc">
+              Read the route. Build a deadly gauntlet of barriers, traps, and rolling hazards.
+            </span>
+            <span className="role-card-cta">PLAY AS SABOTEUR <span aria-hidden="true">→</span></span>
+          </button>
         </div>
 
-        {/* Local Dual / Solo Testing */}
         <button
-          className="btn-primary interactive"
+          type="button"
+          className="btn-secondary local-play-button interactive"
           id="btn-select-local"
           onClick={() => onSelectLocalDual(room)}
-          style={{ width: '100%', marginBottom: '10px' }}
         >
-          🎮 LOCAL DUAL PLAY (Switch with [Tab])
+          <span aria-hidden="true">⌘</span> PLAY LOCAL • SWITCH SIDES WITH TAB
         </button>
+        <p className="menu-footer">WASD TO MOVE <span>·</span> SHIFT TO SPRINT <span>·</span> BUILT FOR DESKTOP &amp; TOUCH</p>
       </div>
     </div>
   );

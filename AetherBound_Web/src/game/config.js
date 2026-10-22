@@ -287,10 +287,10 @@ export const CRAFTING_RECIPES = {
 // Fixed daylight keeps the world clearly visible throughout every match.
 export const DAYLIGHT_CONFIG = {
   sun: 0xfff7e2,
-  sky: 0x7eaec9,
-  fog: 0x7eaec9,
-  ambient: 0xdde8f0,
-  ambientIntensity: 1.35,
-  sunIntensity: 2.2,
+  sky: 0xa8bdb4,
+  fog: 0xa8bdb4,
+  ambient: 0xd9e8e5,
+  ambientIntensity: 1.25,
+  sunIntensity: 2.0,
   sunOffset: { x: 70, y: 130, z: 60 },
 };

@@ -2,8 +2,8 @@ import '../src/styles/index.css';
 import '../src/styles/hud.css';
 
 export const metadata = {
-  title: 'AetherBound: Sabotage - 3D Asymmetric Open World',
-  description: 'A real-time asymmetric survival and sabotage game. Choose your role and join a match.',
+  title: 'AetherBound: Sabotage | Run the Gauntlet',
+  description: 'Outrun the traps or control the terrain in AetherBound, a tactical open-world showdown.',
   applicationName: 'AetherBound',
   appleWebApp: {
     capable: true,
@@ -20,7 +20,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#0e141d',
+  themeColor: '#11191b',
 };
 
 export default function RootLayout({ children }) {

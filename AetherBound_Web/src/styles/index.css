@@ -1,13 +1,15 @@
 /* Cyber-Sci-Fi Base Theme & Resets */
 
 :root {
-  --neon-cyan: #00ffff;
-  --neon-blue: #0088ff;
-  --neon-orange: #ff9900;
-  --neon-red: #ff3344;
-  --neon-green: #00ff88;
-  --bg-dark: rgba(10, 16, 26, 0.75);
-  --border-glow: rgba(0, 255, 255, 0.3);
+  --neon-cyan: #79f2df;
+  --neon-blue: #68bfff;
+  --neon-orange: #ffb36b;
+  --neon-red: #ff657c;
+  --neon-green: #8cf0bf;
+  --bg-dark: rgba(11, 17, 24, 0.78);
+  --border-glow: rgba(177, 214, 222, 0.16);
+  --text-primary: #f3f4ec;
+  --text-muted: #a4b0b3;
 }
 
 * {
@@ -21,9 +23,9 @@ body, html {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-  background-color: #0e141d;
-  color: #e0f0ff;
+  font-family: Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  background-color: #11191b;
+  color: var(--text-primary);
   touch-action: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
@@ -61,4 +63,7 @@ input,
   width: 100%;
   height: 100%;
   z-index: 1;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(101, 141, 129, 0.12), transparent 58%),
+    linear-gradient(180deg, #1c292d, #11191b);
 }
