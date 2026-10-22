@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AetherBound: Sabotage - 3D Asymmetric Open World</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20%220%22%20%22100%22%20%22100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body>
+  <!-- 3D WebGL Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- Top Bar HUD -->
+  <div id="top-hud">
+    <div class="hud-panel" id="role-panel">
+      <div class="hud-label">ROLE</div>
+      <div id="role-badge" class="role-tag runner">RUNNER</div>
+    </div>
+
+    <div class="hud-panel" id="timer-box">
+      <div class="hud-label">TIME REMAINING</div>
+      <div id="hud-timer">1:30</div>
+    </div>
+
+    <div class="hud-panel" id="lobby-panel">
+      <div class="hud-label">MATCH SESSION</div>
+      <div id="lobby-status">Players: 1 Runner | 0 Saboteur</div>
+    </div>
+
+    <div class="hud-panel" id="room-panel">
+      <div class="hud-label">ROOM</div>
+      <div id="room-badge" class="room-tag">default</div>
+    </div>
+
+    <!-- Phase 3: Biome & Celestial Day/Night HUD -->
+    <div class="hud-panel" id="biome-panel">
+      <div class="hud-label">CURRENT BIOME</div>
+      <div id="biome-badge" class="biome-tag lush">🌿 LUSH MEADOWS</div>
+    </div>
+
+    <div class="hud-panel" id="tod-panel">
+      <div class="hud-label">CELESTIAL CYCLE</div>
+      <div id="tod-badge" class="tod-tag noon">☀️ MIDDAY</div>
+    </div>
+
+    <div class="hud-panel" id="ai-panel">
+      <div class="hud-label">SINGLE-PLAYER AUTO-SABOTEUR</div>
+      <button id="ai-saboteur-toggle" class="ai-active" title="Click to toggle AI automatic hazard placement">🤖 ACTIVE (Auto-Hazards)</button>
+    </div>
+  </div>
+
+  <!-- Real-time AI Hazard Warning Toast -->
+  <div id="ai-hazard-toast" class="toast-hide"></div>
+
+  <!-- Local Dual Mode / Hotseat Hint -->
+  <div id="local-dual-hint" class="hud-panel" style="display: none;">
+    <span>⚡ <b>[Tab]</b> Switch Role (Runner ⇄ Saboteur)</span>
+  </div>
+
+  <!-- Cursor Lock / Unlock Status Hint -->
+  <div id="cursor-unlock-hint" class="hud-panel cursor-hint" style="display: none;">
+    <span>🖱️ Press <b>[Esc]</b> to unlock cursor</span>
+  </div>
+
+  <!-- Fixed Aim Point (Center Crosshair Reticle) for Player -->
+  <div id="aim-reticle" class="aim-reticle" style="display: none;">
+    <div class="aim-dot"></div>
+    <div class="aim-circle"></div>
+    <div class="aim-bracket top"></div>
+    <div class="aim-bracket bottom"></div>
+    <div class="aim-bracket left"></div>
+    <div class="aim-bracket right"></div>
+  </div>
+
+  <!-- Full-Screen Damage Flash Vignette Overlay -->
+  <div id="damage-overlay"></div>
+
+  <!-- Runner HUD -->
+  <div id="runner-hud">
+    <div class="hud-panel health-container">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="hud-label">RUNNER INTEGRITY</span>
+        <span id="runner-health-text" class="health-text">100 / 100</span>
+      </div>
+      <div class="bar-track">
+        <div id="runner-health-fill" class="health-fill"></div>
+      </div>
+    </div>
+
+    <!-- Phase 3: Active Power-Up Buff Badges -->
+    <div id="runner-buffs" class="buff-container"></div>
+
+    <div class="hud-panel compass-container">
+      <div class="compass-dial">
+        <div id="compass-arrow"></div>
+      </div>
+      <div class="goal-info">
+        <div class="hud-label">BEACON DISTANCE</div>
+        <div id="distance-meter">180m</div>
+      </div>
+    </div>
+
+    <div class="hud-panel progress-container">
+      <div class="hud-label">RUNNER STAMINA [SHIFT TO SPRINT]</div>
+      <div class="bar-track">
+        <div id="stamina-fill"></div>
+      </div>
+    </div>
+
+    <!-- Direction Steering & Hotkey Panel -->
+    <div class="hud-panel view-controls-panel">
+      <div class="hud-label">RUNNER DIRECTION CONTROLS</div>
+      <div class="view-buttons-row">
+        <button id="btn-cycle-sens" class="view-btn" title="Cycle turn sensitivity (1.2x / 1.8x / 2.6x)">
+          <span id="sensitivity-badge">⚡ SENS: 1.2x</span>
+        </button>
+        <button id="btn-look-goal" class="view-btn" title="Aim seeing direction directly to Beacon Goal (Hotkey: F)">
+          <span>🎯 Aim at Goal</span> <span class="hotkey-pill">[F]</span>
+        </button>
+        <button id="btn-look-behind" class="view-btn" title="Reverse seeing direction 180° (Hotkey: C)">
+          <span>🔄 Behind</span> <span class="hotkey-pill">[C]</span>
+        </button>
+      </div>
+      <div class="view-hint">
+        <b>[Mouse / Trackpad]</b> Turn Left/Right &bull; <b>[W/S/A/D]</b> Move in Facing Direction &bull; <b>[Ctrl / C]</b> Slide &bull; <b>[Space]</b> Jump / Vault
+      </div>
+    </div>
+  </div>
+
+  <!-- Saboteur HUD -->
+  <div id="saboteur-hud" style="display: none;">
+    <div class="saboteur-top-row">
+      <div class="hud-panel health-container" style="width: 220px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="hud-label">SABOTEUR INTEGRITY</span>
+          <span id="saboteur-health-text" class="health-text">100 / 100</span>
+        </div>
+        <div class="bar-track">
+          <div id="saboteur-health-fill" class="health-fill"></div>
+        </div>
+      </div>
+
+      <div class="hud-panel progress-container" style="width: 170px;">
+        <div class="hud-label">STAMINA [SHIFT]</div>
+        <div class="bar-track">
+          <div id="saboteur-stamina-fill"></div>
+        </div>
+      </div>
+
+      <div class="hud-panel energy-container" style="width: 210px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="hud-label">TACTICAL ENERGY</span>
+          <span id="energy-text" style="font-size: 12px; font-weight: 700; color: var(--neon-orange);">100 / 100</span>
+        </div>
+        <div class="bar-track">
+          <div id="energy-fill"></div>
+        </div>
+      </div>
+
+      <div class="recon-panel">
+        <button id="btn-recon-pulse" class="recon-btn" title="Orbital Recon Pulse - Reveals Runner silhouette through obstacles for 6s [Hotkey: X]">
+          <div id="recon-cooldown-overlay"></div>
+          <span class="recon-label">📡 Recon Pulse</span>
+          <span class="hotkey-pill">[X]</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Phase 3: Active Power-Up Buff Badges -->
+    <div id="saboteur-buffs" class="buff-container"></div>
+
+    <!-- Real-Time 3D Placement Indicator Badge -->
+    <div id="placement-indicator" class="placement-indicator" style="display: none;">
+      <div id="placement-title" class="placement-title">🧱 WALL PLACEMENT</div>
+      <div id="placement-status" class="placement-status-valid">● READY TO PLACE [LEFT-CLICK] • [R] ROTATE • [ESC] CANCEL</div>
+      <div id="placement-dist" class="placement-dist">24m / 75m</div>
+    </div>
+
+    <div class="hotbar-container">
+      <div class="hotbar-item active" data-type="WALL" title="Impassable Concrete Barrier (100 HP, Destructible)">
+        <span class="hotkey-badge">[1]</span>
+        <div class="hotbar-icon">🧱</div>
+        <div class="hotbar-name">Wall</div>
+        <div class="hotbar-cost">25 ⚡</div>
+      </div>
+
+      <div class="hotbar-item" data-type="MUD" title="Slows Runner Speed by 65%">
+        <span class="hotkey-badge">[2]</span>
+        <div class="hotbar-icon">🧪</div>
+        <div class="hotbar-name">Mud Trap</div>
+        <div class="hotbar-cost">20 ⚡</div>
+      </div>
+
+      <div class="hotbar-item" data-type="SPIKES" title="Sharp Barricade with Knockback and Damage">
+        <span class="hotkey-badge">[3]</span>
+        <div class="hotbar-icon">⚡</div>
+        <div class="hotbar-name">Spikes</div>
+        <div class="hotbar-cost">35 ⚡</div>
+      </div>
+
+      <div class="hotbar-item" data-type="BOULDER" title="Heavy Rolling Physics Sphere (Bounces, Smashes Barrels & Walls)">
+        <span class="hotkey-badge">[4]</span>
+        <div class="hotbar-icon">☄️</div>
+        <div class="hotbar-name">Boulder</div>
+        <div class="hotbar-cost">40 ⚡</div>
+      </div>
+
+      <div class="hotbar-item" data-type="BARREL" title="Explosive Barrel (Detonates on Proximity or Boulder strike with fiery shockwave)">
+        <span class="hotkey-badge">[5]</span>
+        <div class="hotbar-icon">💥</div>
+        <div class="hotbar-name">Barrel</div>
+        <div class="hotbar-cost">45 ⚡</div>
+      </div>
+    </div>
+
+    <div class="saboteur-instructions">
+      <b>[Mouse]</b> Aim POV &bull; <b>[Wheel / Mouse Y]</b> Far/Near &bull; <b>[L-Click]</b> Deploy &bull; <b>[R]</b> Rotate &bull; <b>[1-5]</b> Traps &bull; <b>[Esc]</b> Unlock Cursor
+    </div>
+  </div>
+
+  <!-- Initial Role Selection Modal -->
+  <div id="modal-role-select" class="modal-overlay">
+    <div class="modal-card">
+      <h1 class="modal-title">AETHERBOUND: SABOTAGE</h1>
+      <p class="modal-subtitle">
+        An asymmetric two-player 3D game set in an endless open world.<br>
+        Will you navigate the terrain to reach the Beacon Goal, or deploy tactical obstacles to trap the runner before time expires?
+      </p>
+
+      <!-- Multi-Room Selector -->
+      <div class="room-selector-box">
+        <div class="hud-label" style="text-align: left; margin-bottom: 6px;">MATCH ROOM CODE</div>
+        <div class="room-input-row">
+          <input type="text" id="room-input" value="default" placeholder="e.g. room123" maxlength="16" spellcheck="false" autocomplete="off" />
+          <button id="btn-random-room" type="button" class="view-btn">🎲 Random</button>
+        </div>
+      </div>
+
+      <div class="role-cards">
+        <div class="role-option-card runner-card" id="btn-select-runner">
+          <div class="card-icon">🏃</div>
+          <div class="card-title" style="color: var(--neon-cyan);">THE RUNNER</div>
+          <div class="card-desc">
+            Race through procedural valleys and peaks in third-person 3D. Sprint, slide, vault, and reach the glowing Beacon Goal before time runs out!
+          </div>
+        </div>
+
+        <div class="role-option-card saboteur-card" id="btn-select-saboteur">
+          <div class="card-icon">🦹‍♂️</div>
+          <div class="card-title" style="color: var(--neon-orange);">THE SABOTEUR</div>
+          <div class="card-desc">
+            Play as the rival armored Cyber-Saboteur character. Glide across hills with dual thrusters, project tactical obstacles, and fire orbital recon pulses!
+          </div>
+        </div>
+      </div>
+
+      <button id="btn-select-local" class="btn-primary" style="width: 100%;">
+        🎮 Play Local Dual Mode (Control Both / Single Machine)
+      </button>
+
+      <div style="margin-top: 15px; font-size: 12px; color: #7f99b0;">
+        💡 <i>Multiplayer Tip</i>: Open two browser tabs with the same Room Code to play against each other in real-time!
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over Modal -->
+  <div id="game-over-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <h1 id="game-over-title" class="modal-title">RUNNER ESCAPED!</h1>
+      <p id="game-over-desc" class="modal-subtitle">The Runner reached the Beacon Goal in time!</p>
+      <div id="game-over-score" style="font-size: 16px; font-weight: 700; color: #ffaa00; margin-bottom: 16px;"></div>
+
+      <!-- Phase 3: Match Performance Stats Breakdown -->
+      <div id="match-stats-container" class="match-stats-container"></div>
+
+      <button id="restart-btn" class="btn-primary">
+        🔄 Play Next Round (New World Seed)
+      </button>
+    </div>
+  </div>
+
+  <!-- Application Main Script -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
