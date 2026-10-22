@@ -38,6 +38,8 @@ export class GameEngine {
     this.lastNetworkSync = 0;
     this.lastSaboteurSync = 0;
     this.lastStateEmit = 0;
+    this.serverStatus = 'WAITING';
+    this.pendingLocalRematch = false;
 
     this.todName = '☀️ DAYTIME';
     this.todClass = 'noon';
@@ -274,6 +276,7 @@ export class GameEngine {
   initNetwork(preferredRole) {
     this.network = new NetworkClient(preferredRole, {
       onInitState: (msg) => {
+        this.serverStatus = msg.status;
         if (!this.isLocalDual) {
           if (this.returningToMenu) {
             this.activeRole = msg.role;
@@ -303,7 +306,13 @@ export class GameEngine {
         this.activeRole = role;
         this.returningToMenu = false;
         this.roleSelectMessage = '';
-        this.setRole(role);
+        const waitingForServerRematch =
+          this.pendingLocalRematch &&
+          (this.serverStatus === 'RUNNER_WON' || this.serverStatus === 'SABOTEUR_WON');
+        if (this.pendingLocalRematch && !waitingForServerRematch) {
+          this.resetRound({ timeRemaining: GAME_CONFIG.ROUND_TIME });
+        }
+        if (!waitingForServerRematch) this.setRole(role);
       },
 
       onRoleAssignmentFailed: (message) => {
@@ -365,6 +374,7 @@ export class GameEngine {
 
       onTimerTick: (timeRemaining, status) => {
         this.timeRemaining = timeRemaining;
+        this.serverStatus = status;
         this.gameState = status;
         if (this.timeRemaining <= 15) {
           audio.playTick();
@@ -373,11 +383,15 @@ export class GameEngine {
       },
 
       onGameOver: (msg) => {
+        this.serverStatus = msg.winner === 'runner' ? 'RUNNER_WON' : 'SABOTEUR_WON';
         this.handleGameOver(msg);
       },
 
       onRoundStarted: (msg) => {
+        const resumeAfterRound = this.pendingLocalRematch;
+        this.serverStatus = msg.status || 'PLAYING';
         this.resetRound(msg);
+        if (resumeAfterRound) this.setRole(this.activeRole);
       },
 
       onPlayersUpdated: (counts) => {
@@ -467,6 +481,7 @@ export class GameEngine {
   }
 
   returnToMenu() {
+    this.pendingLocalRematch = Boolean(this.gameOverData);
     this.returningToMenu = true;
     this.isLocalDual = false;
     this.roleSelectMessage = '';
@@ -736,6 +751,7 @@ export class GameEngine {
   }
 
   resetRound(msg) {
+    this.pendingLocalRematch = false;
     this.returningToMenu = false;
     this.roleSelectMessage = '';
     this.gameState = 'PLAYING';
