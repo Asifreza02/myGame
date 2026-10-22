@@ -292,6 +292,39 @@ wss.on('connection', (ws, req) => {
         case 'REQUEST_RESTART':
           room.resetRound();
           break;
+
+        case 'REQUEST_ROLE': {
+          const requestedRole = msg.role;
+          const clientInfo = room.clients.get(ws);
+          if (!clientInfo || !['runner', 'saboteur'].includes(requestedRole)) {
+            break;
+          }
+
+          const roleTaken = [...room.clients.entries()].some(
+            ([clientWs, info]) => clientWs !== ws && info.role === requestedRole,
+          );
+          if (roleTaken) {
+            ws.send(JSON.stringify({
+              type: 'ROLE_ASSIGNMENT_FAILED',
+              message: `The ${requestedRole} role is already taken in this room. Choose the other role or a different room.`,
+            }));
+            break;
+          }
+
+          clientInfo.role = requestedRole;
+          ws.send(JSON.stringify({
+            type: 'ROLE_ASSIGNED',
+            role: requestedRole,
+          }));
+          room.broadcastAll({
+            type: 'PLAYERS_UPDATED',
+            playerCounts: room.getPlayerCounts(),
+          });
+          if (room.status === 'RUNNER_WON' || room.status === 'SABOTEUR_WON') {
+            room.resetRound();
+          }
+          break;
+        }
       }
     } catch (e) {
       console.error('WebSocket message parsing error:', e);

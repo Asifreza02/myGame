@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 export function RoleSelectModal({
   visible = true,
   currentRoom = 'default',
+  message = '',
   onSelectRole,
   onSelectLocalDual,
 }) {
@@ -25,6 +26,7 @@ export function RoleSelectModal({
         <p className="modal-subtitle">
           One world. Two sides. Choose how the run unfolds.
         </p>
+        {message && <p className="modal-subtitle" role="status">{message}</p>}
 
         <div className="room-selector-box">
           <div className="room-selector-heading">

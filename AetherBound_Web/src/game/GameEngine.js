@@ -27,6 +27,8 @@ export class GameEngine {
     this.roomCode = params.get('room') || 'default';
     const preferredRole = params.get('role');
     this.isLocalDual = params.get('mode') === 'local';
+    this.returningToMenu = params.get('menu') === '1';
+    this.roleSelectMessage = '';
 
     if (preferredRole) {
       this.activeRole = preferredRole;
@@ -273,7 +275,12 @@ export class GameEngine {
     this.network = new NetworkClient(preferredRole, {
       onInitState: (msg) => {
         if (!this.isLocalDual) {
-          this.setRole(msg.role);
+          if (this.returningToMenu) {
+            this.activeRole = msg.role;
+            this.gameState = 'ROLE_SELECT';
+          } else {
+            this.setRole(msg.role);
+          }
         }
         if (msg.seed) {
           this.worldManager.setSeed(msg.seed);
@@ -289,6 +296,18 @@ export class GameEngine {
           });
         }
         this.timeRemaining = msg.timeRemaining;
+        this.emitState();
+      },
+
+      onRoleAssigned: (role) => {
+        this.activeRole = role;
+        this.returningToMenu = false;
+        this.roleSelectMessage = '';
+        this.setRole(role);
+      },
+
+      onRoleAssignmentFailed: (message) => {
+        this.roleSelectMessage = message;
         this.emitState();
       },
 
@@ -433,6 +452,31 @@ export class GameEngine {
     }
 
     this.updateAISaboteurStatus();
+    this.emitState();
+  }
+
+  selectRole(role) {
+    if (this.returningToMenu) {
+      this.roleSelectMessage = this.network.requestRole(role)
+        ? ''
+        : 'Still connecting to the game server. Please try again in a moment.';
+      this.emitState();
+      return;
+    }
+    this.setRole(role);
+  }
+
+  returnToMenu() {
+    this.returningToMenu = true;
+    this.isLocalDual = false;
+    this.roleSelectMessage = '';
+    this.gameOverData = null;
+    this.gameState = 'ROLE_SELECT';
+    this.runner.enabled = false;
+    this.saboteur.enabled = false;
+    document.body.classList.remove('runner-mode', 'saboteur-placing', 'cursor-locked');
+    document.body.classList.add('cursor-unlocked');
+    if (document.pointerLockElement) document.exitPointerLock();
     this.emitState();
   }
 
@@ -692,8 +736,11 @@ export class GameEngine {
   }
 
   resetRound(msg) {
+    this.returningToMenu = false;
+    this.roleSelectMessage = '';
     this.gameState = 'PLAYING';
     this.gameOverData = null;
+    this.timeRemaining = msg.timeRemaining ?? GAME_CONFIG.ROUND_TIME;
 
     this.stats = {
       distanceTraversed: 0,
@@ -722,6 +769,8 @@ export class GameEngine {
 
     const startY = this.worldManager.getHeightAt(0, 0);
     this.runner.health = 100;
+    this.runner.stamina = GAME_CONFIG.RUNNER.STAMINA_MAX;
+    this.runner.isSprinting = false;
     this.runner.invulnerableTimer = 0;
     this.runner.speedBuffTimer = 0;
     this.runner.speedMultiplier = 1.0;
@@ -729,11 +778,20 @@ export class GameEngine {
     this.runner.bonusJumpForce = 0;
     this.runner.hasShield = false;
     this.runner.shieldTimer = 0;
+    this.runner.velocity.set(0, 0, 0);
+    this.runner.isSliding = false;
+    this.runner.isVaulting = false;
+    this.runner.joystickVector.x = 0;
+    this.runner.joystickVector.y = 0;
+    Object.keys(this.runner.keys).forEach((key) => { this.runner.keys[key] = false; });
     if (this.runner.shieldMesh) this.runner.shieldMesh.visible = false;
     this.runner.setState({ x: 0, y: startY + 1.0, z: 0, ry: 0, health: 100 });
 
     const saboY = this.worldManager.getHeightAt(25, 25);
     this.saboteur.health = 100;
+    this.saboteur.stamina = GAME_CONFIG.RUNNER.STAMINA_MAX;
+    this.saboteur.energy = GAME_CONFIG.SABOTEUR.MAX_ENERGY;
+    this.saboteur.isSprinting = false;
     this.saboteur.invulnerableTimer = 0;
     this.saboteur.speedBuffTimer = 0;
     this.saboteur.speedMultiplier = 1.0;
@@ -741,6 +799,15 @@ export class GameEngine {
     this.saboteur.bonusJumpForce = 0;
     this.saboteur.hasShield = false;
     this.saboteur.shieldTimer = 0;
+    this.saboteur.velocity.set(0, 0, 0);
+    this.saboteur.reconCooldownTimer = 0;
+    this.saboteur.reconActiveTimer = 0;
+    this.saboteur.isSliding = false;
+    this.saboteur.isVaulting = false;
+    this.saboteur.selectedType = 'WALL';
+    this.saboteur.isPlacing = true;
+    this.saboteur.placementRotation = 0;
+    Object.keys(this.saboteur.keys).forEach((key) => { this.saboteur.keys[key] = false; });
     if (this.saboteur.shieldMesh) this.saboteur.shieldMesh.visible = false;
     this.saboteur.setState({ x: 25, y: saboY + 1.0, z: 25, ry: Math.PI, health: 100 });
 
@@ -889,6 +956,7 @@ export class GameEngine {
       activeRole: this.activeRole,
       isLocalDual: this.isLocalDual,
       roomCode: this.roomCode,
+      roleSelectMessage: this.roleSelectMessage,
       timeRemaining: this.timeRemaining,
       playerCounts: this.playerCounts,
       environment: {

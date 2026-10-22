@@ -96,7 +96,7 @@ export function GameOverModal({ data = null, onRestart }) {
           id="restart-btn"
           onClick={onRestart}
         >
-          PLAY AGAIN
+          RETURN TO MAIN MENU
         </button>
       </div>
     </div>

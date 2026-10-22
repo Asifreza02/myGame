@@ -101,11 +101,15 @@ export function App() {
       window.location.href = `?role=${encodeURIComponent(role)}&room=${encodeURIComponent(room)}`;
       return;
     }
-    engineRef.current.setRole(role);
+    engineRef.current.selectRole(role);
   }, []);
 
   const handleSelectLocalDual = useCallback((room) => {
     if (!engineRef.current) return;
+    if (engineRef.current.returningToMenu) {
+      window.location.href = '?mode=local';
+      return;
+    }
     if (room && room !== engineRef.current.roomCode) {
       window.location.href = `?mode=local&room=${encodeURIComponent(room)}`;
       return;
@@ -158,10 +162,14 @@ export function App() {
   }, []);
 
   const handleRestart = useCallback(() => {
-    if (engineRef.current) engineRef.current.requestRestart();
+    if (!engineRef.current) return;
+    engineRef.current.returnToMenu();
   }, []);
 
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [orientationMessage, setOrientationMessage] = useState(
+    'If your phone does not rotate, enable Auto-rotate and turn it sideways.',
+  );
 
   useEffect(() => {
     const checkTouch = () => {
@@ -223,6 +231,29 @@ export function App() {
     if (engineRef.current) engineRef.current.toggleFullscreen();
   }, []);
 
+  const handleRequestLandscape = useCallback(async () => {
+    try {
+      const root = document.documentElement;
+      if (!document.fullscreenElement && root.requestFullscreen) {
+        await root.requestFullscreen();
+      }
+
+      if (screen.orientation?.lock) {
+        await screen.orientation.lock('landscape');
+        setOrientationMessage('Landscape enabled. Rotate your phone if the screen does not turn.');
+      } else {
+        setOrientationMessage(
+          'This browser cannot rotate automatically. Enable Auto-rotate and turn your phone sideways.',
+        );
+      }
+    } catch (error) {
+      console.warn('Could not lock the screen to landscape:', error);
+      setOrientationMessage(
+        'Landscape lock was blocked. Enable Auto-rotate and turn your phone sideways.',
+      );
+    }
+  }, []);
+
   const handleLockRequest = useCallback(() => {
     if (engineRef.current) engineRef.current.requestPointerLock();
   }, []);
@@ -240,7 +271,15 @@ export function App() {
       <div id="canvas-container" ref={containerRef} />
       <div className="orientation-hint" role="status">
         <span className="orientation-icon" aria-hidden="true">↻</span>
-        <span>Rotate your device to play in landscape</span>
+        <span>Play AetherBound in landscape</span>
+        <button
+          type="button"
+          className="orientation-button interactive"
+          onClick={handleRequestLandscape}
+        >
+          TRY LANDSCAPE
+        </button>
+        <span className="orientation-message">{orientationMessage}</span>
       </div>
 
       {/* Reticle */}
@@ -326,6 +365,7 @@ export function App() {
       <RoleSelectModal
         visible={engineState.gameState === 'ROLE_SELECT'}
         currentRoom={engineState.roomCode}
+        message={engineState.roleSelectMessage}
         onSelectRole={handleSelectRole}
         onSelectLocalDual={handleSelectLocalDual}
       />

@@ -96,6 +96,15 @@ export class NetworkClient {
         if (this.callbacks.onGameOver) this.callbacks.onGameOver(msg);
         break;
 
+      case 'ROLE_ASSIGNED':
+        this.role = msg.role;
+        if (this.callbacks.onRoleAssigned) this.callbacks.onRoleAssigned(msg.role);
+        break;
+
+      case 'ROLE_ASSIGNMENT_FAILED':
+        if (this.callbacks.onRoleAssignmentFailed) this.callbacks.onRoleAssignmentFailed(msg.message);
+        break;
+
       case 'ROUND_STARTED':
         if (this.callbacks.onRoundStarted) this.callbacks.onRoundStarted(msg);
         break;
@@ -113,7 +122,9 @@ export class NetworkClient {
   send(data) {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
+      return true;
     }
+    return false;
   }
 
   sendRunnerMove(state) {
@@ -171,5 +182,9 @@ export class NetworkClient {
 
   requestRestart() {
     this.send({ type: 'REQUEST_RESTART' });
+  }
+
+  requestRole(role) {
+    return this.send({ type: 'REQUEST_ROLE', role });
   }
 }
