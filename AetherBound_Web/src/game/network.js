@@ -109,6 +109,10 @@ export class NetworkClient {
         if (this.callbacks.onRoundStarted) this.callbacks.onRoundStarted(msg);
         break;
 
+      case 'RETURN_TO_LOBBY':
+        if (this.callbacks.onReturnToLobby) this.callbacks.onReturnToLobby(msg);
+        break;
+
       case 'PLAYERS_UPDATED':
         if (this.callbacks.onPlayersUpdated) this.callbacks.onPlayersUpdated(msg.playerCounts);
         break;
@@ -186,5 +190,9 @@ export class NetworkClient {
 
   requestRole(role) {
     return this.send({ type: 'REQUEST_ROLE', role });
+  }
+
+  returnToLobby() {
+    return this.send({ type: 'RETURN_TO_LOBBY' });
   }
 }

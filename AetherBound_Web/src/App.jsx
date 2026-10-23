@@ -24,7 +24,7 @@ export function App() {
     isLocalDual: false,
     roomCode: 'default',
     timeRemaining: 120,
-    playerCounts: { runner: 1, saboteur: 0, spectator: 0 },
+    playerCounts: { runner: 1, saboteur: 0, lobby: 0 },
     environment: { biome: null, todName: '☀️ DAYTIME', todClass: 'noon' },
     runnerStats: {
       health: 100,

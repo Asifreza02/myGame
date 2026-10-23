@@ -21,7 +21,7 @@ export class GameEngine {
     this.isLocalDual = false;
     this.gameState = 'PLAYING';
     this.timeRemaining = GAME_CONFIG.ROUND_TIME;
-    this.playerCounts = { runner: 1, saboteur: 0, spectator: 0 };
+    this.playerCounts = { runner: 1, saboteur: 0, lobby: 0 };
 
     const params = new URLSearchParams(window.location.search);
     this.roomCode = params.get('room') || 'default';
@@ -40,6 +40,7 @@ export class GameEngine {
     this.lastStateEmit = 0;
     this.serverStatus = 'WAITING';
     this.pendingLocalRematch = false;
+    this.gameOverTimeout = null;
 
     this.todName = '☀️ DAYTIME';
     this.todClass = 'noon';
@@ -281,6 +282,8 @@ export class GameEngine {
           if (this.returningToMenu) {
             this.activeRole = msg.role;
             this.gameState = 'ROLE_SELECT';
+          } else if (msg.role === 'lobby') {
+            this.setRole('lobby');
           } else {
             this.setRole(msg.role);
           }
@@ -375,7 +378,7 @@ export class GameEngine {
       onTimerTick: (timeRemaining, status) => {
         this.timeRemaining = timeRemaining;
         this.serverStatus = status;
-        this.gameState = status;
+        this.gameState = this.gameOverData ? 'FINISHED' : status;
         if (this.timeRemaining <= 15) {
           audio.playTick();
         }
@@ -392,6 +395,12 @@ export class GameEngine {
         this.serverStatus = msg.status || 'PLAYING';
         this.resetRound(msg);
         if (resumeAfterRound) this.setRole(this.activeRole);
+      },
+
+      onReturnToLobby: (msg) => {
+        this.serverStatus = 'WAITING';
+        if (msg.playerCounts) this.playerCounts = msg.playerCounts;
+        this.returnToMenu(false, msg);
       },
 
       onPlayersUpdated: (counts) => {
@@ -432,6 +441,19 @@ export class GameEngine {
   }
 
   setRole(role) {
+    if (role !== 'runner' && role !== 'saboteur') {
+      this.activeRole = 'lobby';
+      this.gameState = 'ROLE_SELECT';
+      this.runner.enabled = false;
+      this.saboteur.enabled = false;
+      document.body.classList.remove('runner-mode', 'saboteur-placing', 'cursor-locked');
+      document.body.classList.add('cursor-unlocked');
+      this.obstacleManager.hidePreview();
+      if (document.pointerLockElement) document.exitPointerLock();
+      this.emitState();
+      return;
+    }
+
     this.activeRole = role;
     this.gameState = 'PLAYING';
 
@@ -480,8 +502,22 @@ export class GameEngine {
     this.setRole(role);
   }
 
-  returnToMenu() {
-    this.pendingLocalRematch = Boolean(this.gameOverData);
+  returnToMenu(notifyServer = true, resetData = {}) {
+    if (this.gameOverTimeout) {
+      clearTimeout(this.gameOverTimeout);
+      this.gameOverTimeout = null;
+    }
+    if (notifyServer && !this.isLocalDual && this.network) {
+      this.network.returnToLobby();
+    }
+    this.resetRound({
+      timeRemaining: GAME_CONFIG.ROUND_TIME,
+      seed: resetData.seed,
+      goalPosition: resetData.goalPosition,
+    });
+    this.serverStatus = 'WAITING';
+    this.activeRole = 'lobby';
+    this.pendingLocalRematch = false;
     this.returningToMenu = true;
     this.isLocalDual = false;
     this.roleSelectMessage = '';
@@ -692,6 +728,7 @@ export class GameEngine {
   }
 
   handleGameOver(msg) {
+    if (this.gameState === 'FINISHED') return;
     this.gameState = 'FINISHED';
 
     const timeElapsed = Math.max(1, Math.round(GAME_CONFIG.ROUND_TIME - this.timeRemaining));
@@ -747,6 +784,8 @@ export class GameEngine {
       }
     };
 
+    this.gameOverTimeout = setTimeout(() => this.returnToMenu(), 4000);
+
     this.emitState();
   }
 
@@ -757,6 +796,24 @@ export class GameEngine {
     this.gameState = 'PLAYING';
     this.gameOverData = null;
     this.timeRemaining = msg.timeRemaining ?? GAME_CONFIG.ROUND_TIME;
+    this.damageFlash = 0;
+    this.toastMessage = null;
+    if (this.toastTimeout) {
+      clearTimeout(this.toastTimeout);
+      this.toastTimeout = null;
+    }
+    this.placementData = {
+      visible: false,
+      selectedType: 'WALL',
+      dist: 16.0,
+      maxDist: 75.0,
+      hasEnergy: true,
+      cost: 30,
+      currentEnergy: GAME_CONFIG.SABOTEUR.MAX_ENERGY,
+      inRange: true,
+      isInsideSanctuary: false,
+      isValidPlacement: true,
+    };
 
     this.stats = {
       distanceTraversed: 0,
@@ -774,6 +831,7 @@ export class GameEngine {
     }
 
     this.obstacleManager.clear();
+    if (this.particles) this.particles.clear();
     if (this.powerUpManager) {
       this.powerUpManager.clear();
       for (let cx = -2; cx <= 2; cx++) {
@@ -796,7 +854,11 @@ export class GameEngine {
     this.runner.shieldTimer = 0;
     this.runner.velocity.set(0, 0, 0);
     this.runner.isSliding = false;
+    this.runner.slideTimer = 0;
     this.runner.isVaulting = false;
+    this.runner.vaultTimer = 0;
+    this.runner.cameraYaw = 0;
+    this.runner.animTime = 0;
     this.runner.joystickVector.x = 0;
     this.runner.joystickVector.y = 0;
     Object.keys(this.runner.keys).forEach((key) => { this.runner.keys[key] = false; });
@@ -819,10 +881,15 @@ export class GameEngine {
     this.saboteur.reconCooldownTimer = 0;
     this.saboteur.reconActiveTimer = 0;
     this.saboteur.isSliding = false;
+    this.saboteur.slideTimer = 0;
     this.saboteur.isVaulting = false;
+    this.saboteur.vaultTimer = 0;
+    this.saboteur.cameraYaw = 0;
+    this.saboteur.animTime = 0;
     this.saboteur.selectedType = 'WALL';
     this.saboteur.isPlacing = true;
     this.saboteur.placementRotation = 0;
+    this.saboteur.scanWaves = [];
     Object.keys(this.saboteur.keys).forEach((key) => { this.saboteur.keys[key] = false; });
     if (this.saboteur.shieldMesh) this.saboteur.shieldMesh.visible = false;
     this.saboteur.setState({ x: 25, y: saboY + 1.0, z: 25, ry: Math.PI, health: 100 });
@@ -1018,6 +1085,7 @@ export class GameEngine {
   }
 
   destroy() {
+    if (this.gameOverTimeout) clearTimeout(this.gameOverTimeout);
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
     }

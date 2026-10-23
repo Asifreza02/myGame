@@ -4,7 +4,7 @@ export function TopHud({
   timeRemaining = 120,
   activeRole = 'runner',
   roomCode = 'default',
-  playerCounts = { runner: 1, saboteur: 0, spectator: 0 },
+  playerCounts = { runner: 1, saboteur: 0, lobby: 0 },
   environment = {},
   aiEnabled = true,
   humanSaboteurAvailable = false,
@@ -84,7 +84,7 @@ export function TopHud({
         {/* Player Counts */}
         <div className="hud-panel">
           <span id="lobby-status">
-            Players: {playerCounts.runner || 0} Runner | {playerCounts.saboteur || 0} Saboteur | {playerCounts.spectator || 0} Spectator
+            Players: {playerCounts.runner || 0} Runner | {playerCounts.saboteur || 0} Saboteur
           </span>
         </div>
       </div>

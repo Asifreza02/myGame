@@ -26,7 +26,8 @@ The game is available at **`http://localhost:3001`**. Start the multiplayer serv
 - Play both characters locally on one computer. Role-switching via **`[Tab]`** is exclusively available in Local Dual Mode.
 
 #### Match End & Restart
-- **Return to Main Menu** keeps the multiplayer connection open and returns to role selection, avoiding a reconnect that could leave you assigned as a spectator.
+- After the results screen, the game returns to role selection while keeping the multiplayer connection open.
+- After a match ends, both players return to the role lobby and the room resets for a fresh match. Extra players wait in the lobby until a role opens; there is no spectator role.
 - Choose an available role in the same room to start a fresh round. If that role is occupied, select the other role or enter another room.
 
 ---

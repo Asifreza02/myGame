@@ -42,6 +42,9 @@ class GameRoom {
     this.timeRemaining = this.roundDuration;
     this.status = 'PLAYING';
     this.obstacles = [];
+    this.runnerState = { x: 0, y: 10, z: 0, rx: 0, ry: 0, speed: 0, isGrounded: true };
+    this.saboteurState = null;
+    this.scores = { runner: 0, saboteur: 0 };
     this.goalPosition = this.calculateGoalPosition();
     this.seed = Math.floor(Math.random() * 1000000);
 
@@ -55,6 +58,8 @@ class GameRoom {
         this.timeRemaining = 0;
         this.status = 'SABOTEUR_WON';
         this.scores.saboteur += 1;
+        clearInterval(this.timerInterval);
+        this.timerInterval = null;
         this.broadcast({
           type: 'GAME_OVER',
           winner: 'saboteur',
@@ -82,6 +87,28 @@ class GameRoom {
 
   resetRound() {
     this.startRound();
+  }
+
+  returnToLobby() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.timerInterval = null;
+    this.status = 'WAITING';
+    this.timeRemaining = this.roundDuration;
+    this.seed = Math.floor(Math.random() * 1000000);
+    this.goalPosition = this.calculateGoalPosition();
+    this.obstacles = [];
+    this.runnerState = { x: 0, y: 10, z: 0, rx: 0, ry: 0, speed: 0, isGrounded: true };
+    this.saboteurState = null;
+    this.scores = { runner: 0, saboteur: 0 };
+    for (const clientInfo of this.clients.values()) clientInfo.role = 'lobby';
+    this.broadcastAll({
+      type: 'RETURN_TO_LOBBY',
+      seed: this.seed,
+      goalPosition: this.goalPosition,
+      timeRemaining: this.timeRemaining,
+      scores: this.scores,
+      playerCounts: this.getPlayerCounts(),
+    });
   }
 
   broadcast(message, senderWs = null) {
@@ -113,13 +140,13 @@ class GameRoom {
     }
 
     if (preferredRole === 'runner' && runnerTaken) {
-      assignedRole = !saboteurTaken ? 'saboteur' : 'spectator';
+      assignedRole = !saboteurTaken ? 'saboteur' : 'lobby';
     } else if (preferredRole === 'saboteur' && saboteurTaken) {
-      assignedRole = !runnerTaken ? 'runner' : 'spectator';
+      assignedRole = !runnerTaken ? 'runner' : 'lobby';
     } else if (!preferredRole || preferredRole === 'auto') {
       if (!runnerTaken) assignedRole = 'runner';
       else if (!saboteurTaken) assignedRole = 'saboteur';
-      else assignedRole = 'spectator';
+      else assignedRole = 'lobby';
     }
 
     const clientId = 'player_' + Math.random().toString(36).substring(2, 9);
@@ -164,13 +191,13 @@ class GameRoom {
   }
 
   getPlayerCounts() {
-    let runner = 0, saboteur = 0, spectator = 0;
+    let runner = 0, saboteur = 0, lobby = 0;
     for (const info of this.clients.values()) {
       if (info.role === 'runner') runner++;
       else if (info.role === 'saboteur') saboteur++;
-      else spectator++;
+      else lobby++;
     }
-    return { runner, saboteur, spectator, total: this.clients.size };
+    return { runner, saboteur, lobby, total: this.clients.size };
   }
 }
 
@@ -325,6 +352,12 @@ wss.on('connection', (ws, req) => {
           }
           break;
         }
+
+        case 'RETURN_TO_LOBBY':
+          if (room.status !== 'WAITING') {
+            room.returnToLobby();
+          }
+          break;
       }
     } catch (e) {
       console.error('WebSocket message parsing error:', e);
