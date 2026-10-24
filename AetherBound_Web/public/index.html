@@ -96,16 +96,6 @@
       <div id="crafting-message" class="crafting-hint" aria-live="polite"></div>
     </section>
 
-    <div class="hud-panel compass-container">
-      <div class="compass-dial">
-        <div id="compass-arrow"></div>
-      </div>
-      <div class="goal-info">
-        <div class="hud-label">BEACON DISTANCE</div>
-        <div id="distance-meter">180m</div>
-      </div>
-    </div>
-
     <div class="hud-panel progress-container">
       <div class="hud-label">RUNNER STAMINA [SHIFT TO SPRINT]</div>
       <div class="bar-track">
@@ -115,16 +105,9 @@
 
     <!-- Direction Steering & Hotkey Panel -->
     <div class="hud-panel view-controls-panel">
-      <div class="hud-label">RUNNER DIRECTION CONTROLS</div>
       <div class="view-buttons-row">
         <button id="btn-cycle-sens" class="view-btn" title="Cycle turn sensitivity (1.2x / 1.8x / 2.6x)">
           <span id="sensitivity-badge">⚡ SENS: 1.2x</span>
-        </button>
-        <button id="btn-look-goal" class="view-btn" title="Aim seeing direction directly to Beacon Goal (Hotkey: F)">
-          <span>🎯 Aim at Goal</span> <span class="hotkey-pill">[F]</span>
-        </button>
-        <button id="btn-look-behind" class="view-btn" title="Reverse seeing direction 180° (Hotkey: C)">
-          <span>🔄 Behind</span> <span class="hotkey-pill">[C]</span>
         </button>
       </div>
       <div class="view-hint">
@@ -229,8 +212,7 @@
     <div class="modal-card">
       <h1 class="modal-title">AETHERBOUND: SABOTAGE</h1>
       <p class="modal-subtitle">
-        An asymmetric two-player 3D game set in an endless open world.<br>
-        Will you navigate the terrain to reach the Beacon Goal, or deploy tactical obstacles to trap the runner before time expires?
+        Survive the open-world arena, outlast your rivals, and defeat the dragon.
       </p>
 
       <!-- Multi-Room Selector -->
@@ -247,7 +229,7 @@
           <div class="card-icon">🏃</div>
           <div class="card-title" style="color: var(--neon-cyan);">THE RUNNER</div>
           <div class="card-desc">
-            Race through procedural valleys and peaks in third-person 3D. Sprint, slide, vault, and reach the glowing Beacon Goal before time runs out!
+            Explore the arena, collect resources, and survive until the match ends.
           </div>
         </div>
 
@@ -270,7 +252,7 @@
   <div id="game-over-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card">
       <h1 id="game-over-title" class="modal-title">RUNNER ESCAPED!</h1>
-      <p id="game-over-desc" class="modal-subtitle">The Runner reached the Beacon Goal in time!</p>
+      <p id="game-over-desc" class="modal-subtitle">The match has ended.</p>
       <div id="game-over-score" style="font-size: 16px; font-weight: 700; color: #ffaa00; margin-bottom: 16px;"></div>
 
       <!-- Phase 3: Match Performance Stats Breakdown -->

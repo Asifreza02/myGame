@@ -6,8 +6,6 @@ export function SaboteurHud({
   onSelectObstacle,
   onTriggerRecon,
   onCycleSens,
-  onLookAtGoal,
-  onLookBehind,
 }) {
   const {
     health = 100,
@@ -135,24 +133,8 @@ export function SaboteurHud({
         </div>
       )}
 
-      {/* Traversal / Aim controls */}
+      {/* Mouse sensitivity */}
       <div className="hud-panel view-buttons-row" style={{ padding: '6px 14px' }}>
-        <button
-          className="view-btn interactive"
-          onClick={onLookAtGoal}
-          title="Face Beacon Goal"
-        >
-          <span>🎯 Face Goal</span>
-          <span className="hotkey-pill">[F]</span>
-        </button>
-        <button
-          className="view-btn interactive"
-          onClick={onLookBehind}
-          title="Face Behind"
-        >
-          <span>🔄 Turn 180°</span>
-          <span className="hotkey-pill">[C]</span>
-        </button>
         <button
           className="hotkey-pill interactive"
           onClick={onCycleSens}

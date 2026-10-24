@@ -4,7 +4,8 @@
   "description": "Multiplayer free-for-all survival game with a dragon hunt",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.js",
+    "dev:web": "next dev",
     "build": "next build",
     "start": "next start",
     "server": "node server/server.js"

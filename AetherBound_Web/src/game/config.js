@@ -39,11 +39,6 @@ export const GAME_CONFIG = {
     RECON_COOLDOWN: 14.0, // seconds
     RECON_DURATION: 6.0,   // seconds
   },
-  GOAL: {
-    RADIUS: 5.0,
-    PROTECTED_RADIUS: 20.0, // Obstacles cannot be placed within 20m of the goal
-    DEFAULT_DISTANCE: 180,
-  }
 };
 
 // Data-driven Obstacle Definitions
@@ -119,7 +114,7 @@ export const ROLE_DEFINITIONS = {
   RUNNER: {
     id: 'runner',
     title: 'The Runner',
-    description: 'Race across treacherous terrain and reach the Beacon Goal before time runs out.',
+    description: 'Survive the arena, outlast rival contenders, and defeat the dragon.',
     cameraMode: 'THIRD_PERSON',
     controls: 'WASD / Shift to Sprint / Space to Jump',
   },
@@ -251,9 +246,59 @@ export const RESOURCES = {
     icon: '🌿',
     color: 0x83e879,
   },
+  TITANIUM_SCRAP: {
+    id: 'TITANIUM_SCRAP',
+    name: 'Titanium Scrap',
+    icon: '🔩',
+    color: 0x8ea2b8,
+  },
+  CRYSTAL_LENS: {
+    id: 'CRYSTAL_LENS',
+    name: 'Crystal Lens',
+    icon: '💎',
+    color: 0x00f0ff,
+  },
+  ENERGY_CELL: {
+    id: 'ENERGY_CELL',
+    name: 'Energy Cell',
+    icon: '⚡',
+    color: 0xffe042,
+  },
 };
 
 export const CRAFTING_RECIPES = {
+  PISTOL: {
+    id: 'PISTOL',
+    name: 'Aether Blaster Pistol',
+    icon: '🔫',
+    type: 'weapon',
+    description: 'Fast semi-auto blaster (24 Dmg, 16 Rounds)',
+    ingredients: { TITANIUM_SCRAP: 1, EMBER_ORE: 1 },
+  },
+  GUN: {
+    id: 'GUN',
+    name: 'Combat Assault Blaster',
+    icon: '⚡',
+    type: 'weapon',
+    description: 'High-rate assault blaster (19 Dmg, 30 Rounds)',
+    ingredients: { TITANIUM_SCRAP: 2, IRONWOOD: 2, EMBER_ORE: 1 },
+  },
+  LASER_GUN: {
+    id: 'LASER_GUN',
+    name: 'Prismatic Laser Cannon',
+    icon: '💠',
+    type: 'weapon',
+    description: 'Piercing sniper laser beam (42 Dmg, 15 Rounds)',
+    ingredients: { CRYSTAL_LENS: 1, AETHER_ESSENCE: 2, ENERGY_CELL: 1 },
+  },
+  PLASMA_CANNON: {
+    id: 'PLASMA_CANNON',
+    name: 'Heavy Plasma Mortar',
+    icon: '💣',
+    type: 'weapon',
+    description: 'Explosive splash plasma cannon (60 Dmg, 8 Rounds)',
+    ingredients: { ENERGY_CELL: 2, EMBER_ORE: 2, TITANIUM_SCRAP: 2 },
+  },
   SPEED: {
     id: 'SPEED',
     name: 'Windrunner Boots',

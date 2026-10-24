@@ -7,18 +7,23 @@ export function RoleSelectModal({ visible = true, currentRoom = 'default', curre
   const [durationSeconds, setDurationSeconds] = useState(currentConfig.durationSeconds || 300);
   const [seed, setSeed] = useState(currentConfig.seed ? String(currentConfig.seed) : '');
   const [challengeId, setChallengeId] = useState('');
+  const [fillBots, setFillBots] = useState(currentConfig.fillBots !== false);
+
   useEffect(() => {
     setRoom(currentRoom);
     setMode(currentConfig.mode || 'ffa');
     setDurationSeconds(currentConfig.durationSeconds || 300);
     setSeed(currentConfig.seed ? String(currentConfig.seed) : '');
-  }, [currentRoom, currentConfig.mode, currentConfig.durationSeconds, currentConfig.seed]);
+    if (currentConfig.fillBots !== undefined) setFillBots(currentConfig.fillBots !== false);
+  }, [currentRoom, currentConfig.mode, currentConfig.durationSeconds, currentConfig.seed, currentConfig.fillBots]);
+
   if (!visible) return null;
 
   const getConfig = () => ({
     mode,
     durationSeconds: Number(durationSeconds),
     seed: seed.trim() ? Number(seed) : null,
+    fillBots,
   });
 
   const createRoom = () => {
@@ -43,27 +48,44 @@ export function RoleSelectModal({ visible = true, currentRoom = 'default', curre
   return (
     <div className="modal-overlay" id="modal-role-select" role="dialog" aria-modal="true" aria-labelledby="role-select-title">
       <div className="modal-card role-select-card">
-        <div className="menu-kicker"><span className="brand-mark">A</span> MULTIPLAYER SURVIVAL</div>
+        <div className="menu-kicker"><span className="brand-mark">⚔️</span> 5-PLAYER MULTIPLAYER SURVIVAL</div>
         <h1 className="modal-title" id="role-select-title">AETHERBOUND</h1>
-        <p className="modal-subtitle">Scavenge. Survive. Hunt the dragon.</p>
-        {message && <p className="modal-subtitle" role="status">{message}</p>}
+        <p className="modal-subtitle">5 Contenders. 1 Arena. Free-for-all or defeat the dragon.</p>
+        {message && <p className="modal-subtitle" role="status" style={{ color: '#ff6677' }}>{message}</p>}
+
         <div className="room-selector-box">
           <div className="room-selector-heading">
             <label className="hud-label" htmlFor="room-input">MATCH ROOM</label>
-            <span className="room-helper">Share this code to meet friends</span>
+            <span className="room-helper">Share code with up to 4 rivals (Max 5 players)</span>
           </div>
           <div className="room-input-row">
-            <input id="room-input" type="text" placeholder="Enter a room code" value={room} maxLength={24} autoComplete="off" onChange={(event) => setRoom(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} />
+            <input
+              id="room-input"
+              type="text"
+              placeholder="Enter a room code"
+              value={room}
+              maxLength={24}
+              autoComplete="off"
+              onChange={(event) => setRoom(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+            />
             <button type="button" className="generate-room-button interactive" onClick={createRoom} aria-label="Create a new room">NEW</button>
           </div>
         </div>
+
         <div className="match-config-grid">
           <label>
-            <span className="hud-label">MATCH MODE</span>
+            <span className="hud-label">MATCH MODE (MAX 5)</span>
             <select value={mode} onChange={(event) => { setMode(event.target.value); setChallengeId(''); }}>
               {Object.values(MATCH_MODES).map((matchMode) => (
-                <option key={matchMode.id} value={matchMode.id}>{matchMode.name}</option>
+                <option key={matchMode.id} value={matchMode.id}>{matchMode.name} (Max {matchMode.maxPlayers})</option>
               ))}
+            </select>
+          </label>
+          <label>
+            <span className="hud-label">RIVALS (MAX 5)</span>
+            <select value={fillBots ? 'fill' : 'none'} onChange={(event) => setFillBots(event.target.value === 'fill')}>
+              <option value="fill">Auto-fill up to 5 players (Bots)</option>
+              <option value="none">Humans only (Wait for players)</option>
             </select>
           </label>
           <label>
@@ -87,19 +109,26 @@ export function RoleSelectModal({ visible = true, currentRoom = 'default', curre
           </label>
           <p className="match-mode-description">{MATCH_MODES[mode]?.description}</p>
         </div>
+
         <div className="role-cards">
-          <button type="button" className="role-option-card runner-card interactive" onClick={() => onSelectRole('player', room, getConfig())} disabled={!room.trim()}>
-            <span className="role-card-topline"><span>JOIN THE MATCH</span><span className="role-card-arrow">↗</span></span>
+          <button
+            type="button"
+            className="role-option-card runner-card interactive"
+            onClick={() => onSelectRole('player', room, getConfig())}
+            disabled={!room.trim()}
+          >
+            <span className="role-card-topline"><span>ENTER 5-PLAYER ARENA</span><span className="role-card-arrow">↗</span></span>
             <span className="card-icon" aria-hidden="true">⚔️</span>
-            <span className="card-title">ENTER THE WILDS</span>
-            <span className="card-desc">Every contender starts on equal footing with a knife. Find gear, survive the hunt, or take on the dragon.</span>
+            <span className="card-title">JOIN BATTLE</span>
+            <span className="card-desc">Compete against up to 4 rivals. Every contender starts with a knife. Slay competitors or fell the dragon to win.</span>
             <span className="role-card-cta">JOIN ROOM <span aria-hidden="true">→</span></span>
           </button>
         </div>
+
         <button type="button" className="quick-play-button interactive" onClick={joinQuickPlay}>
-          QUICK PLAY · {MATCH_MODES[mode]?.name}
+          QUICK PLAY 5-PLAYER MATCH · {MATCH_MODES[mode]?.name}
         </button>
-        <p className="menu-footer">WASD MOVE <span>·</span> SHIFT SPRINT <span>·</span> CLICK ATTACK <span>·</span> BUILT FOR DESKTOP &amp; TOUCH</p>
+        <p className="menu-footer">MAX 5 PLAYERS <span>·</span> WASD MOVE <span>·</span> SHIFT SPRINT <span>·</span> CLICK KNIFE ATTACK <span>·</span> 1-5 ABILITIES</p>
       </div>
     </div>
   );

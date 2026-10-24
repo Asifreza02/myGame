@@ -11,11 +11,16 @@ export class NetworkClient {
     this.clientId = null;
     this.reconnectAttempts = 0;
     this.reconnectTimeout = null;
+    this.connectTimeout = null;
     this.isDestroyed = false;
+    this.connectionWarningShown = false;
     this.attackSequence = 0;
     this.reconnectToken = this.loadReconnectToken(room);
 
-    this.connect();
+    this.connectTimeout = setTimeout(() => {
+      this.connectTimeout = null;
+      this.connect();
+    }, 0);
   }
 
   reconnectStorageKey(room) {
@@ -52,6 +57,7 @@ export class NetworkClient {
     wsUrl.searchParams.set('mode', this.matchConfig.mode || 'ffa');
     wsUrl.searchParams.set('duration', String(this.matchConfig.durationSeconds || 300));
     if (this.matchConfig.seed) wsUrl.searchParams.set('seed', String(this.matchConfig.seed));
+    if (this.matchConfig.fillBots !== undefined) wsUrl.searchParams.set('bots', String(this.matchConfig.fillBots));
     if (this.reconnectToken) wsUrl.searchParams.set('token', this.reconnectToken);
 
     const ws = new WebSocket(wsUrl);
@@ -61,6 +67,7 @@ export class NetworkClient {
       if (this.isDestroyed || this.ws !== ws) return;
       this.connected = true;
       this.reconnectAttempts = 0;
+      this.connectionWarningShown = false;
       if (this.callbacks.onConnected) this.callbacks.onConnected();
     };
 
@@ -86,15 +93,20 @@ export class NetworkClient {
       }, delay);
     };
 
-    ws.onerror = (err) => {
-      if (!this.isDestroyed && this.ws === ws) {
-        console.warn('WebSocket connection error:', err);
+    ws.onerror = () => {
+      if (!this.isDestroyed && this.ws === ws && !this.connectionWarningShown) {
+        console.warn(`Could not connect to game server at ${wsUrl}. Check that it is running; retrying.`);
+        this.connectionWarningShown = true;
       }
     };
   }
 
   destroy() {
     this.isDestroyed = true;
+    if (this.connectTimeout) {
+      clearTimeout(this.connectTimeout);
+      this.connectTimeout = null;
+    }
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -154,6 +166,12 @@ export class NetworkClient {
       case 'DRAGON_PHASE_CHANGED':
       case 'WORLD_HAZARD_WARNING':
       case 'ROOM_FULL':
+      case 'WEAPON_CRAFTED':
+      case 'WEAPON_EQUIPPED':
+      case 'WEAPON_FIRED':
+      case 'WEAPON_FIRE_RESULT':
+      case 'CRAFT_RESULT':
+      case 'ITEM_SPAWNED':
         if (this.callbacks.onGameEvent) this.callbacks.onGameEvent(msg);
         break;
       case 'SESSION_IN_USE':
@@ -235,6 +253,11 @@ export class NetworkClient {
   }
   collectItem(id) { this.send({ type: 'PICKUP_ITEM', id }); }
   useAbility(ability) { this.send({ type: 'USE_ABILITY', ability }); }
+  craftWeapon(recipeIndex) { this.send({ type: 'CRAFT_WEAPON', recipeIndex }); }
+  equipWeapon(weaponId) { this.send({ type: 'EQUIP_WEAPON', weaponId }); }
+  fireWeapon(weaponId, origin, direction) {
+    this.send({ type: 'WEAPON_FIRE', weaponId, origin, direction, fireId: Date.now() });
+  }
 
   sendRunnerMove(state) {
     this.send({ type: 'RUNNER_MOVE', state });
@@ -274,10 +297,6 @@ export class NetworkClient {
       type: 'RECON_SCAN',
       origin: { x: origin.x, y: origin.y, z: origin.z }
     });
-  }
-
-  sendGoalReached() {
-    this.send({ type: 'GOAL_REACHED' });
   }
 
   sendPowerupCollect(id, powerupType, role) {

@@ -310,54 +310,6 @@ button,
   gap: 14px;
 }
 
-.compass-container {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.compass-dial {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  border: 2px solid var(--neon-cyan);
-  background: rgba(0, 255, 255, 0.08);
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
-}
-
-#compass-arrow {
-  width: 4px;
-  height: 44px;
-  position: absolute;
-  transform-origin: center center;
-  transition: transform 0.05s linear;
-}
-
-#compass-arrow::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -6px;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-bottom: 16px solid var(--neon-cyan);
-}
-
-.goal-info {
-  display: flex;
-  flex-direction: column;
-}
-
-#distance-meter {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--neon-cyan);
-}
-
 /* Damage Flash Vignette */
 #damage-overlay {
   position: fixed;

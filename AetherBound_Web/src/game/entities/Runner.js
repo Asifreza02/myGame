@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { requestPointerLock } from '../pointerLock.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { GAME_CONFIG } from '../config.js';
@@ -100,7 +101,6 @@ export class RunnerController {
     this.cameraPitch = 0.20;   // Fixed pitch, no up/down look
     this.cameraYaw = 0;
     this.isPointerLocked = false;
-    this.goalBeacon = null; // Set from GameEngine
 
     // Advanced Traversal: Slide & Vaulting
     this.isSliding = false;
@@ -409,6 +409,7 @@ export class RunnerController {
 
       const rightHand = model.getObjectByName('RightHand');
       if (rightHand) {
+        this.rightHand = rightHand;
         const knife = createRunnerKnife();
         const handScale = Math.max(rightHand.getWorldScale(new THREE.Vector3()).x, 0.001);
         const modelUnitsPerMeter = 1 / handScale;
@@ -443,6 +444,66 @@ export class RunnerController {
     return cloneSkinned(this.group);
   }
 
+  async setEquippedWeapon(weaponId) {
+    this.equippedWeaponId = weaponId;
+    if (!this.weaponMeshes) this.weaponMeshes = new Map();
+
+    const hand = this.rightHand;
+    if (!hand) return;
+
+    if (this.knife) this.knife.visible = (weaponId === 'KNIFE');
+    for (const [id, mesh] of this.weaponMeshes.entries()) {
+      mesh.visible = (id === weaponId);
+    }
+
+    if (weaponId === 'KNIFE' || this.weaponMeshes.has(weaponId)) return;
+
+    try {
+      const { loadCustomModel, normalizeModel, setModelShadows, tintModelMaterials } = await import('../modelAssets.js');
+      let url = '/models/weapons/blaster-smg.glb';
+      let scale = 0.38;
+      let tint = null;
+
+      if (weaponId === 'PISTOL') {
+        url = '/models/weapons/blaster-smg.glb';
+        scale = 0.38;
+      } else if (weaponId === 'GUN') {
+        url = '/models/weapons/blaster-rifle.glb';
+        scale = 0.54;
+      } else if (weaponId === 'LASER_GUN') {
+        url = '/models/weapons/blaster-rifle.glb';
+        scale = 0.58;
+        tint = 0x00f0ff;
+      } else if (weaponId === 'PLASMA_CANNON') {
+        url = '/models/weapons/blaster-heavy.glb';
+        scale = 0.65;
+      }
+
+      const scene = await loadCustomModel(url);
+      const normalized = normalizeModel(scene);
+      if (tint) tintModelMaterials(normalized, tint);
+      setModelShadows(normalized, true, false);
+
+      const weaponGroup = new THREE.Group();
+      weaponGroup.name = `weapon-${weaponId}`;
+      normalized.scale.setScalar(scale);
+      normalized.rotation.y = Math.PI;
+      normalized.position.set(0, 0.05, 0.15);
+      weaponGroup.add(normalized);
+
+      const handScale = Math.max(hand.getWorldScale(new THREE.Vector3()).x, 0.001);
+      const modelUnits = 1 / handScale;
+      weaponGroup.scale.setScalar(modelUnits);
+
+      hand.add(weaponGroup);
+      this.weaponMeshes.set(weaponId, weaponGroup);
+      weaponGroup.visible = (this.equippedWeaponId === weaponId);
+      if (this.knife && this.equippedWeaponId !== 'KNIFE') this.knife.visible = false;
+    } catch (err) {
+      console.warn(`Could not load weapon model for ${weaponId}:`, err);
+    }
+  }
+
   setCharacterModelReadyHandler(handler) {
     this.onCharacterModelLoaded = handler;
     if (this.characterModelLoaded && this.onCharacterModelLoaded) this.onCharacterModelLoaded();
@@ -462,15 +523,8 @@ export class RunnerController {
         case 'ArrowRight': this.keys.turnRight = true; break;
         case 'KeyQ': this.keys.turnLeft = true; break;
         case 'KeyE': this.keys.turnRight = true; break;
-        case 'KeyF':
-          this.lookAtGoal();
-          break;
         case 'KeyC':
-          if (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right) {
-            this.startSlide();
-          } else {
-            this.lookBehind();
-          }
+          this.startSlide();
           break;
         case 'ControlLeft':
         case 'ControlRight':
@@ -522,7 +576,7 @@ export class RunnerController {
         if (typeof document !== 'undefined') {
           document.body.classList.remove('cursor-unlocked');
           if (document.pointerLockElement !== this.domElement) {
-            try { this.domElement.requestPointerLock(); } catch(e) {}
+            requestPointerLock(this.domElement);
           }
         }
       }
@@ -611,23 +665,6 @@ export class RunnerController {
     if (this.onSensitivityChange) {
       this.onSensitivityChange(this.mouseSensitivity);
     }
-    audio.playPlacement();
-  }
-
-  // Snap viewing direction directly towards the Beacon Goal
-  lookAtGoal() {
-    if (!this.goalBeacon) return;
-    const goalPos = this.goalBeacon.position;
-    const dx = goalPos.x - this.position.x;
-    const dz = goalPos.z - this.position.z;
-    // Align camera yaw directly facing the goal (left/right only)
-    this.cameraYaw = Math.atan2(dx, dz) + Math.PI;
-    audio.playPlacement();
-  }
-
-  // Reverse viewing direction 180° to look behind
-  lookBehind() {
-    this.cameraYaw += Math.PI;
     audio.playPlacement();
   }
 

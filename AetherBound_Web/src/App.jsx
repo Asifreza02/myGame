@@ -9,6 +9,7 @@ import { RunnerHud } from './components/RunnerHud.jsx';
 import { SaboteurHud } from './components/SaboteurHud.jsx';
 import { PlacementIndicator } from './components/PlacementIndicator.jsx';
 import { RoleSelectModal } from './components/RoleSelectModal.jsx';
+import { CraftingModal } from './components/CraftingModal.jsx';
 import { GameOverModal } from './components/GameOverModal.jsx';
 import { VirtualJoystick } from './components/mobile/VirtualJoystick.jsx';
 import { TouchLookZone } from './components/mobile/TouchLookZone.jsx';
@@ -23,10 +24,16 @@ export function App() {
     gameState: 'ROLE_SELECT',
     activeRole: 'player',
     roomCode: 'default',
-    matchConfig: { mode: 'ffa', durationSeconds: 300, seed: null },
+    matchConfig: { mode: 'ffa', durationSeconds: 300, seed: null, maxPlayers: 5 },
     timeRemaining: 120,
-    playerCounts: { total: 1, alive: 1 },
+    playerCounts: { total: 1, alive: 1, max: 5 },
+    competitors: [],
+    killfeed: [],
     inventory: [],
+    weapons: ['KNIFE'],
+    equippedWeapon: 'KNIFE',
+    playerAmmo: {},
+    craftingModalOpen: false,
     abilityCooldowns: {},
     environment: { biome: null, todName: '☀️ DAYTIME', todClass: 'noon' },
     runnerStats: {
@@ -34,8 +41,6 @@ export function App() {
       maxHealth: 100,
       stamina: 100,
       maxStamina: 100,
-      distanceToBeacon: 0,
-      compassAngle: 0,
       sensitivity: 1.2,
       buffs: [],
       craftingInventory: { resources: {}, items: {} },
@@ -63,7 +68,6 @@ export function App() {
       cost: 30,
       currentEnergy: 100,
       inRange: true,
-      isInsideSanctuary: false,
       isValidPlacement: true,
     },
     gameOverData: null,
@@ -97,6 +101,7 @@ export function App() {
         duration: String(matchConfig?.durationSeconds || 300),
       });
       if (matchConfig?.seed) query.set('seed', String(matchConfig.seed));
+      if (matchConfig?.fillBots !== undefined) query.set('bots', String(matchConfig.fillBots));
       window.location.href = `?${query.toString()}`;
       return;
     }
@@ -119,14 +124,6 @@ export function App() {
     }
   }, []);
 
-  const handleLookAtGoal = useCallback(() => {
-    if (engineRef.current) engineRef.current.lookAtGoal();
-  }, []);
-
-  const handleLookBehind = useCallback(() => {
-    if (engineRef.current) engineRef.current.lookBehind();
-  }, []);
-
   const handleToggleSteering = useCallback(() => {
     if (engineRef.current && engineRef.current.runner) {
       engineRef.current.runner.startSlide();
@@ -143,6 +140,22 @@ export function App() {
 
   const handleUsePowerUp = useCallback((itemId) => {
     if (engineRef.current) engineRef.current.usePowerUp(itemId);
+  }, []);
+
+  const handleOpenCrafting = useCallback(() => {
+    if (engineRef.current) engineRef.current.setCraftingModalOpen(true);
+  }, []);
+
+  const handleCloseCrafting = useCallback(() => {
+    if (engineRef.current) engineRef.current.setCraftingModalOpen(false);
+  }, []);
+
+  const handleCraftWeapon = useCallback((recipeIndex) => {
+    if (engineRef.current) engineRef.current.craftWeapon(recipeIndex);
+  }, []);
+
+  const handleEquipWeapon = useCallback((weaponId) => {
+    if (engineRef.current) engineRef.current.equipWeapon(weaponId);
   }, []);
 
   const handleCycleSaboteurSens = useCallback(() => {
@@ -298,6 +311,9 @@ export function App() {
           timeRemaining={engineState.timeRemaining}
           roomCode={engineState.roomCode}
           playerCounts={engineState.playerCounts}
+          competitors={engineState.competitors}
+          killfeed={engineState.killfeed}
+          playerId={engineState.playerId}
           environment={engineState.environment}
           dragon={engineState.dragon}
           matchConfig={engineState.matchConfig}
@@ -312,8 +328,11 @@ export function App() {
         <RunnerHud
           stats={engineState.runnerStats}
           resources={engineState.playerResources}
-          onLookAtGoal={handleLookAtGoal}
-          onLookBehind={handleLookBehind}
+          equippedWeapon={engineState.equippedWeapon || 'KNIFE'}
+          weapons={engineState.weapons || ['KNIFE']}
+          ammo={engineState.playerAmmo || {}}
+          onOpenCrafting={handleOpenCrafting}
+          onEquipWeapon={handleEquipWeapon}
           onToggleSteering={handleToggleSteering}
           onCycleSens={handleCycleRunnerSens}
           onCraft={handleCraftPowerUp}
@@ -345,8 +364,6 @@ export function App() {
             onSelectObstacle={handleSelectObstacle}
             onTriggerRecon={handleTriggerRecon}
             onCycleSens={handleCycleSaboteurSens}
-            onLookAtGoal={handleLookAtGoal}
-            onLookBehind={handleLookBehind}
           />
         </>
       )}
@@ -370,12 +387,22 @@ export function App() {
             onDeploy={handleDeploy}
             onRotate={handleRotate}
             onRecon={handleTriggerRecon}
-            onFaceGoal={handleLookAtGoal}
-            onTurnBehind={handleLookBehind}
             onToggleFullscreen={handleToggleFullscreen}
           />
         </>
       )}
+
+      {/* Weapon Forge / Crafting Modal */}
+      <CraftingModal
+        visible={Boolean(engineState.craftingModalOpen)}
+        resources={engineState.playerResources || {}}
+        weapons={engineState.weapons || ['KNIFE']}
+        ammo={engineState.playerAmmo || {}}
+        equippedWeapon={engineState.equippedWeapon || 'KNIFE'}
+        onCraft={handleCraftWeapon}
+        onEquip={handleEquipWeapon}
+        onClose={handleCloseCrafting}
+      />
 
       {/* Role Select Modal */}
       <RoleSelectModal

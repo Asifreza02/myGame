@@ -10,7 +10,6 @@ export function PlacementIndicator({ data = {} }) {
     cost = 30,
     currentEnergy = 100,
     inRange = true,
-    isInsideSanctuary = false,
   } = data;
 
   if (!visible) return null;
@@ -32,9 +31,6 @@ export function PlacementIndicator({ data = {} }) {
   } else if (!inRange) {
     statusClass = 'placement-status-invalid';
     statusText = `⚠️ OUT OF RANGE (> ${maxDist}m)`;
-  } else if (isInsideSanctuary) {
-    statusClass = 'placement-status-invalid';
-    statusText = `🚫 GOAL SANCTUARY (< 20m RADIUS)`;
   }
 
   return (

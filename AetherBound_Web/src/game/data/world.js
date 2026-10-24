@@ -31,13 +31,37 @@ export const RESOURCE_DEFINITIONS = {
     color: 0x83e879,
     biome: 'snow',
   },
+  TITANIUM_SCRAP: {
+    id: 'TITANIUM_SCRAP',
+    name: 'Titanium Scrap',
+    rarity: 'Common',
+    icon: '🔩',
+    color: 0x8ea2b8,
+    biome: 'desert',
+  },
+  CRYSTAL_LENS: {
+    id: 'CRYSTAL_LENS',
+    name: 'Crystal Lens',
+    rarity: 'Rare',
+    icon: '💎',
+    color: 0x00f0ff,
+    biome: 'snow',
+  },
+  ENERGY_CELL: {
+    id: 'ENERGY_CELL',
+    name: 'Energy Cell',
+    rarity: 'Uncommon',
+    icon: '⚡',
+    color: 0xffe042,
+    biome: 'volcanic',
+  },
 };
 
 export const BIOME_RESOURCES = {
-  lush: ['IRONWOOD', 'AETHER_ESSENCE'],
-  desert: ['AETHER_ESSENCE', 'EMBER_ORE'],
-  snow: ['MOON_HERB', 'IRONWOOD'],
-  volcanic: ['EMBER_ORE', 'AETHER_ESSENCE'],
+  lush: ['IRONWOOD', 'AETHER_ESSENCE', 'TITANIUM_SCRAP'],
+  desert: ['TITANIUM_SCRAP', 'EMBER_ORE', 'AETHER_ESSENCE'],
+  snow: ['MOON_HERB', 'CRYSTAL_LENS', 'IRONWOOD'],
+  volcanic: ['EMBER_ORE', 'ENERGY_CELL', 'TITANIUM_SCRAP'],
 };
 
 export const WEATHER_PHASES = [
@@ -58,54 +82,52 @@ export const WEATHER_PHASES = [
     durationSeconds: 75,
     sky: 0x879b99,
     fog: 0x879b99,
-    fogDensity: 0.012,
-    ambientIntensity: 1.1,
-    sunIntensity: 1.7,
+    fogDensity: 0.0078,
+    ambientIntensity: 1.0,
+    sunIntensity: 1.45,
     movementMultiplier: 1.0,
   },
   {
     id: 'RAIN',
-    name: 'Driving Rain',
+    name: 'Cold Rain',
     durationSeconds: 75,
-    sky: 0x718381,
-    fog: 0x718381,
-    fogDensity: 0.008,
-    ambientIntensity: 0.95,
-    sunIntensity: 1.35,
-    movementMultiplier: 0.92,
+    sky: 0x617371,
+    fog: 0x617371,
+    fogDensity: 0.0092,
+    ambientIntensity: 0.9,
+    sunIntensity: 1.1,
+    movementMultiplier: 0.9,
   },
   {
     id: 'STORM',
     name: 'Aether Storm',
     durationSeconds: 75,
-    sky: 0x52676c,
-    fog: 0x52676c,
-    fogDensity: 0.014,
-    ambientIntensity: 0.82,
-    sunIntensity: 1.1,
-    movementMultiplier: 0.85,
+    sky: 0x3d354d,
+    fog: 0x3d354d,
+    fogDensity: 0.0135,
+    ambientIntensity: 0.72,
+    sunIntensity: 0.75,
+    movementMultiplier: 0.82,
   },
 ];
 
-export function getWeatherState(elapsedSeconds) {
-  const elapsed = Math.max(0, elapsedSeconds);
-  let phaseStart = 0;
+export function getWeatherState(elapsedSeconds = 0) {
+  const totalCycleDuration = WEATHER_PHASES.reduce((sum, phase) => sum + phase.durationSeconds, 0);
+  const cycleTime = ((elapsedSeconds % totalCycleDuration) + totalCycleDuration) % totalCycleDuration;
+  let accumulated = 0;
   for (const phase of WEATHER_PHASES) {
-    const phaseEnd = phaseStart + phase.durationSeconds;
-    if (elapsed < phaseEnd || phase === WEATHER_PHASES[WEATHER_PHASES.length - 1]) {
+    if (cycleTime < accumulated + phase.durationSeconds) {
       return {
-        id: phase.id,
-        name: phase.name,
-        sky: phase.sky,
-        fog: phase.fog,
-        fogDensity: phase.fogDensity,
-        ambientIntensity: phase.ambientIntensity,
-        sunIntensity: phase.sunIntensity,
-        movementMultiplier: phase.movementMultiplier,
-        secondsUntilChange: Math.max(0, Math.ceil(phaseEnd - elapsed)),
+        ...phase,
+        secondsIntoPhase: cycleTime - accumulated,
+        secondsUntilChange: Math.ceil(accumulated + phase.durationSeconds - cycleTime),
       };
     }
-    phaseStart = phaseEnd;
+    accumulated += phase.durationSeconds;
   }
-  return WEATHER_PHASES[0];
+  return {
+    ...WEATHER_PHASES[0],
+    secondsIntoPhase: 0,
+    secondsUntilChange: WEATHER_PHASES[0].durationSeconds,
+  };
 }

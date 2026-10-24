@@ -39,11 +39,6 @@ export const GAME_CONFIG = {
     RECON_COOLDOWN: 14.0, // seconds
     RECON_DURATION: 6.0,   // seconds
   },
-  GOAL: {
-    RADIUS: 5.0,
-    PROTECTED_RADIUS: 20.0, // Obstacles cannot be placed within 20m of the goal
-    DEFAULT_DISTANCE: 180,
-  }
 };
 
 // Data-driven Obstacle Definitions
@@ -119,7 +114,7 @@ export const ROLE_DEFINITIONS = {
   RUNNER: {
     id: 'runner',
     title: 'The Runner',
-    description: 'Race across treacherous terrain and reach the Beacon Goal before time runs out.',
+    description: 'Survive the arena and outlast the other players.',
     cameraMode: 'THIRD_PERSON',
     controls: 'WASD / Shift to Sprint / Space to Jump',
   },

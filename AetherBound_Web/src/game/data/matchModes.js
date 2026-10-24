@@ -1,9 +1,19 @@
+export const MAX_MATCH_PLAYERS = 5;
+
+export const PLAYER_SLOT_THEMES = [
+  { index: 0, name: 'Aether Knight', color: '#00f0ff', colorHex: 0x00f0ff, badge: '⚔️' },
+  { index: 1, name: 'Crimson Rogue', color: '#ff3366', colorHex: 0xff3366, badge: '🗡️' },
+  { index: 2, name: 'Solar Vanguard', color: '#ffaa00', colorHex: 0xffaa00, badge: '🛡️' },
+  { index: 3, name: 'Void Stalker', color: '#b344ff', colorHex: 0xb344ff, badge: '👁️' },
+  { index: 4, name: 'Verdant Hunter', color: '#00ff88', colorHex: 0x00ff88, badge: '🏹' },
+];
+
 export const MATCH_MODES = {
   ffa: {
     id: 'ffa',
     name: 'Free-for-All',
-    description: 'Compete against every other survivor. Last alive or the final dragon attacker wins.',
-    maxPlayers: 24,
+    description: 'Compete against up to 5 contenders. Last survivor standing or the dragon slayer wins.',
+    maxPlayers: 5,
     playerCombat: true,
     dragonRewardPolicy: 'final-blow',
   },
@@ -18,8 +28,8 @@ export const MATCH_MODES = {
   'dragon-hunt': {
     id: 'dragon-hunt',
     name: 'Dragon Hunt',
-    description: 'Cooperate against the dragon. Player combat is disabled; all living hunters share a dragon victory.',
-    maxPlayers: 8,
+    description: 'Cooperate against the dragon with up to 5 hunters. Player combat is disabled; all living hunters share a dragon victory.',
+    maxPlayers: 5,
     playerCombat: false,
     dragonRewardPolicy: 'shared',
   },
@@ -47,7 +57,7 @@ export const CURATED_CHALLENGES = [
   {
     id: 'wildcard',
     name: 'Wildcard',
-    description: 'A quick free-for-all with a shared, repeatable map.',
+    description: 'A 5-player free-for-all on a shared, repeatable map.',
     mode: 'ffa',
     durationSeconds: 180,
     seed: 905177,
@@ -71,11 +81,14 @@ export function normalizeMatchConfig(config = {}) {
     && entry.durationSeconds === durationSeconds
     && entry.seed === seed
   ));
+  const fillBots = config.fillBots !== false && config.fillBots !== 'false';
 
   return {
     mode,
     durationSeconds,
     seed,
+    fillBots,
+    maxPlayers: MATCH_MODES[mode]?.maxPlayers || MAX_MATCH_PLAYERS,
     challengeId: challenge?.id || null,
   };
 }

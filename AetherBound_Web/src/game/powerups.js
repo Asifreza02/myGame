@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CRAFTING_RECIPES, POWERUPS, RESOURCES } from './config.js';
 import { audio } from './audio.js';
-import { loadGameModel, normalizeModel, setModelShadows, tintModelMaterials } from './modelAssets.js';
+import { loadGameModel, loadCustomModel, normalizeModel, setModelShadows, tintModelMaterials } from './modelAssets.js';
 
 function createResourceModels() {
   const material = (color, options = {}) => new THREE.MeshStandardMaterial({
@@ -87,6 +87,62 @@ function createResourceModels() {
   herb.add(bud);
   models.MOON_HERB = herb;
 
+  // Titanium Scrap
+  const scrap = new THREE.Group();
+  const scrapMat = material(0x9fb4c7, { metalness: 0.88, roughness: 0.28 });
+  const nut1 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.12, 6), scrapMat);
+  nut1.rotation.x = Math.PI / 4;
+  const nut2 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.28, 0.14), scrapMat);
+  nut2.position.set(0.12, -0.05, 0.08);
+  nut2.rotation.z = 0.6;
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 0.26), scrapMat);
+  plate.position.set(-0.08, -0.08, -0.06);
+  scrap.add(nut1, nut2, plate);
+  models.TITANIUM_SCRAP = scrap;
+
+  // Crystal Lens
+  const crystal = new THREE.Group();
+  const crystalCore = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.32, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0x00f0ff,
+      emissive: 0x00a8d8,
+      emissiveIntensity: 1.4,
+      roughness: 0.12,
+      metalness: 0.2,
+      transparent: true,
+      opacity: 0.9,
+    })
+  );
+  crystalCore.scale.set(0.8, 1.35, 0.8);
+  crystal.add(crystalCore);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.44, 0.022, 6, 24),
+    new THREE.MeshBasicMaterial({ color: 0x8ef5ff })
+  );
+  ring.rotation.x = Math.PI / 3;
+  crystal.add(ring);
+  models.CRYSTAL_LENS = crystal;
+
+  // Energy Cell
+  const energyCell = new THREE.Group();
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0xffe042,
+    emissive: 0xff9900,
+    emissiveIntensity: 1.5,
+    roughness: 0.2,
+  });
+  const capMat = material(0x2a323d, { metalness: 0.82, roughness: 0.3 });
+  const cellCore = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.44, 12), coreMat);
+  const topCap = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.08, 12), capMat);
+  topCap.position.y = 0.24;
+  const botCap = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.08, 12), capMat);
+  botCap.position.y = -0.24;
+  const energyBand = new THREE.Mesh(new THREE.TorusGeometry(0.175, 0.02, 6, 16), new THREE.MeshBasicMaterial({ color: 0xfff3a8 }));
+  energyBand.rotation.x = Math.PI / 2;
+  energyCell.add(cellCore, topCap, botCap, energyBand);
+  models.ENERGY_CELL = energyCell;
+
   return models;
 }
 
@@ -136,6 +192,17 @@ export class PowerUpManager {
         if (!entry) continue;
         const [type, model] = entry;
         this.externalResourceModels.set(type, model);
+        if (!this.crateLoaded) {
+          this.crateLoaded = true;
+          loadCustomModel('/models/weapons/crate-small.glb').then((scene) => {
+            const m = normalizeModel(scene);
+            setModelShadows(m, true, false);
+            this.externalResourceModels.set('TITANIUM_SCRAP', m);
+            for (const res of this.resources.values()) {
+              if (res.type === 'TITANIUM_SCRAP') this.replaceResourceModel(res);
+            }
+          }).catch(() => {});
+        }
         for (const resource of this.resources.values()) {
           if (resource.type === type) this.replaceResourceModel(resource);
         }

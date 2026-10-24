@@ -151,10 +151,6 @@ export class NetworkClient {
     });
   }
 
-  sendGoalReached() {
-    this.send({ type: 'GOAL_REACHED' });
-  }
-
   sendPowerupCollect(id, powerupType, role) {
     this.send({
       type: 'POWERUP_COLLECTED',

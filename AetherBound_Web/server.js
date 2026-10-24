@@ -26,8 +26,6 @@ class GameRoom {
     this.timeRemaining = this.roundDuration;
     this.status = 'WAITING'; // WAITING, PLAYING, RUNNER_WON, SABOTEUR_WON
     this.seed = Math.floor(Math.random() * 1000000);
-    this.goalDistance = 180;
-    this.goalPosition = this.calculateGoalPosition();
     this.obstacles = []; // array of { id, type, position, rotation, timestamp }
     this.runnerState = { x: 0, y: 10, z: 0, rx: 0, ry: 0, speed: 0, isGrounded: true };
     this.timerInterval = null;
@@ -35,22 +33,11 @@ class GameRoom {
     this.scores = { runner: 0, saboteur: 0 };
   }
 
-  calculateGoalPosition() {
-    // Generate goal on an angle between 0 and 2*PI, at distance this.goalDistance
-    const angle = Math.random() * Math.PI * 2;
-    return {
-      x: Math.round(Math.cos(angle) * this.goalDistance),
-      y: 0, // World height will be adjusted by client heightmap
-      z: Math.round(Math.sin(angle) * this.goalDistance)
-    };
-  }
-
   startRound() {
     this.stopTimer();
     this.timeRemaining = this.roundDuration;
     this.status = 'PLAYING';
     this.obstacles = [];
-    this.goalPosition = this.calculateGoalPosition();
     this.seed = Math.floor(Math.random() * 1000000);
 
     this.roundEndsAt = Date.now() + this.roundDuration * 1000;
@@ -69,7 +56,7 @@ class GameRoom {
         this.broadcast({
           type: 'GAME_OVER',
           winner: 'saboteur',
-          reason: 'Time expired! Runner failed to reach the beacon.',
+          reason: 'Time expired! The match has ended.',
           scores: this.scores
         });
       }
@@ -84,7 +71,6 @@ class GameRoom {
     this.broadcast({
       type: 'ROUND_STARTED',
       seed: this.seed,
-      goalPosition: this.goalPosition,
       timeRemaining: this.timeRemaining,
       status: this.status,
       scores: this.scores
@@ -151,7 +137,6 @@ class GameRoom {
       status: this.status,
       timeRemaining: this.timeRemaining,
       seed: this.seed,
-      goalPosition: this.goalPosition,
       obstacles: this.obstacles,
       scores: this.scores,
       playerCounts: this.getPlayerCounts()
@@ -240,17 +225,6 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'PLACE_OBSTACLE':
-          // Disallow placement within 20m of Goal Sanctuary
-          if (room.goalPosition && msg.position) {
-            const dx = msg.position.x - room.goalPosition.x;
-            const dz = msg.position.z - room.goalPosition.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
-            if (dist < 20.0) {
-              console.log(`[Server Room "${roomId}"] Rejected obstacle placement: inside 20m goal sanctuary (${dist.toFixed(1)}m away)`);
-              break;
-            }
-          }
-
           // Add to obstacle registry and broadcast to all in room
           const obstacle = {
             id: 'obs_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
@@ -292,21 +266,6 @@ wss.on('connection', (ws, req) => {
             type: 'RECON_SCAN',
             origin: msg.origin
           }, ws);
-          break;
-
-        case 'GOAL_REACHED':
-          if (room.status === 'PLAYING') {
-            room.status = 'RUNNER_WON';
-            room.stopTimer();
-            room.scores.runner += 1;
-            room.broadcastAll({
-              type: 'GAME_OVER',
-              winner: 'runner',
-              timeRemaining: room.timeRemaining,
-              reason: 'The Runner successfully navigated the obstacles and reached the Beacon Goal!',
-              scores: room.scores
-            });
-          }
           break;
 
         case 'POWERUP_COLLECTED':

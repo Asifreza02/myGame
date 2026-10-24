@@ -610,7 +610,7 @@ export class WorldManager {
     const wx = originX + (rng() - 0.5) * (bGrid * 0.6);
     const wz = originZ + (rng() - 0.5) * (bGrid * 0.6);
 
-    // Keep clear from player spawn and beacon
+    // Keep clear from the player spawn
     if (Math.sqrt(wx * wx + wz * wz) < 35) return;
 
     const wy = this.getHeightAt(wx, wz);

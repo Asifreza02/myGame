@@ -43,7 +43,6 @@ export class RunnerController {
     this.cameraPitch = 0.20;   // Fixed pitch, no up/down look
     this.cameraYaw = 0;
     this.isPointerLocked = false;
-    this.goalBeacon = null; // Set from main.js
 
     // Advanced Traversal: Slide & Vaulting
     this.isSliding = false;
@@ -179,15 +178,8 @@ export class RunnerController {
         case 'ArrowRight': this.keys.turnRight = true; break;
         case 'KeyQ': this.keys.turnLeft = true; break;
         case 'KeyE': this.keys.turnRight = true; break;
-        case 'KeyF':
-          this.lookAtGoal();
-          break;
         case 'KeyC':
-          if (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right) {
-            this.startSlide();
-          } else {
-            this.lookBehind();
-          }
+          this.startSlide();
           break;
         case 'ControlLeft':
         case 'ControlRight':
@@ -343,23 +335,6 @@ export class RunnerController {
     audio.playPlacement();
   }
 
-
-  // Snap viewing direction directly towards the Beacon Goal
-  lookAtGoal() {
-    if (!this.goalBeacon) return;
-    const goalPos = this.goalBeacon.position;
-    const dx = goalPos.x - this.position.x;
-    const dz = goalPos.z - this.position.z;
-    // Align camera yaw directly facing the goal (left/right only)
-    this.cameraYaw = Math.atan2(dx, dz) + Math.PI;
-    audio.playPlacement();
-  }
-
-  // Reverse viewing direction 180° to look behind
-  lookBehind() {
-    this.cameraYaw += Math.PI;
-    audio.playPlacement();
-  }
 
   // Initiate power slide
   startSlide() {

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { GAME_CONFIG, OBSTACLES, DAYLIGHT_CONFIG } from './config.js';
 import { WorldManager } from './world.js';
-import { GoalBeacon } from './goal.js';
 import { ObstacleManager } from './obstacles.js';
 import { PhysicsSystem } from './physics.js';
 import { RunnerController } from './entities/Runner.js';
@@ -11,7 +10,8 @@ import { AISaboteur } from './ai_saboteur.js';
 import { ParticleSystem } from './particles.js';
 import { PowerUpManager } from './powerups.js';
 import { audio } from './audio.js';
-import { ITEM_DEFINITIONS, KNIFE_RULES } from './data/combat.js';
+import { requestPointerLock as lockPointer } from './pointerLock.js';
+import { ITEM_DEFINITIONS, KNIFE_RULES, WEAPON_DEFINITIONS, WEAPON_CRAFTING_RECIPES } from './data/combat.js';
 import { RESOURCE_DEFINITIONS, getWeatherState } from './data/world.js';
 import { normalizeMatchConfig } from './data/matchModes.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -31,6 +31,87 @@ function disposeThreeObject(root) {
   });
 }
 
+function drawPlayerNameplate(canvas, ctx, name, health, maxHealth, color = '#00f0ff', isAlive = true, isBot = false) {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Background rounded glass panel
+  ctx.fillStyle = 'rgba(8, 16, 24, 0.9)';
+  ctx.strokeStyle = color || '#00f0ff';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(4, 4, w - 8, h - 8, 12);
+  ctx.fill();
+  ctx.stroke();
+
+  // Color Indicator Dot
+  ctx.fillStyle = color || '#00f0ff';
+  ctx.beginPath();
+  ctx.arc(28, 28, 9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Name Text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const cleanName = String(name || 'Survivor').slice(0, 16);
+  ctx.fillText(cleanName, 46, 28);
+
+  // Bot badge if applicable
+  if (isBot) {
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    const textWidth = ctx.measureText(cleanName).width;
+    const badgeX = Math.min(w - 70, 52 + textWidth);
+    ctx.beginPath();
+    ctx.roundRect(badgeX, 17, 56, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#b8fff0';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('BOT', badgeX + 28, 28);
+  }
+
+  // Health Bar
+  const barX = 20;
+  const barY = 48;
+  const barW = w - 40;
+  const barH = 18;
+  const maxHp = maxHealth || 100;
+  const curHp = Math.max(0, Math.min(maxHp, health ?? maxHp));
+  const hpRatio = maxHp > 0 ? curHp / maxHp : 0;
+
+  // Track
+  ctx.fillStyle = 'rgba(20, 28, 38, 0.95)';
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 5);
+  ctx.fill();
+
+  if (isAlive && curHp > 0) {
+    const fillColor = hpRatio > 0.5 ? '#00ff88' : hpRatio > 0.25 ? '#ffaa00' : '#ff3344';
+    ctx.fillStyle = fillColor;
+    ctx.beginPath();
+    ctx.roundRect(barX + 1, barY + 1, Math.max(4, (barW - 2) * hpRatio), barH - 2, 4);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${Math.ceil(curHp)} / ${maxHp}`, barX + barW / 2, barY + barH / 2);
+  } else {
+    ctx.fillStyle = '#ff4466';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💀 ELIMINATED', barX + barW / 2, barY + barH / 2);
+  }
+}
+
 export class GameEngine {
   constructor(containerElement, onStateChange) {
     this.container = containerElement;
@@ -39,7 +120,11 @@ export class GameEngine {
     this.activeRole = 'player';
     this.gameState = 'ROLE_SELECT';
     this.timeRemaining = 300;
-    this.playerCounts = { total: 1, alive: 1 };
+    this.playerCounts = { total: 1, alive: 1, max: 5 };
+    this.competitors = [];
+    this.killfeed = [];
+    this.localPlayerColor = '#00f0ff';
+    this.localPlayerSlot = 0;
 
     const params = new URLSearchParams(window.location.search);
     this.roomCode = params.get('room') || 'default';
@@ -47,6 +132,7 @@ export class GameEngine {
       mode: params.get('mode'),
       durationSeconds: params.get('duration'),
       seed: params.get('seed'),
+      fillBots: params.get('bots'),
     });
     const navigationEntry = performance.getEntriesByType('navigation')[0];
     const preferredRole = navigationEntry?.type === 'reload' ? null : params.get('role');
@@ -93,6 +179,11 @@ export class GameEngine {
     this.lastWeatherId = null;
     this.matchStats = { kills: 0, survivalTime: 0, itemsCollected: 0, damageDealt: 0, dragonDamage: 0 };
     this.playerResources = {};
+    this.equippedWeapon = 'KNIFE';
+    this.weapons = ['KNIFE'];
+    this.playerAmmo = { PISTOL: 0, GUN: 0, LASER_GUN: 0, PLASMA_CANNON: 0 };
+    this.activeTracers = [];
+    this.craftingModalOpen = false;
     this.matchHistory = this.loadMatchHistory();
 
     this.placementData = {
@@ -104,7 +195,6 @@ export class GameEngine {
       cost: 30,
       currentEnergy: 100,
       inRange: true,
-      isInsideSanctuary: false,
       isValidPlacement: true,
     };
 
@@ -183,13 +273,8 @@ export class GameEngine {
     this.obstacleManager = new ObstacleManager(this.scene, this.worldManager);
     this.physics = new PhysicsSystem(this.worldManager, this.obstacleManager);
 
-    this.goalBeacon = new GoalBeacon(this.scene, this.worldManager);
-    this.goalBeacon.setPosition(120, 120);
-    this.goalBeacon.group.visible = false;
-
     // Runner
     this.runner = new RunnerController(this.scene, this.camera, this.renderer.domElement);
-    this.runner.goalBeacon = this.goalBeacon;
     this.runner.particles = this.particles;
     this.runner.physics = this.physics;
     this.runner.worldManager = this.worldManager;
@@ -267,12 +352,24 @@ export class GameEngine {
       this.attack();
     };
     this.renderer.domElement.addEventListener('pointerdown', this.onCombatClick);
-    this.onAbilityKey = (event) => {
+    this.onKeyDownHandler = (event) => {
+      if (this.gameState !== 'PLAYING') return;
+      if (event.code === 'KeyC' || event.code === 'KeyB') {
+        this.toggleCraftingModal();
+        return;
+      }
+      if (['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(event.code)) {
+        const slotIdx = Number(event.code.replace('Digit', '')) - 1;
+        if (slotIdx >= 0 && slotIdx < this.weapons.length) {
+          this.equipWeapon(this.weapons[slotIdx]);
+          return;
+        }
+      }
       const abilities = this.runner.inventory || [];
       const index = Number(event.key) - 1;
       if (index >= 0 && index < abilities.length) this.activateAbility(abilities[index]);
     };
-    window.addEventListener('keydown', this.onAbilityKey);
+    window.addEventListener('keydown', this.onKeyDownHandler);
 
     this.runner.onDamage = () => {
       this.damageFlash = Date.now();
@@ -295,7 +392,6 @@ export class GameEngine {
       this.obstacleManager,
       (type, pos, rot) => this.onObstaclePlaced(type, pos, rot)
     );
-    this.saboteur.goalBeacon = this.goalBeacon;
     this.saboteur.worldManager = this.worldManager;
 
     this.saboteur.onDamage = () => {
@@ -581,7 +677,24 @@ export class GameEngine {
     this.playerCounts = {
       total: snapshot.players.length,
       alive: snapshot.players.filter((player) => player.alive).length,
+      max: this.matchConfig?.maxPlayers || 5,
     };
+    this.competitors = snapshot.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      slot: p.slot,
+      color: p.color || '#00f0ff',
+      colorHex: p.colorHex || 0x00f0ff,
+      health: p.health,
+      maxHealth: p.maxHealth || 100,
+      alive: p.alive,
+      isBot: Boolean(p.isBot),
+      isLocal: p.id === this.playerId,
+      stats: p.stats || {},
+      kills: p.stats?.kills || 0,
+      damageDealt: p.stats?.damageDealt || 0,
+    }));
+
     for (const player of snapshot.players) {
       if (player.id === this.playerId) {
         if (!this.playerSpawned) {
@@ -594,6 +707,9 @@ export class GameEngine {
         this.playerResources = player.resources || {};
         this.matchStats = player.stats || this.matchStats;
         this.abilityCooldowns = player.abilityReadyAt || this.abilityCooldowns;
+        this.localPlayerColor = player.color || '#00f0ff';
+        this.localPlayerSlot = player.slot ?? 0;
+        this.localPlayerName = player.name;
         if (!player.alive) this.runner.enabled = false;
         continue;
       }
@@ -601,26 +717,44 @@ export class GameEngine {
       if (!remote) {
         const group = this.runner.cloneCharacterGroup();
         group.traverse((node) => { if (node.isMesh) node.castShadow = true; });
+
+        // Ground runic ring in player's slot color
+        const ringGeo = new THREE.RingGeometry(0.72, 0.88, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: player.colorHex || 0x00f0ff,
+          transparent: true,
+          opacity: 0.75,
+          side: THREE.DoubleSide,
+        });
+        const groundRing = new THREE.Mesh(ringGeo, ringMat);
+        groundRing.rotation.x = -Math.PI / 2;
+        groundRing.position.y = 0.05;
+        group.add(groundRing);
+
         const labelCanvas = document.createElement('canvas');
         labelCanvas.width = 320;
-        labelCanvas.height = 72;
+        labelCanvas.height = 76;
         const context = labelCanvas.getContext('2d');
-        context.fillStyle = 'rgba(8, 20, 24, 0.82)';
-        context.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
-        context.fillStyle = '#b8fff0';
-        context.font = 'bold 34px sans-serif';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(player.name || 'Wanderer', labelCanvas.width / 2, labelCanvas.height / 2);
-        const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false }));
+        drawPlayerNameplate(labelCanvas, context, player.name, player.health, player.maxHealth, player.color, player.alive, player.isBot);
+        const labelTexture = new THREE.CanvasTexture(labelCanvas);
+        const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false }));
         label.position.y = 2.65;
-        label.scale.set(3.2, 0.72, 1);
+        label.scale.set(3.2, 0.76, 1);
         group.add(label);
         this.scene.add(group);
         const snapshotTime = performance.now();
         remote = {
           group,
           label,
+          labelCanvas,
+          labelCtx: context,
+          labelTexture,
+          groundRing,
+          lastDrawnHealth: player.health,
+          lastDrawnAlive: player.alive,
+          lastDrawnName: player.name,
+          targetPosition: new THREE.Vector3(player.x, player.y, player.z),
+          targetYaw: player.ry || 0,
           state: player,
           animator: this.runner.createCharacterAnimator(group),
           lastSnapshotPosition: new THREE.Vector3(player.x, player.y, player.z),
@@ -630,7 +764,19 @@ export class GameEngine {
           hitReactTimer: 0,
         };
         this.remotePlayers.set(player.id, remote);
+      } else {
+        if (remote.lastDrawnHealth !== player.health || remote.lastDrawnAlive !== player.alive || remote.lastDrawnName !== player.name) {
+          drawPlayerNameplate(remote.labelCanvas, remote.labelCtx, player.name, player.health, player.maxHealth, player.color, player.alive, player.isBot);
+          remote.labelTexture.needsUpdate = true;
+          remote.lastDrawnHealth = player.health;
+          remote.lastDrawnAlive = player.alive;
+          remote.lastDrawnName = player.name;
+        }
+        if (remote.groundRing) remote.groundRing.visible = player.alive;
       }
+      remote.targetPosition.set(player.x, player.y, player.z);
+      remote.targetYaw = player.ry || 0;
+
       const snapshotTime = performance.now();
       const snapshotDelta = Math.max(0.016, (snapshotTime - remote.lastSnapshotAt) / 1000);
       const movementX = player.x - remote.lastSnapshotPosition.x;
@@ -655,15 +801,16 @@ export class GameEngine {
       remote.lastSnapshotPosition.set(player.x, player.y, player.z);
       remote.lastSnapshotAt = snapshotTime;
       remote.state = player;
-      remote.group.position.set(player.x, player.y, player.z);
-      remote.group.rotation.y = player.ry || 0;
       const range = Math.hypot(player.x - this.runner.position.x, player.z - this.runner.position.z);
-      remote.group.visible = player.alive && (range <= 95 || performance.now() < this.reconRevealUntil);
+      remote.group.visible = player.alive && (range <= 120 || performance.now() < this.reconRevealUntil);
     }
     const currentIds = new Set(snapshot.players.filter((player) => player.id !== this.playerId).map((player) => player.id));
     for (const [id, remote] of this.remotePlayers) {
       if (currentIds.has(id)) continue;
       this.scene.remove(remote.group);
+      remote.labelTexture?.dispose();
+      remote.groundRing?.geometry?.dispose();
+      remote.groundRing?.material?.dispose();
       this.remotePlayers.delete(id);
     }
     if (Array.isArray(snapshot.items)) {
@@ -707,6 +854,7 @@ export class GameEngine {
       const previousGroup = remote.group;
       const group = this.runner.cloneCharacterGroup();
       group.add(remote.label);
+      if (remote.groundRing) group.add(remote.groundRing);
       group.position.copy(previousGroup.position);
       group.rotation.copy(previousGroup.rotation);
       group.visible = previousGroup.visible;
@@ -827,6 +975,65 @@ export class GameEngine {
   }
 
   handleGameEvent(event) {
+    if (event.type === 'WEAPON_CRAFTED') {
+      if (event.playerId === this.playerId) {
+        this.weapons = event.weapons || this.weapons;
+        this.playerAmmo = event.ammo || this.playerAmmo;
+        this.playerResources = event.resources || this.playerResources;
+        if (event.equippedWeapon) {
+          this.equippedWeapon = event.equippedWeapon;
+          this.runner?.setEquippedWeapon(event.equippedWeapon);
+        }
+        audio.playCraftSuccess();
+        const def = WEAPON_DEFINITIONS[event.weaponId];
+        this.showToast(def ? `Forged ${def.name}!` : `Forged ammo pack!`);
+      } else {
+        const rival = this.remotePlayers.get(event.playerId)?.state?.name || 'A rival';
+        const def = WEAPON_DEFINITIONS[event.weaponId];
+        if (def) this.showToast(`${rival} forged ${def.name}!`);
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'WEAPON_EQUIPPED') {
+      if (event.playerId === this.playerId) {
+        this.equippedWeapon = event.weaponId;
+        this.runner?.setEquippedWeapon(event.weaponId);
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'WEAPON_FIRED') {
+      this.spawnWeaponTracer(event);
+      return;
+    }
+    if (event.type === 'WEAPON_FIRE_RESULT') {
+      if (event.remainingAmmo !== undefined) {
+        this.playerAmmo[event.weaponId] = event.remainingAmmo;
+      }
+      if (!event.success && event.reason === 'no-ammo') {
+        audio.playEmptyAmmo();
+        this.showToast('Out of ammo! Press [C] to forge ammo in the Workbench.');
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'CRAFT_RESULT') {
+      if (!event.success) {
+        this.showToast(event.reason || 'Could not craft item.');
+      }
+      return;
+    }
+    if (event.type === 'ITEM_SPAWNED' && event.item) {
+      if (this.powerUpManager) {
+        const existing = this.powerUpManager.resources.get(event.item.id);
+        if (existing) {
+          existing.active = true;
+          existing.mesh.visible = true;
+        }
+      }
+      return;
+    }
     if (event.type === 'PLAYER_ATTACKED') {
       const remote = this.remotePlayers.get(event.playerId);
       if (remote) remote.attackTimer = 0.28;
@@ -873,11 +1080,21 @@ export class GameEngine {
         this.showToast(`${source} hit: −${event.damage} health.`);
       }
     } else if (event.type === 'PLAYER_ELIMINATED') {
+      const victimName = event.player?.name || 'A contender';
+      let killerName = 'The Wilds';
+      if (event.attackerId === 'dragon') killerName = 'The Dragon';
+      else if (event.attackerId === this.playerId) killerName = this.localPlayerName || 'You';
+      else if (event.attackerId) {
+        const killerObj = this.competitors?.find((c) => c.id === event.attackerId);
+        if (killerObj) killerName = killerObj.name;
+      }
+      this.addKillfeedItem(`${killerName} eliminated ${victimName}`);
       if (event.playerId === this.playerId) {
         this.runner.enabled = false;
-        this.showToast('You were eliminated. Spectating until the match ends.');
+        this.showToast('You were eliminated. Spectating remaining contenders.');
       } else {
-        this.showToast(`${event.player?.name || 'A rival'} was eliminated.`);
+        const remaining = event.remainingAlive ?? Math.max(1, (this.playerCounts.alive || 1) - 1);
+        this.showToast(`${victimName} was eliminated. (${remaining} survivors left)`);
       }
     } else if (event.type === 'PLAYER_RECONNECTED') {
       this.showToast(`${event.player?.name || 'A hunter'} rejoined the match.`);
@@ -1029,7 +1246,6 @@ export class GameEngine {
     document.body.classList.add('runner-mode');
     document.body.classList.remove('saboteur-placing', 'cursor-unlocked');
     this.obstacleManager.hidePreview();
-    this.requestPointerLock();
     this.emitState();
   }
 
@@ -1054,7 +1270,6 @@ export class GameEngine {
       this.resetRound({
         timeRemaining: GAME_CONFIG.ROUND_TIME,
         seed: resetData.seed,
-        goalPosition: resetData.goalPosition,
       });
     }
     this.serverStatus = 'WAITING';
@@ -1101,14 +1316,6 @@ export class GameEngine {
     }
   }
 
-  lookAtGoal() {
-    if (this.runner && this.activeRole === 'player') this.runner.lookAtGoal();
-  }
-
-  lookBehind() {
-    if (this.runner && this.activeRole === 'player') this.runner.lookBehind();
-  }
-
   cycleRunnerSensitivity() {
     if (this.runner) {
       this.runner.cycleSensitivity();
@@ -1151,20 +1358,141 @@ export class GameEngine {
     this.network?.useAbility(ability);
   }
 
+  spawnWeaponTracer(event) {
+    const origin = event.origin || { x: 0, y: 1.2, z: 0 };
+    const hitPoint = event.hitPoint || { x: origin.x, y: origin.y, z: origin.z + 20 };
+    const weaponId = event.weaponId || 'PISTOL';
+    const def = WEAPON_DEFINITIONS[weaponId] || WEAPON_DEFINITIONS.PISTOL;
+
+    if (def.sound === 'pistol') audio.playPistol();
+    else if (def.sound === 'rifle') audio.playRifle();
+    else if (def.sound === 'laser') audio.playLaser();
+    else if (def.sound === 'plasma') audio.playPlasma();
+
+    const start = new THREE.Vector3(origin.x, origin.y, origin.z);
+    const end = new THREE.Vector3(hitPoint.x, hitPoint.y, hitPoint.z);
+    const dist = Math.max(0.1, start.distanceTo(end));
+    const dir = end.clone().sub(start).normalize();
+
+    if (weaponId === 'LASER_GUN') {
+      const beamGeo = new THREE.CylinderGeometry(0.08, 0.08, dist, 8);
+      beamGeo.rotateX(Math.PI / 2);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+      });
+      const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+      beamMesh.position.copy(start).lerp(end, 0.5);
+      beamMesh.lookAt(end);
+      this.scene.add(beamMesh);
+      this.activeTracers.push({ mesh: beamMesh, life: 0.18, maxLife: 0.18 });
+    } else if (weaponId === 'PLASMA_CANNON') {
+      const plasmaGeo = new THREE.SphereGeometry(0.38, 10, 8);
+      const plasmaMat = new THREE.MeshBasicMaterial({
+        color: 0xff3366,
+        transparent: true,
+        opacity: 0.95,
+      });
+      const plasmaMesh = new THREE.Mesh(plasmaGeo, plasmaMat);
+      plasmaMesh.position.copy(start);
+      this.scene.add(plasmaMesh);
+      const velocity = dir.clone().multiplyScalar(45);
+      this.activeTracers.push({ mesh: plasmaMesh, life: dist / 45, maxLife: dist / 45, isPlasma: true, velocity });
+    } else {
+      const boltLen = Math.min(2.5, dist);
+      const boltGeo = new THREE.CylinderGeometry(0.045, 0.045, boltLen, 6);
+      boltGeo.rotateX(Math.PI / 2);
+      const boltColor = weaponId === 'PISTOL' ? 0x00f0ff : 0xffaa00;
+      const boltMat = new THREE.MeshBasicMaterial({
+        color: boltColor,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const boltMesh = new THREE.Mesh(boltGeo, boltMat);
+      boltMesh.position.copy(start).lerp(end, 0.5);
+      boltMesh.lookAt(end);
+      this.scene.add(boltMesh);
+      this.activeTracers.push({ mesh: boltMesh, life: 0.12, maxLife: 0.12 });
+    }
+
+    if (event.hit && this.particles) {
+      setTimeout(() => {
+        this.particles.emitDust(end, weaponId === 'PLASMA_CANNON' ? 24 : 8);
+      }, (dist / (def.projectileSpeed || 100)) * 1000);
+    }
+  }
+
   attack() {
     if (this.activeRole !== 'player' || this.runner.health <= 0) return;
-    const remaining = this.attackCooldownUntil - Date.now();
-    if (remaining > 0) {
-      this.showToast(`Knife ready in ${(remaining / 1000).toFixed(1)}s.`);
-      return;
-    }
     if (!this.network?.connected) {
       this.showToast('Connecting to the match server…');
       return;
     }
-    this.attackCooldownUntil = Date.now() + KNIFE_RULES.cooldownMs;
-    this.network?.attack();
-    this.runner.playKnifeSwing();
+
+    const currentWeapon = this.equippedWeapon || 'KNIFE';
+    const def = WEAPON_DEFINITIONS[currentWeapon] || WEAPON_DEFINITIONS.KNIFE;
+
+    if (def.type === 'melee') {
+      const remaining = this.attackCooldownUntil - Date.now();
+      if (remaining > 0) {
+        this.showToast(`Knife ready in ${(remaining / 1000).toFixed(1)}s.`);
+        return;
+      }
+      this.attackCooldownUntil = Date.now() + KNIFE_RULES.cooldownMs;
+      this.network?.attack();
+      this.runner.playKnifeSwing();
+    } else {
+      const currentAmmo = this.playerAmmo[currentWeapon] || 0;
+      if (currentAmmo <= 0) {
+        audio.playEmptyAmmo();
+        this.showToast(`No ammo! Open Forge [C] to craft more.`);
+        return;
+      }
+
+      const remaining = this.attackCooldownUntil - Date.now();
+      if (remaining > 0) return;
+      this.attackCooldownUntil = Date.now() + (def.cooldownMs || 300);
+
+      this.playerAmmo[currentWeapon] = currentAmmo - 1;
+      this.emitState();
+
+      if (def.sound === 'pistol') audio.playPistol();
+      else if (def.sound === 'rifle') audio.playRifle();
+      else if (def.sound === 'laser') audio.playLaser();
+      else if (def.sound === 'plasma') audio.playPlasma();
+
+      const dir = new THREE.Vector3();
+      this.camera.getWorldDirection(dir);
+      const origin = new THREE.Vector3(this.runner.position.x, this.runner.position.y + 1.2, this.runner.position.z);
+
+      this.network?.fireWeapon(currentWeapon, origin, dir);
+      this.runner.knifeSwingTimer = 0.12;
+    }
+  }
+
+  craftWeapon(recipeIndex) {
+    if (!this.network?.connected) return;
+    this.network.craftWeapon(recipeIndex);
+  }
+
+  equipWeapon(weaponId) {
+    if (weaponId === this.equippedWeapon) return;
+    this.equippedWeapon = weaponId;
+    this.network?.equipWeapon(weaponId);
+    this.runner?.setEquippedWeapon(weaponId);
+    this.emitState();
+  }
+
+  toggleCraftingModal() {
+    this.craftingModalOpen = !this.craftingModalOpen;
+    this.emitState();
+  }
+
+  setCraftingModalOpen(open) {
+    this.craftingModalOpen = Boolean(open);
+    this.emitState();
   }
 
   // Mobile Touch & Virtual Joystick Support
@@ -1249,9 +1577,7 @@ export class GameEngine {
 
   requestPointerLock() {
     if (navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches) return;
-    try {
-      this.renderer.domElement.requestPointerLock();
-    } catch(e) {}
+    lockPointer(this.renderer.domElement);
   }
 
   onObstaclePlaced(type, pos, rot) {
@@ -1351,7 +1677,6 @@ export class GameEngine {
       cost: 30,
       currentEnergy: GAME_CONFIG.SABOTEUR.MAX_ENERGY,
       inRange: true,
-      isInsideSanctuary: false,
       isValidPlacement: true,
     };
 
@@ -1364,12 +1689,6 @@ export class GameEngine {
     this.lastRunnerPosForDist = null;
 
     if (msg.seed) this.worldManager.setSeed(msg.seed);
-    if (msg.goalPosition) {
-      this.goalBeacon.setPosition(msg.goalPosition.x, msg.goalPosition.z);
-      this.runner.goalBeacon = this.goalBeacon;
-      this.saboteur.goalBeacon = this.goalBeacon;
-    }
-
     this.obstacleManager.clear();
     if (this.particles) this.particles.clear();
     if (this.powerUpManager) this.powerUpManager.clear();
@@ -1485,6 +1804,15 @@ export class GameEngine {
       this.updateDaylight();
 
       for (const remote of this.remotePlayers.values()) {
+        if (remote.targetPosition) {
+          const lerpFactor = 1 - Math.exp(-dt * 14);
+          remote.group.position.lerp(remote.targetPosition, lerpFactor);
+          const yawDelta = Math.atan2(
+            Math.sin(remote.targetYaw - remote.group.rotation.y),
+            Math.cos(remote.targetYaw - remote.group.rotation.y)
+          );
+          remote.group.rotation.y += yawDelta * lerpFactor;
+        }
         remote.attackTimer = Math.max(0, remote.attackTimer - dt);
         remote.hitReactTimer = Math.max(0, remote.hitReactTimer - dt);
         remote.animator?.update(dt, {
@@ -1494,11 +1822,27 @@ export class GameEngine {
         });
       }
 
-      this.goalBeacon.update(dt, elapsedTime);
       this.obstacleManager.update(dt);
 
       if (this.particles) {
         this.particles.update(dt);
+      }
+
+      // Update active weapon bullet/laser/plasma tracers
+      for (let i = this.activeTracers.length - 1; i >= 0; i--) {
+        const tracer = this.activeTracers[i];
+        tracer.life -= dt;
+        if (tracer.life <= 0) {
+          this.scene.remove(tracer.mesh);
+          tracer.mesh.geometry?.dispose();
+          tracer.mesh.material?.dispose();
+          this.activeTracers.splice(i, 1);
+        } else {
+          tracer.mesh.material.opacity = (tracer.life / tracer.maxLife) * (tracer.isPlasma ? 0.95 : 0.85);
+          if (tracer.isPlasma && tracer.velocity) {
+            tracer.mesh.position.addScaledVector(tracer.velocity, dt);
+          }
+        }
       }
 
       if (this.activeRole === 'player' && this.runner.health > 0) {
@@ -1561,17 +1905,27 @@ export class GameEngine {
     this.renderer.render(this.scene, this.camera);
   }
 
+  addKillfeedItem(text) {
+    const item = {
+      id: `kf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      expiresAt: Date.now() + 4500,
+    };
+    this.killfeed = [item, ...(this.killfeed || [])].slice(0, 4);
+    this.emitState();
+  }
+
   emitState() {
     if (!this.onStateChange) return;
+
+    const now = Date.now();
+    this.killfeed = (this.killfeed || []).filter((kf) => kf.expiresAt > now);
 
     const activeChar = this.runner;
     let biome = null;
     if (this.worldManager && activeChar) {
       biome = this.worldManager.getDominantBiome(activeChar.position.x, activeChar.position.z);
     }
-
-    const distToBeacon = Math.round(this.goalBeacon.getDistanceTo(this.runner.position));
-    const compassAngle = this.goalBeacon.getCompassAngle(this.runner.position, this.runner.rotationY);
 
     const snapshot = {
       gameState: this.gameState,
@@ -1581,11 +1935,19 @@ export class GameEngine {
       roleSelectMessage: this.roleSelectMessage,
       timeRemaining: this.timeRemaining,
       playerCounts: this.playerCounts,
+      competitors: this.competitors || [],
+      killfeed: this.killfeed || [],
+      localPlayerColor: this.localPlayerColor || '#00f0ff',
+      localPlayerSlot: this.localPlayerSlot ?? 0,
       playerId: this.playerId,
       inventory: this.runner.inventory || [],
       matchStats: this.matchStats,
       matchHistory: this.matchHistory,
       playerResources: this.playerResources,
+      weapons: this.weapons || ['KNIFE'],
+      equippedWeapon: this.equippedWeapon || 'KNIFE',
+      playerAmmo: this.playerAmmo || {},
+      craftingModalOpen: Boolean(this.craftingModalOpen),
       abilityCooldowns: this.abilityCooldowns,
       knifeCooldownMs: Math.max(0, this.attackCooldownUntil - Date.now()),
       dragon: this.dragonState,
@@ -1600,11 +1962,12 @@ export class GameEngine {
         maxHealth: this.runner.maxHealth,
         stamina: this.runner.stamina,
         maxStamina: GAME_CONFIG.RUNNER.STAMINA_MAX,
-        distanceToBeacon: distToBeacon,
-        compassAngle,
         sensitivity: this.runner.mouseSensitivity,
         buffs: this.runner.getActiveBuffs(),
         knifeCooldownMs: Math.max(0, this.attackCooldownUntil - Date.now()),
+        weapons: this.weapons || ['KNIFE'],
+        equippedWeapon: this.equippedWeapon || 'KNIFE',
+        ammo: this.playerAmmo || {},
         craftingInventory: this.powerUpManager.getInventory(),
       },
       saboteurStats: {
@@ -1645,7 +2008,7 @@ export class GameEngine {
     if (this.onCombatClick && this.renderer?.domElement) {
       this.renderer.domElement.removeEventListener('pointerdown', this.onCombatClick);
     }
-    if (this.onAbilityKey) window.removeEventListener('keydown', this.onAbilityKey);
+    if (this.onKeyDownHandler) window.removeEventListener('keydown', this.onKeyDownHandler);
     this.dragonMixer?.stopAllAction();
     this.clearDragonBreathTelegraph();
     this.scene?.remove(this.dragonMesh, this.dragonBreathBeam, this.dragonTelegraph, this.dragonTelegraphRing);

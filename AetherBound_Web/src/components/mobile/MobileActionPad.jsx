@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
 
+function activateFromPointer(event, action) {
+  if (event.button === 0) action?.();
+}
+
+function activateFromKeyboard(event, action) {
+  if (event.detail === 0) action?.();
+}
+
 export function MobileActionPad({
   activeRole = 'runner',
   isPlacing = false,
@@ -10,8 +18,6 @@ export function MobileActionPad({
   onDeploy,
   onRotate,
   onRecon,
-  onFaceGoal,
-  onTurnBehind,
   onToggleFullscreen,
 }) {
   const [sprintActive, setSprintActive] = useState(false);
@@ -30,7 +36,8 @@ export function MobileActionPad({
       {/* Top-Right Fullscreen Toggle */}
       <button
         className="mobile-fullscreen-btn interactive"
-        onClick={onToggleFullscreen}
+        onPointerUp={(event) => activateFromPointer(event, onToggleFullscreen)}
+        onClick={(event) => activateFromKeyboard(event, onToggleFullscreen)}
         title="Toggle Fullscreen"
       >
         ⛶
@@ -41,44 +48,34 @@ export function MobileActionPad({
         {/* Runner Actions */}
         {isRunner && (
           <>
-            <div className="mobile-action-aux-row">
-              <button
-                className="mobile-aux-btn interactive"
-                onClick={onFaceGoal}
-                title="Face Goal"
-              >
-                🎯 Goal
-              </button>
-              <button
-                className="mobile-aux-btn interactive"
-                onClick={onTurnBehind}
-                title="Turn 180°"
-              >
-                🔄 180°
-              </button>
-            </div>
-
             <div className="mobile-action-main-row">
-              <button className="mobile-round-btn interactive" onClick={onAttack}>
+              <button
+                className="mobile-round-btn interactive"
+                onPointerUp={(event) => activateFromPointer(event, onAttack)}
+                onClick={(event) => activateFromKeyboard(event, onAttack)}
+              >
                 🗡️ KNIFE
               </button>
               <button
                 className={`mobile-round-btn sprint-btn interactive ${sprintActive ? 'active' : ''}`}
-                onClick={handleSprint}
+                onPointerUp={(event) => activateFromPointer(event, handleSprint)}
+                onClick={(event) => activateFromKeyboard(event, handleSprint)}
               >
                 ⚡ SPRINT
               </button>
 
               <button
                 className="mobile-round-btn slide-btn interactive"
-                onClick={onSlide}
+                onPointerUp={(event) => activateFromPointer(event, onSlide)}
+                onClick={(event) => activateFromKeyboard(event, onSlide)}
               >
                 ⛷️ SLIDE
               </button>
 
               <button
                 className="mobile-round-btn jump-btn interactive"
-                onClick={onJump}
+                onPointerUp={(event) => activateFromPointer(event, onJump)}
+                onClick={(event) => activateFromKeyboard(event, onJump)}
               >
                 🚀 JUMP
               </button>
@@ -92,45 +89,35 @@ export function MobileActionPad({
             <div className="mobile-action-aux-row">
               <button
                 className="mobile-aux-btn interactive"
-                onClick={onRecon}
+                onPointerUp={(event) => activateFromPointer(event, onRecon)}
+                onClick={(event) => activateFromKeyboard(event, onRecon)}
                 title="Scanner Pulse"
               >
                 📡 Scan
-              </button>
-              <button
-                className="mobile-aux-btn interactive"
-                onClick={onFaceGoal}
-                title="Face Goal"
-              >
-                🎯 Goal
-              </button>
-              <button
-                className="mobile-aux-btn interactive"
-                onClick={onTurnBehind}
-                title="Turn 180°"
-              >
-                🔄 180°
               </button>
             </div>
 
             <div className="mobile-action-main-row">
               <button
                 className={`mobile-round-btn sprint-btn interactive ${sprintActive ? 'active' : ''}`}
-                onClick={handleSprint}
+                onPointerUp={(event) => activateFromPointer(event, handleSprint)}
+                onClick={(event) => activateFromKeyboard(event, handleSprint)}
               >
                 ⚡ SPRINT
               </button>
 
               <button
                 className="mobile-round-btn slide-btn interactive"
-                onClick={onSlide}
+                onPointerUp={(event) => activateFromPointer(event, onSlide)}
+                onClick={(event) => activateFromKeyboard(event, onSlide)}
               >
                 ⛷️ SLIDE
               </button>
 
               <button
                 className="mobile-round-btn jump-btn interactive"
-                onClick={onJump}
+                onPointerUp={(event) => activateFromPointer(event, onJump)}
+                onClick={(event) => activateFromKeyboard(event, onJump)}
               >
                 🚀 JUMP
               </button>
@@ -139,14 +126,16 @@ export function MobileActionPad({
                 <>
                   <button
                     className="mobile-round-btn rotate-btn interactive"
-                    onClick={onRotate}
+                    onPointerUp={(event) => activateFromPointer(event, onRotate)}
+                    onClick={(event) => activateFromKeyboard(event, onRotate)}
                   >
                     🔄 45°
                   </button>
 
                   <button
                     className="mobile-round-btn deploy-btn interactive"
-                    onClick={onDeploy}
+                    onPointerUp={(event) => activateFromPointer(event, onDeploy)}
+                    onClick={(event) => activateFromKeyboard(event, onDeploy)}
                   >
                     💥 PLACE
                   </button>

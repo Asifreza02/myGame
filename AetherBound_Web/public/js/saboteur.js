@@ -52,7 +52,6 @@ export class SaboteurController {
     this.cameraPitch = 0.20;   // Fixed pitch, strictly no up/down look
     this.cameraYaw = 0;
     this.isPointerLocked = false;
-    this.goalBeacon = null;
 
     // Advanced Traversal: Slide & Vaulting (Identical to Runner)
     this.isSliding = false;
@@ -334,11 +333,7 @@ export class SaboteurController {
           this.keys.turnRight = true;
           break;
         case 'KeyC':
-          if (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right) {
-            this.startSlide();
-          } else {
-            this.lookBehind();
-          }
+          this.startSlide();
           break;
         case 'ControlLeft':
         case 'ControlRight':
@@ -571,19 +566,7 @@ export class SaboteurController {
       const distFromSaboteur = this.position.distanceTo(this.currentTargetPos);
       const inRange = distFromSaboteur <= this.maxPlacementDist;
 
-      // Disallow placement within 20m protected sanctuary of Goal Beacon
-      let isInsideSanctuary = false;
-      if (this.goalBeacon) {
-        const dx = this.currentTargetPos.x - this.goalBeacon.position.x;
-        const dz = this.currentTargetPos.z - this.goalBeacon.position.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        const protectedRadius = GAME_CONFIG.GOAL.PROTECTED_RADIUS || 20.0;
-        if (dist < protectedRadius) {
-          isInsideSanctuary = true;
-        }
-      }
-
-      const isValidPlacement = hasEnergy && inRange && !isInsideSanctuary;
+      const isValidPlacement = hasEnergy && inRange;
 
       this.obstacleManager.updatePreview(
         this.selectedType,
@@ -610,9 +593,6 @@ export class SaboteurController {
         } else if (!inRange) {
           statusEl.className = 'placement-status-invalid';
           statusEl.innerText = `⚠️ OUT OF RANGE (> ${this.maxPlacementDist}m)`;
-        } else if (isInsideSanctuary) {
-          statusEl.className = 'placement-status-invalid';
-          statusEl.innerText = `🚫 GOAL SANCTUARY (< 20m RADIUS)`;
         } else {
           statusEl.className = 'placement-status-valid';
           statusEl.innerText = `● READY TO PLACE [LEFT-CLICK] • [R] ROTATE • [WHEEL / MOUSE-Y] FAR/NEAR`;
@@ -672,19 +652,6 @@ export class SaboteurController {
       audio.playLose();
       this.showToastWarning(`⚠️ OUT OF RANGE: Saboteur must be within ${this.maxPlacementDist}m to deploy! (${distFromSaboteur.toFixed(0)}m away)`);
       return;
-    }
-
-    // Disallow placement within 20-meter protected sanctuary of Goal Beacon
-    if (this.goalBeacon) {
-      const dx = targetPos.x - this.goalBeacon.position.x;
-      const dz = targetPos.z - this.goalBeacon.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      const protectedRadius = GAME_CONFIG.GOAL.PROTECTED_RADIUS || 20.0;
-      if (dist < protectedRadius) {
-        audio.playLose();
-        this.showToastWarning(`🚫 GOAL SANCTUARY: Cannot place obstacles within ${protectedRadius}m of the Beacon Goal! (${dist.toFixed(1)}m away)`);
-        return;
-      }
     }
 
     const def = OBSTACLES[this.selectedType];
@@ -770,19 +737,6 @@ export class SaboteurController {
   }
 
   // Direction Steering Helpers (Identical to Runner)
-  lookAtGoal() {
-    if (!this.goalBeacon) return;
-    const dx = this.goalBeacon.position.x - this.position.x;
-    const dz = this.goalBeacon.position.z - this.position.z;
-    this.cameraYaw = Math.atan2(-dx, -dz);
-  }
-
-  lookBehind() {
-    this.cameraYaw += Math.PI;
-    while (this.cameraYaw > Math.PI) this.cameraYaw -= Math.PI * 2;
-    while (this.cameraYaw < -Math.PI) this.cameraYaw += Math.PI * 2;
-  }
-
   cycleSensitivity() {
     const levels = [1.2, 1.8, 2.6];
     const idx = levels.indexOf(this.mouseSensitivity);

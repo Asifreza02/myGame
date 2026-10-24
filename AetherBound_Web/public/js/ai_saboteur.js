@@ -1,4 +1,4 @@
-import { GAME_CONFIG, OBSTACLES } from './config.js';
+import { OBSTACLES } from './config.js';
 import { audio } from './audio.js';
 
 export class AISaboteur {
@@ -22,7 +22,7 @@ export class AISaboteur {
     this.flankAngle = 0.6;
   }
 
-  update(dt, runner, goalBeacon, isSinglePlayer) {
+  update(dt, runner, isSinglePlayer) {
     if (!this.enabled || !isSinglePlayer || !runner) return;
 
     this.timer += dt;
@@ -59,29 +59,17 @@ export class AISaboteur {
 
     if (this.timer >= this.interval) {
       this.timer = 0;
-      this.deployObstacleAhead(runner, goalBeacon);
+      this.deployObstacleAhead(runner);
     }
   }
 
-  deployObstacleAhead(runner, goalBeacon) {
+  deployObstacleAhead(runner) {
     const runnerPos = runner.position;
     const runnerHeading = runner.rotationY;
 
     // Determine forward vector
     let forwardX = Math.sin(runnerHeading);
     let forwardZ = Math.cos(runnerHeading);
-
-    // If runner is not actively moving, aim in the direction of the Beacon Goal
-    const isMoving = runner.keys.forward || runner.keys.backward || runner.keys.left || runner.keys.right;
-    if (!isMoving && goalBeacon) {
-      const dx = goalBeacon.position.x - runnerPos.x;
-      const dz = goalBeacon.position.z - runnerPos.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > 1) {
-        forwardX = dx / dist;
-        forwardZ = dz / dist;
-      }
-    }
 
     // Distance in front of the player
     const distAhead = this.minDistanceAhead + Math.random() * (this.maxDistanceAhead - this.minDistanceAhead);
@@ -93,17 +81,6 @@ export class AISaboteur {
 
     const targetX = runnerPos.x + forwardX * distAhead + perpX * lateralOffset;
     const targetZ = runnerPos.z + forwardZ * distAhead + perpZ * lateralOffset;
-
-    // Disallow placement within 20m of Goal Beacon
-    if (goalBeacon) {
-      const dx = targetX - goalBeacon.position.x;
-      const dz = targetZ - goalBeacon.position.z;
-      const distToGoal = Math.sqrt(dx * dx + dz * dz);
-      const sanctuaryRadius = GAME_CONFIG.GOAL.PROTECTED_RADIUS || 20.0;
-      if (distToGoal < sanctuaryRadius) {
-        return; // Target falls inside 20m sanctuary zone - do not deploy
-      }
-    }
 
     const targetY = this.worldManager.getHeightAt(targetX, targetZ);
 

@@ -7,6 +7,10 @@ const MODEL_ROOT = '/models/kenney-survival';
 
 export function loadGameModel(name) {
   const url = `${MODEL_ROOT}/${name}.glb`;
+  return loadCustomModel(url);
+}
+
+export function loadCustomModel(url) {
   if (!modelCache.has(url)) {
     modelCache.set(url, new Promise((resolve, reject) => {
       loader.load(url, (gltf) => resolve(gltf.scene), undefined, reject);

@@ -9,7 +9,6 @@ import {
   RESOURCES,
 } from './config.js';
 import { WorldManager } from './world.js';
-import { GoalBeacon } from './goal.js';
 import { ObstacleManager } from './obstacles.js';
 import { PhysicsSystem } from './physics.js';
 import { RunnerController } from './runner.js';
@@ -116,20 +115,15 @@ class GameApp {
     // 3. Physics System
     this.physics = new PhysicsSystem(this.worldManager, this.obstacleManager);
 
-    // 4. Goal Beacon
-    this.goalBeacon = new GoalBeacon(this.scene, this.worldManager);
-    this.goalBeacon.setPosition(120, 120);
-
-    // 5. Runner Avatar & Controller
+    // 4. Runner Avatar & Controller
     this.runner = new RunnerController(this.scene, this.camera, this.renderer.domElement);
-    this.runner.goalBeacon = this.goalBeacon;
     this.runner.particles = this.particles;
     this.runner.physics = this.physics;
     this.runner.worldManager = this.worldManager;
     const startY = this.worldManager.getHeightAt(0, 0);
     this.runner.setState({ x: 0, y: startY + 1.0, z: 0, ry: 0 });
 
-    // 6. Saboteur Tactical Controller
+    // 5. Saboteur Tactical Controller
     this.saboteur = new SaboteurController(
       this.scene,
       this.camera,
@@ -138,7 +132,6 @@ class GameApp {
       this.obstacleManager,
       (type, pos, rot) => this.onObstaclePlaced(type, pos, rot)
     );
-    this.saboteur.goalBeacon = this.goalBeacon;
     this.saboteur.worldManager = this.worldManager;
 
     // Phase 3: Power-Up Items Manager
@@ -238,11 +231,6 @@ class GameApp {
         this.setRole(msg.role);
         if (msg.seed) {
           this.worldManager.setSeed(msg.seed);
-        }
-        if (msg.goalPosition) {
-          this.goalBeacon.setPosition(msg.goalPosition.x, msg.goalPosition.z);
-          this.runner.goalBeacon = this.goalBeacon;
-          this.saboteur.goalBeacon = this.goalBeacon;
         }
         if (msg.obstacles && msg.obstacles.length > 0) {
           msg.obstacles.forEach((obs) => {
@@ -552,22 +540,6 @@ class GameApp {
       });
     }
 
-    // Seeing Direction Buttons (Single Third-Person Camera)
-
-    const btnLookGoal = document.getElementById('btn-look-goal');
-    if (btnLookGoal) {
-      btnLookGoal.addEventListener('click', () => {
-        this.runner.lookAtGoal();
-      });
-    }
-
-    const btnLookBehind = document.getElementById('btn-look-behind');
-    if (btnLookBehind) {
-      btnLookBehind.addEventListener('click', () => {
-        this.runner.lookBehind();
-      });
-    }
-
     const btnToggleSteering = document.getElementById('btn-toggle-steering');
     if (btnToggleSteering) {
       btnToggleSteering.addEventListener('click', () => {
@@ -657,7 +629,7 @@ class GameApp {
       if (msg.winner === 'runner') {
         title.innerText = 'RUNNER ESCAPED!';
         title.style.color = '#00ffff';
-        desc.innerText = msg.reason || 'The Runner conquered the obstacles and reached the Beacon!';
+        desc.innerText = msg.reason || 'The Runner survived the match!';
         audio.playWin();
       } else {
         title.innerText = 'SABOTEUR VICTORIOUS!';
@@ -754,12 +726,6 @@ class GameApp {
 
     // New seed and terrain
     if (msg.seed) this.worldManager.setSeed(msg.seed);
-    if (msg.goalPosition) {
-      this.goalBeacon.setPosition(msg.goalPosition.x, msg.goalPosition.z);
-      this.runner.goalBeacon = this.goalBeacon;
-      this.saboteur.goalBeacon = this.goalBeacon;
-    }
-
     // Reset obstacles and power-up items.
     this.obstacleManager.clear();
     if (this.powerUpManager) {
@@ -898,10 +864,7 @@ class GameApp {
       // Phase 3: Dynamic Celestial Day/Night progression
       this.updateDayNightCycle(dt);
 
-      // 1. Update Goal Beacon
-      this.goalBeacon.update(dt, elapsedTime);
-
-      // 2. Update Obstacle Physics (e.g. Rolling Boulders)
+      // 1. Update Obstacle Physics (e.g. Rolling Boulders)
       this.obstacleManager.update(dt);
 
       // Phase 3: Update power-up items.
@@ -933,16 +896,6 @@ class GameApp {
         }
         this.lastRunnerPosForDist.copy(this.runner.position);
 
-        // Immediate Goal Beacon Victory Check!
-        if (this.goalBeacon.checkRunnerInside(this.runner.position)) {
-          this.handleGameOver({
-            winner: 'runner',
-            reason: 'The Runner conquered the obstacles and reached the Beacon Goal!'
-          });
-          this.goalBeacon.triggerVictoryEffect(this.particles);
-          this.network.sendGoalReached();
-        }
-
         // Runner Elimination Check
         if (this.runner.health <= 0) {
           this.handleGameOver({
@@ -960,7 +913,7 @@ class GameApp {
         // Automatic Obstacle Placement & AI character maneuvering ONLY when no human Saboteur is available
         const aiShouldRun = !this.isHumanSaboteurAvailable() && this.aiSaboteur && this.aiSaboteur.enabled;
         if (aiShouldRun) {
-          this.aiSaboteur.update(dt, this.runner, this.goalBeacon, true);
+          this.aiSaboteur.update(dt, this.runner, true);
         }
       } else {
         // Keep Runner 3D Character positioned, grounded and visible for the Saboteur / Spectator
@@ -1043,18 +996,6 @@ class GameApp {
           </div>
         `).join('');
       }
-    }
-
-    // 1. Compass & Distance to Goal
-    const compassArrow = document.getElementById('compass-arrow');
-    const distanceMeter = document.getElementById('distance-meter');
-
-    if (compassArrow && distanceMeter) {
-      const dist = Math.round(this.goalBeacon.getDistanceTo(this.runner.position));
-      distanceMeter.innerText = `${dist}m`;
-
-      const relAngle = this.goalBeacon.getCompassAngle(this.runner.position, this.runner.rotationY);
-      compassArrow.style.transform = `rotate(${relAngle}rad)`;
     }
 
     // 2. Runner Health Bar
