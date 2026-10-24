@@ -2,8 +2,8 @@ import '../src/styles/index.css';
 import '../src/styles/hud.css';
 
 export const metadata = {
-  title: 'AetherBound: Sabotage | Run the Gauntlet',
-  description: 'Outrun the traps or control the terrain in AetherBound, a tactical open-world showdown.',
+  title: 'AetherBound: Dragon Hunt',
+  description: 'Scavenge, survive, and hunt the dragon in a multiplayer free-for-all.',
   applicationName: 'AetherBound',
   appleWebApp: {
     capable: true,

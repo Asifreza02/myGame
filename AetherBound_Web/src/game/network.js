@@ -1,36 +1,71 @@
 // WebSocket Network Client for Real-Time Multiplayer Sync
 
 export class NetworkClient {
-  constructor(role = 'auto', callbacks = {}, room = 'default') {
+  constructor(role = 'player', callbacks = {}, room = 'default', matchConfig = {}) {
     this.role = role;
     this.callbacks = callbacks;
     this.room = room;
+    this.matchConfig = matchConfig;
     this.ws = null;
     this.connected = false;
     this.clientId = null;
     this.reconnectAttempts = 0;
+    this.reconnectTimeout = null;
+    this.isDestroyed = false;
+    this.attackSequence = 0;
+    this.reconnectToken = this.loadReconnectToken(room);
 
     this.connect();
   }
 
+  reconnectStorageKey(room) {
+    return `aetherbound_reconnect:${room}`;
+  }
+
+  loadReconnectToken(room) {
+    try {
+      return localStorage.getItem(this.reconnectStorageKey(room)) || '';
+    } catch (error) {
+      console.warn('Could not load the reconnect session:', error);
+      return '';
+    }
+  }
+
+  saveReconnectToken(room, token) {
+    try {
+      if (room !== this.room) localStorage.removeItem(this.reconnectStorageKey(this.room));
+      localStorage.setItem(this.reconnectStorageKey(room), token);
+    } catch (error) {
+      console.warn('Could not save the reconnect session:', error);
+    }
+  }
+
   connect() {
+    if (this.isDestroyed) return;
+
     const pageProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const isLocalDevelopment = ['localhost', '127.0.0.1'].includes(window.location.hostname);
     const serverUrl = process.env.NEXT_PUBLIC_GAME_SERVER_URL ||
-      (isLocalDevelopment ? `${pageProtocol}//localhost:3000` : `${pageProtocol}//${window.location.host}`);
+      (isLocalDevelopment ? `${pageProtocol}//localhost:3001` : `${pageProtocol}//${window.location.host}`);
     const wsUrl = new URL(serverUrl);
-    wsUrl.searchParams.set('role', this.role);
     wsUrl.searchParams.set('room', this.room);
+    wsUrl.searchParams.set('mode', this.matchConfig.mode || 'ffa');
+    wsUrl.searchParams.set('duration', String(this.matchConfig.durationSeconds || 300));
+    if (this.matchConfig.seed) wsUrl.searchParams.set('seed', String(this.matchConfig.seed));
+    if (this.reconnectToken) wsUrl.searchParams.set('token', this.reconnectToken);
 
-    this.ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl);
+    this.ws = ws;
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
+      if (this.isDestroyed || this.ws !== ws) return;
       this.connected = true;
       this.reconnectAttempts = 0;
       if (this.callbacks.onConnected) this.callbacks.onConnected();
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (this.isDestroyed || this.ws !== ws) return;
       try {
         const msg = JSON.parse(event.data);
         this.handleMessage(msg);
@@ -39,29 +74,91 @@ export class NetworkClient {
       }
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = () => {
+      if (this.isDestroyed || this.ws !== ws) return;
       this.connected = false;
       if (this.callbacks.onDisconnected) this.callbacks.onDisconnected();
-      // Auto reconnect
-      setTimeout(() => {
-        if (this.reconnectAttempts < 5) {
-          this.reconnectAttempts++;
-          this.connect();
-        }
-      }, 2000);
+      this.reconnectAttempts++;
+      const delay = Math.min(15_000, 1_000 * (2 ** Math.min(this.reconnectAttempts, 4))) + Math.floor(Math.random() * 500);
+      this.reconnectTimeout = setTimeout(() => {
+        this.reconnectTimeout = null;
+        this.connect();
+      }, delay);
     };
 
-    this.ws.onerror = (err) => {
-      console.warn('WebSocket connection error:', err);
+    ws.onerror = (err) => {
+      if (!this.isDestroyed && this.ws === ws) {
+        console.warn('WebSocket connection error:', err);
+      }
     };
+  }
+
+  destroy() {
+    this.isDestroyed = true;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.connected = false;
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      this.ws.onopen = null;
+      this.ws.close();
+      this.ws = null;
+    }
   }
 
   handleMessage(msg) {
     switch (msg.type) {
       case 'INIT_STATE':
-        this.clientId = msg.clientId;
-        this.role = msg.role;
+        this.clientId = msg.playerId || msg.clientId;
+        this.role = 'player';
+        if (msg.reconnectToken) {
+          this.saveReconnectToken(msg.room || this.room, msg.reconnectToken);
+          this.reconnectToken = msg.reconnectToken;
+        }
+        if (msg.room && msg.room !== this.room) {
+          this.room = msg.room;
+          const url = new URL(window.location.href);
+          url.searchParams.set('room', msg.room);
+          window.history.replaceState(window.history.state, '', url);
+        }
         if (this.callbacks.onInitState) this.callbacks.onInitState(msg);
+        break;
+
+      case 'MATCH_STATE':
+        if (this.callbacks.onMatchState) this.callbacks.onMatchState(msg.snapshot);
+        break;
+      case 'MATCH_STARTED':
+        if (this.callbacks.onMatchStarted) this.callbacks.onMatchStarted(msg);
+        break;
+      case 'MATCH_RESULTS':
+        if (this.callbacks.onMatchResults) this.callbacks.onMatchResults(msg);
+        break;
+      case 'PLAYER_JOINED':
+      case 'PLAYER_ELIMINATED':
+      case 'PLAYER_DISCONNECTED':
+      case 'PLAYER_RECONNECTED':
+      case 'PLAYER_DAMAGED':
+      case 'PLAYER_ATTACKED':
+      case 'ATTACK_RESULT':
+      case 'ITEM_COLLECTED':
+      case 'ABILITY_USED':
+      case 'ABILITY_RESULT':
+      case 'HAZARD_DEPLOYED':
+      case 'DRAGON_DAMAGED':
+      case 'DRAGON_ATTACK_TELEGRAPH':
+      case 'DRAGON_ATTACK_RESOLVED':
+      case 'DRAGON_PHASE_CHANGED':
+      case 'WORLD_HAZARD_WARNING':
+      case 'ROOM_FULL':
+        if (this.callbacks.onGameEvent) this.callbacks.onGameEvent(msg);
+        break;
+      case 'SESSION_IN_USE':
+        if (this.callbacks.onSessionInUse) this.callbacks.onSessionInUse(msg.message);
+        this.destroy();
         break;
 
       case 'RUNNER_UPDATE':
@@ -130,6 +227,14 @@ export class NetworkClient {
     }
     return false;
   }
+
+  sendPlayerMove(state) { this.send({ type: 'PLAYER_MOVE', state }); }
+  attack() {
+    this.attackSequence += 1;
+    this.send({ type: 'KNIFE_ATTACK', attackId: this.attackSequence });
+  }
+  collectItem(id) { this.send({ type: 'PICKUP_ITEM', id }); }
+  useAbility(ability) { this.send({ type: 'USE_ABILITY', ability }); }
 
   sendRunnerMove(state) {
     this.send({ type: 'RUNNER_MOVE', state });

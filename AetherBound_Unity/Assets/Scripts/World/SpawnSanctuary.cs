@@ -29,9 +29,18 @@ namespace AetherBound
         public void BuildSanctuaryGround()
         {
             // Clean old child objects if regenerating
-            while (transform.childCount > 0)
+            for (int i = transform.childCount - 1; i >= 0; i--)
             {
-                DestroyImmediate(transform.GetChild(0).gameObject);
+                var child = transform.GetChild(i).gameObject;
+                if (Application.isPlaying)
+                {
+                    child.transform.SetParent(null);
+                    Destroy(child);
+                }
+                else
+                {
+                    DestroyImmediate(child);
+                }
             }
 
             var stoneMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"))
@@ -63,63 +72,21 @@ namespace AetherBound
             int groundLayer = LayerMask.NameToLayer("Ground");
             if (groundLayer == -1) groundLayer = 0;
 
-            // 1. Central Spawn Dais / Pedestal
+            // 1. Central Spawn Dais (Single solid stone platform - no overlapping thin discs)
             var dais = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             dais.name = "CentralDais";
             dais.layer = groundLayer;
             dais.transform.parent = transform;
-            dais.transform.localPosition = new Vector3(0, 0.75f, 0);
-            dais.transform.localScale = new Vector3(platformRadius * 1.6f, 0.25f, platformRadius * 1.6f);
+            dais.transform.localPosition = new Vector3(0, 0.85f, 0);
+            dais.transform.localScale = new Vector3(platformRadius * 1.6f, 0.15f, platformRadius * 1.6f);
             dais.GetComponent<Renderer>().sharedMaterial = stoneMat;
 
-            // 2. Inner Concentric Rune Ring
-            var innerRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            innerRing.name = "RuneRing_Inner";
-            innerRing.layer = groundLayer;
-            innerRing.transform.parent = transform;
-            innerRing.transform.localPosition = new Vector3(0, 0.88f, 0);
-            innerRing.transform.localScale = new Vector3(platformRadius * 0.9f, 0.05f, platformRadius * 0.9f);
-            var innerCol = innerRing.GetComponent<Collider>();
-            if (innerCol != null) DestroyImmediate(innerCol);
-            innerRing.GetComponent<Renderer>().sharedMaterial = runeMat;
-
-            // Inner trim
-            var innerDisc = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            innerDisc.name = "InnerPlatform";
-            innerDisc.layer = groundLayer;
-            innerDisc.transform.parent = transform;
-            innerDisc.transform.localPosition = new Vector3(0, 0.90f, 0);
-            innerDisc.transform.localScale = new Vector3(platformRadius * 0.75f, 0.06f, platformRadius * 0.75f);
-            innerDisc.GetComponent<Renderer>().sharedMaterial = stoneMat;
-
-            // 3. Central Energy Crest
-            var crest = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            crest.name = "CenterAetherCrest";
-            crest.layer = groundLayer;
-            crest.transform.parent = transform;
-            crest.transform.localPosition = new Vector3(0, 0.95f, 0);
-            crest.transform.localScale = new Vector3(2.5f, 0.04f, 2.5f);
-            var cCol = crest.GetComponent<Collider>();
-            if (cCol != null) DestroyImmediate(cCol);
-            crest.GetComponent<Renderer>().sharedMaterial = goldTrimMat;
-
-            // 4. Four Guardian Pylons framing the sanctuary
-            float pylonDist = platformRadius * 0.65f;
-            Vector3[] pylonOffsets = new Vector3[]
+            // Mark all sanctuary geometry static for batching & zero overhead
+            gameObject.isStatic = true;
+            foreach (var t in GetComponentsInChildren<Transform>(true))
             {
-                new Vector3(pylonDist, 0, pylonDist),
-                new Vector3(-pylonDist, 0, pylonDist),
-                new Vector3(pylonDist, 0, -pylonDist),
-                new Vector3(-pylonDist, 0, -pylonDist)
-            };
-
-            for (int i = 0; i < pylonOffsets.Length; i++)
-            {
-                CreateGuardianPylon(pylonOffsets[i], stoneMat, goldTrimMat, runeMat);
+                t.gameObject.isStatic = true;
             }
-
-            // 5. Training Parkour Hurdles (a low vault wall and slide arch)
-            CreateParkourHurdles(stoneMat, goldTrimMat);
         }
 
         private void CreateGuardianPylon(Vector3 offset, Material stoneMat, Material trimMat, Material runeMat)
@@ -153,14 +120,8 @@ namespace AetherBound
                     torch.transform.localScale = Vector3.one * 1.5f;
                 }
 
-                var pLightGo = new GameObject("PylonAuraLight");
-                pLightGo.transform.parent = pylon.transform;
-                pLightGo.transform.localPosition = new Vector3(0, 3.6f, 0);
-                var pl = pLightGo.AddComponent<Light>();
-                pl.color = new Color(0f, 0.9f, 1f);
-                pl.intensity = 1.6f;
-                pl.range = 7f;
-
+                pylon.isStatic = true;
+                foreach (var c in pylon.GetComponentsInChildren<Transform>(true)) c.gameObject.isStatic = true;
                 return;
             }
 #endif
@@ -190,14 +151,8 @@ namespace AetherBound
             if (col != null) DestroyImmediate(col);
             crystal.GetComponent<Renderer>().sharedMaterial = runeMat;
 
-            // Point Light
-            var ltObj = new GameObject("PylonLight");
-            ltObj.transform.parent = pylon.transform;
-            ltObj.transform.localPosition = new Vector3(0, 4.4f, 0);
-            var lt = ltObj.AddComponent<Light>();
-            lt.color = runeGlowColor;
-            lt.intensity = 1.8f;
-            lt.range = 8.0f;
+            pylon.isStatic = true;
+            foreach (var c in pylon.GetComponentsInChildren<Transform>(true)) c.gameObject.isStatic = true;
         }
 
         private void CreateParkourHurdles(Material stoneMat, Material trimMat)

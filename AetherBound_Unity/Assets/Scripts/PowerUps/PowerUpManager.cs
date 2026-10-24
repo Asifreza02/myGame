@@ -38,52 +38,12 @@ namespace AetherBound
         public void PopulateArenaPowerUps()
         {
             ClearAll();
-
-            // Spawn guaranteed power-ups along corridor path
-            Vector3[] pathWaypoints = new Vector3[]
-            {
-                new Vector3(-8f, 0f, 18f),
-                new Vector3(8f, 0f, 32f),
-                new Vector3(-6f, 0f, 48f),
-                new Vector3(7f, 0f, 62f)
-            };
-
-            PowerUpType[] types = new PowerUpType[]
-            {
-                PowerUpType.Speed,
-                PowerUpType.Shield,
-                PowerUpType.Jump,
-                PowerUpType.Health
-            };
-
-            for (int i = 0; i < pathWaypoints.Length; i++)
-            {
-                Vector3 p = pathWaypoints[i];
-                float y = (WorldManager.Instance != null) ? WorldManager.Instance.GetHeightAt(p.x, p.z) + 1.1f : 1.1f;
-                SpawnChest(types[i % types.Length], new Vector3(p.x, y, p.z));
-            }
+            // All small floating/blinking powerup chests removed per user request
         }
 
         private void HandleChunkCreated(int cx, int cz)
         {
-            var coord = new Vector2Int(cx, cz);
-            if (populatedChunks.Contains(coord)) return;
-            populatedChunks.Add(coord);
-
-            // Spawn additional dynamic power-up chests on outer chunks
-            if ((cx + cz) % 2 != 0)
-            {
-                float x = cx * GameConfig.ChunkSize + 14f;
-                float z = cz * GameConfig.ChunkSize + 14f;
-                float y = (WorldManager.Instance != null) ? WorldManager.Instance.GetHeightAt(x, z) + 1.1f : 1.1f;
-                Vector3 pos = new Vector3(x, y, z);
-
-                if (SpawnSanctuary.Instance != null && SpawnSanctuary.Instance.IsInsideSanctuary(pos)) return;
-                if (GoalBeacon.Instance != null && GoalBeacon.Instance.IsInsideSanctuary(pos)) return;
-
-                PowerUpType type = (PowerUpType)UnityEngine.Random.Range(0, 4);
-                SpawnChest(type, pos);
-            }
+            // Kept clean and uncluttered across the 2km radius field
         }
 
         public void SpawnChest(PowerUpType type, Vector3 pos)

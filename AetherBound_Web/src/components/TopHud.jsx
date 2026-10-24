@@ -1,107 +1,44 @@
 import React from 'react';
 
-export function TopHud({
-  timeRemaining = 120,
-  activeRole = 'runner',
-  roomCode = 'default',
-  playerCounts = { runner: 1, saboteur: 0, lobby: 0 },
-  environment = {},
-  aiEnabled = true,
-  humanSaboteurAvailable = false,
-  onToggleAI,
-  toastMessage = null,
-  isLocalDual = false,
-}) {
+export function TopHud({ timeRemaining = 300, roomCode = 'default', playerCounts = {}, environment = {}, dragon = {}, matchConfig = {}, toastMessage = null, onExitToLobby, onShareRoom }) {
   const mins = Math.floor(timeRemaining / 60);
   const secs = timeRemaining % 60;
   const timerStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  const isUrgent = timeRemaining <= 15;
-
+  const alive = playerCounts.alive ?? playerCounts.total ?? 1;
   const { biome, todName, todClass } = environment;
-  const biomeIcons = { LUSH: '🌿', DESERT: '🏜️', SNOW: '❄️', VOLCANIC: '🌋' };
-
-  let aiClass = 'ai-disabled';
-  let aiText = '🤖 AI Saboteur: DISABLED';
-
-  if (humanSaboteurAvailable) {
-    aiClass = 'ai-standby';
-    aiText = '👤 Human Saboteur: ACTIVE (AI Standby)';
-  } else if (aiEnabled) {
-    aiClass = 'ai-active';
-    aiText = '🤖 AI Saboteur: ACTIVE (Auto-Hazards)';
-  }
-
+  const dragonHealth = Math.max(0, dragon.health ?? 300);
+  const dragonMaxHealth = dragon.maxHealth ?? 300;
+  const dragonHealthPct = dragonMaxHealth > 0 ? (dragonHealth / dragonMaxHealth) * 100 : 0;
+  const modeName = matchConfig.modeName || (matchConfig.mode === 'dragon-hunt'
+    ? 'DRAGON HUNT'
+    : matchConfig.mode === 'solo' ? 'SOLO SURVIVAL' : 'FREE-FOR-ALL');
   return (
     <>
       <div id="top-hud">
-        {/* Room badge */}
+        <div className="hud-panel"><span className="room-tag">ROOM: {roomCode}</span></div>
+        <div className="hud-panel" id="timer-box"><span className="hud-label">SURVIVAL</span><span id="hud-timer" className={timeRemaining <= 30 ? 'urgent' : ''}>{timerStr}</span></div>
+        <div className="hud-panel"><span className="role-tag player">{modeName.toUpperCase()}</span></div>
+        {matchConfig.seed && <div className="hud-panel"><span className="room-tag">SEED: {matchConfig.seed}</span></div>}
+        {biome && <div className="hud-panel"><span className="biome-tag">{biome.name}</span></div>}
         <div className="hud-panel">
-          <span className="room-tag">ROOM: {roomCode}</span>
+          <span className={`tod-tag ${todClass || 'clear'}`}>{todName || 'Clear Skies'}</span>
+          {environment.weather?.secondsUntilChange > 0 && (
+            <span className="weather-countdown">{environment.weather.secondsUntilChange}s</span>
+          )}
         </div>
-
-        {/* Round Timer */}
-        <div className="hud-panel" id="timer-box">
-          <span className="hud-label">TIME REMAINING</span>
-          <span id="hud-timer" className={isUrgent ? 'urgent' : ''}>
-            {timerStr}
-          </span>
+        <div className="hud-panel"><span id="lobby-status">{alive} {matchConfig.mode === 'dragon-hunt' ? 'HUNTERS' : 'SURVIVORS'}</span></div>
+        <div className="hud-panel dragon-status" aria-live="polite">
+          <div className="dragon-status-heading">DRAGON · {dragon.alive === false ? 'DEFEATED' : (dragon.phase || 'STALKING')}</div>
+          <div className="dragon-health-track"><div className="dragon-health-fill" style={{ width: `${dragonHealthPct}%` }} /></div>
+          <span className="dragon-health-value">{dragonHealth} / {dragonMaxHealth}</span>
+          {dragon.attack && <strong className="dragon-telegraph-copy">⚠ {dragon.attack.name} · DODGE THE MARKED AREA</strong>}
         </div>
-
-        {/* Active Role */}
-        <div className="hud-panel">
-          <span className={`role-tag ${activeRole}`}>
-            {activeRole.toUpperCase()}
-          </span>
-        </div>
-
-        {/* Biome Badge */}
-        {biome && (
-          <div className="hud-panel">
-            <span className={`biome-tag ${biome.id ? biome.id.toLowerCase() : 'lush'}`}>
-              {biomeIcons[biome.id] || '🌍'} {biome.name}
-            </span>
-          </div>
-        )}
-
-        {/* Fixed daytime lighting badge */}
-        <div className="hud-panel">
-          <span className={`tod-tag ${todClass || 'noon'}`}>
-            {todName || '☀️ DAYTIME'}
-          </span>
-        </div>
-
-        {/* AI / Human Status Button */}
-        <div className="hud-panel">
-          <button
-            id="ai-saboteur-toggle"
-            className={aiClass}
-            onClick={onToggleAI}
-          >
-            {aiText}
-          </button>
-        </div>
-
-        {/* Player Counts */}
-        <div className="hud-panel">
-          <span id="lobby-status">
-            Players: {playerCounts.runner || 0} Runner | {playerCounts.saboteur || 0} Saboteur
-          </span>
+        <div className="hud-panel hud-action-buttons">
+          <button id="share-room-button" className="interactive" type="button" onClick={onShareRoom}>SHARE MATCH</button>
+          <button id="exit-lobby-button" className="interactive" type="button" onClick={onExitToLobby}>EXIT TO LOBBY</button>
         </div>
       </div>
-
-      {/* Local dual hint */}
-      {isLocalDual && (
-        <div id="local-dual-hint" className="hud-panel">
-          <span>👥 LOCAL DUAL: Press <b>[Tab]</b> to switch Runner / Saboteur</span>
-        </div>
-      )}
-
-      {/* Toast Alert */}
-      {toastMessage && (
-        <div id="ai-hazard-toast" className="toast-show">
-          {toastMessage}
-        </div>
-      )}
+      {toastMessage && <div id="ai-hazard-toast" className="toast-show">{toastMessage}</div>}
     </>
   );
 }

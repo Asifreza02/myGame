@@ -11,22 +11,45 @@ import { AISaboteur } from './ai_saboteur.js';
 import { ParticleSystem } from './particles.js';
 import { PowerUpManager } from './powerups.js';
 import { audio } from './audio.js';
+import { ITEM_DEFINITIONS, KNIFE_RULES } from './data/combat.js';
+import { RESOURCE_DEFINITIONS, getWeatherState } from './data/world.js';
+import { normalizeMatchConfig } from './data/matchModes.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+function disposeThreeObject(root) {
+  root?.traverse((object) => {
+    if (!object.isMesh) return;
+    object.geometry?.dispose();
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      if (!material) continue;
+      for (const value of Object.values(material)) {
+        if (value?.isTexture) value.dispose();
+      }
+      material.dispose();
+    }
+  });
+}
 
 export class GameEngine {
   constructor(containerElement, onStateChange) {
     this.container = containerElement;
     this.onStateChange = onStateChange;
 
-    this.activeRole = 'runner';
-    this.isLocalDual = false;
-    this.gameState = 'PLAYING';
-    this.timeRemaining = GAME_CONFIG.ROUND_TIME;
-    this.playerCounts = { runner: 1, saboteur: 0, lobby: 0 };
+    this.activeRole = 'player';
+    this.gameState = 'ROLE_SELECT';
+    this.timeRemaining = 300;
+    this.playerCounts = { total: 1, alive: 1 };
 
     const params = new URLSearchParams(window.location.search);
     this.roomCode = params.get('room') || 'default';
-    const preferredRole = params.get('role');
-    this.isLocalDual = params.get('mode') === 'local';
+    this.matchConfig = normalizeMatchConfig({
+      mode: params.get('mode'),
+      durationSeconds: params.get('duration'),
+      seed: params.get('seed'),
+    });
+    const navigationEntry = performance.getEntriesByType('navigation')[0];
+    const preferredRole = navigationEntry?.type === 'reload' ? null : params.get('role');
     this.returningToMenu = params.get('menu') === '1';
     this.roleSelectMessage = '';
 
@@ -39,8 +62,8 @@ export class GameEngine {
     this.lastSaboteurSync = 0;
     this.lastStateEmit = 0;
     this.serverStatus = 'WAITING';
-    this.pendingLocalRematch = false;
     this.gameOverTimeout = null;
+    this.aiSaboteurPreferredEnabled = true;
 
     this.todName = '☀️ DAYTIME';
     this.todClass = 'noon';
@@ -56,6 +79,21 @@ export class GameEngine {
     this.toastTimeout = null;
     this.isPointerLocked = false;
     this.gameOverData = null;
+    this.playerId = null;
+    this.remotePlayers = new Map();
+    this.pickupMeshes = new Map();
+    this.pickups = [];
+    this.hazardMeshes = new Map();
+    this.dragonState = { health: 420, maxHealth: 420, alive: true, phase: 'STALKING' };
+    this.abilityCooldowns = {};
+    this.attackCooldownUntil = 0;
+    this.reconRevealUntil = 0;
+    this.lastTelegraphId = null;
+    this.weatherState = getWeatherState(0);
+    this.lastWeatherId = null;
+    this.matchStats = { kills: 0, survivalTime: 0, itemsCollected: 0, damageDealt: 0, dragonDamage: 0 };
+    this.playerResources = {};
+    this.matchHistory = this.loadMatchHistory();
 
     this.placementData = {
       visible: false,
@@ -72,9 +110,9 @@ export class GameEngine {
 
     this.initThree();
     this.initGameSystems();
-    this.initNetwork(preferredRole || 'auto');
+    if (preferredRole) this.initNetwork('player');
 
-    if (preferredRole || this.isLocalDual) {
+    if (preferredRole === 'player') {
       this.setRole(this.activeRole);
     } else {
       this.gameState = 'ROLE_SELECT';
@@ -147,6 +185,7 @@ export class GameEngine {
 
     this.goalBeacon = new GoalBeacon(this.scene, this.worldManager);
     this.goalBeacon.setPosition(120, 120);
+    this.goalBeacon.group.visible = false;
 
     // Runner
     this.runner = new RunnerController(this.scene, this.camera, this.renderer.domElement);
@@ -154,8 +193,86 @@ export class GameEngine {
     this.runner.particles = this.particles;
     this.runner.physics = this.physics;
     this.runner.worldManager = this.worldManager;
+    this.runner.setCharacterModelReadyHandler(() => this.refreshRemoteCharacterModels());
     const startY = this.worldManager.getHeightAt(0, 0);
     this.runner.setState({ x: 0, y: startY + 1.0, z: 0, ry: 0 });
+    this.runner.enabled = false;
+    this.worldManager.update([this.runner.position, this.camera.position], 0);
+
+    this.dragonMesh = new THREE.Group();
+    this.dragonFallback = new THREE.Group();
+    const dragonBody = new THREE.Mesh(
+      new THREE.SphereGeometry(2.4, 18, 14),
+      new THREE.MeshStandardMaterial({ color: 0x682c32, roughness: 0.7, emissive: 0x26090c }),
+    );
+    dragonBody.scale.set(1.3, 0.8, 1.9);
+    dragonBody.position.y = 2.3;
+    dragonBody.castShadow = true;
+    this.dragonFallback.add(dragonBody);
+    const dragonHead = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.2, 8), new THREE.MeshStandardMaterial({ color: 0xb73b32, roughness: 0.6 }));
+    dragonHead.rotation.x = Math.PI / 2;
+    dragonHead.position.set(0, 2.5, -3.2);
+    this.dragonFallback.add(dragonHead);
+    const wingMaterial = new THREE.MeshStandardMaterial({ color: 0x3d1822, side: THREE.DoubleSide, roughness: 0.86 });
+    for (const side of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 2.8), wingMaterial);
+      wing.position.set(side * 2.5, 3.25, 0.4);
+      wing.rotation.set(-0.38, side * 0.22, side * 0.28);
+      this.dragonFallback.add(wing);
+    }
+    this.dragonMesh.add(this.dragonFallback);
+    this.dragonBaseY = this.worldManager.getHeightAt(42, -34) + 11;
+    this.dragonMesh.position.set(42, this.dragonBaseY, -34);
+    this.dragonTargetPosition = new THREE.Vector3(42, this.dragonBaseY, -34);
+    this.dragonRenderPosition = this.dragonTargetPosition.clone();
+    this.dragonTargetYaw = 0;
+    this.scene.add(this.dragonMesh);
+    this.dragonMixer = null;
+    this.dragonAnimationClips = new Map();
+    this.dragonActiveAction = null;
+    this.dragonActiveAnimation = null;
+    this.loadDragonModel();
+
+    this.dragonBreathBeam = new THREE.Group();
+    this.dragonBreathOuter = new THREE.Mesh(
+      new THREE.CylinderGeometry(4.5, 0.3, 1, 18, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xff431c, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    this.dragonBreathInner = new THREE.Mesh(
+      new THREE.CylinderGeometry(2, 0.08, 1, 14, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd044, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    this.dragonBreathBeam.add(this.dragonBreathOuter, this.dragonBreathInner);
+    this.dragonBreathBeam.visible = false;
+    this.scene.add(this.dragonBreathBeam);
+
+    const telegraphMaterial = new THREE.MeshBasicMaterial({ color: 0xff6238, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
+    this.dragonTelegraph = new THREE.Mesh(new THREE.CircleGeometry(1, 48), telegraphMaterial);
+    this.dragonTelegraph.rotation.x = -Math.PI / 2;
+    this.dragonTelegraph.position.y = 0.18;
+    this.dragonTelegraph.visible = false;
+    this.scene.add(this.dragonTelegraph);
+    this.dragonTelegraphRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.96, 1, 48),
+      new THREE.MeshBasicMaterial({ color: 0xffaa55, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    this.dragonTelegraphRing.rotation.x = -Math.PI / 2;
+    this.dragonTelegraphRing.position.y = 0.2;
+    this.dragonTelegraphRing.visible = false;
+    this.scene.add(this.dragonTelegraphRing);
+    this.dragonBreathTelegraph = null;
+
+    this.onCombatClick = () => {
+      if (this.gameState !== 'PLAYING' || this.activeRole !== 'player') return;
+      this.attack();
+    };
+    this.renderer.domElement.addEventListener('pointerdown', this.onCombatClick);
+    this.onAbilityKey = (event) => {
+      const abilities = this.runner.inventory || [];
+      const index = Number(event.key) - 1;
+      if (index >= 0 && index < abilities.length) this.activateAbility(abilities[index]);
+    };
+    window.addEventListener('keydown', this.onAbilityKey);
 
     this.runner.onDamage = () => {
       this.damageFlash = Date.now();
@@ -214,19 +331,6 @@ export class GameEngine {
       }
     );
 
-    this.worldManager.onChunkCreated = (cx, cz) => {
-      this.powerUpManager.populateChunk(cx, cz);
-    };
-    this.worldManager.onChunksCleared = () => {
-      this.powerUpManager.clear();
-    };
-
-    for (let cx = -2; cx <= 2; cx++) {
-      for (let cz = -2; cz <= 2; cz++) {
-        this.powerUpManager.populateChunk(cx, cz);
-      }
-    }
-
     this.saboteur.onReconCallback = (origin) => {
       if (this.network) {
         this.network.sendReconScan(origin);
@@ -274,34 +378,92 @@ export class GameEngine {
     );
   }
 
+  loadDragonModel() {
+    const loader = new GLTFLoader();
+    loader.load('/models/dragon/Ashwing_Drake_Lite.glb', (gltf) => {
+      if (this.destroyed) {
+        disposeThreeObject(gltf.scene);
+        return;
+      }
+
+      gltf.scene.traverse((object) => {
+        if (object.isMesh) {
+          object.castShadow = true;
+          object.receiveShadow = true;
+        }
+      });
+
+      const modelRoot = new THREE.Group();
+      modelRoot.scale.setScalar(0.82);
+      modelRoot.add(gltf.scene);
+      if (this.dragonFallback) {
+        this.dragonMesh.remove(this.dragonFallback);
+        disposeThreeObject(this.dragonFallback);
+        this.dragonFallback = null;
+      }
+      this.dragonMesh.add(modelRoot);
+      this.dragonModelRoot = modelRoot;
+      this.dragonMixer = new THREE.AnimationMixer(gltf.scene);
+      this.dragonAnimationClips = new Map(gltf.animations.map((clip) => [clip.name, clip]));
+      this.playDragonAnimation('fly_loop', true);
+    }, undefined, (error) => {
+      console.error('Could not load the dragon model.', error);
+    });
+  }
+
+  playDragonAnimation(name, loop = true) {
+    const clip = this.dragonAnimationClips?.get(name);
+    if (!clip || !this.dragonMixer || this.dragonActiveAnimation === name) return;
+    this.dragonActiveAction?.fadeOut(0.2);
+    const action = this.dragonMixer.clipAction(clip);
+    action.reset();
+    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+    action.clampWhenFinished = !loop;
+    action.fadeIn(0.2).play();
+    this.dragonActiveAction = action;
+    this.dragonActiveAnimation = name;
+  }
+
   initNetwork(preferredRole) {
     this.network = new NetworkClient(preferredRole, {
       onInitState: (msg) => {
         this.serverStatus = msg.status;
-        if (!this.isLocalDual) {
-          if (this.returningToMenu) {
-            this.activeRole = msg.role;
-            this.gameState = 'ROLE_SELECT';
-          } else if (msg.role === 'lobby') {
-            this.setRole('lobby');
-          } else {
-            this.setRole(msg.role);
-          }
+        this.playerId = msg.playerId;
+        if (msg.room) this.roomCode = msg.room;
+        if (msg.matchConfig) this.matchConfig = msg.matchConfig;
+        if (this.returningToMenu) {
+          this.gameState = 'ROLE_SELECT';
+        } else {
+          this.setRole('player');
         }
         if (msg.seed) {
           this.worldManager.setSeed(msg.seed);
         }
-        if (msg.goalPosition) {
-          this.goalBeacon.setPosition(msg.goalPosition.x, msg.goalPosition.z);
-          this.runner.goalBeacon = this.goalBeacon;
-          this.saboteur.goalBeacon = this.goalBeacon;
-        }
-        if (msg.obstacles && msg.obstacles.length > 0) {
-          msg.obstacles.forEach((obs) => {
-            this.obstacleManager.spawnObstacle(obs.id, obs.type, obs.position, obs.rotation);
-          });
-        }
+        if (msg.snapshot) this.applyMatchSnapshot(msg.snapshot);
         this.timeRemaining = msg.timeRemaining;
+        if (msg.resumed) this.showToast('Connection restored. You rejoined your match.');
+        this.emitState();
+      },
+
+      onDisconnected: () => {
+        this.serverStatus = 'RECONNECTING';
+        this.showToast('Connection lost. Reconnecting to your match…');
+      },
+      onMatchState: (snapshot) => this.applyMatchSnapshot(snapshot),
+      onMatchStarted: (message) => {
+        this.serverStatus = 'ACTIVE';
+        if (message.matchConfig) this.matchConfig = message.matchConfig;
+        this.gameState = 'PLAYING';
+        this.emitState();
+      },
+      onMatchResults: (result) => {
+        this.applyMatchSnapshot(result.snapshot || {});
+        this.handleMatchResults(result);
+      },
+      onGameEvent: (event) => this.handleGameEvent(event),
+      onSessionInUse: (message) => {
+        this.returnToMenu(false);
+        this.roleSelectMessage = message || 'This player session is already connected.';
         this.emitState();
       },
 
@@ -309,13 +471,7 @@ export class GameEngine {
         this.activeRole = role;
         this.returningToMenu = false;
         this.roleSelectMessage = '';
-        const waitingForServerRematch =
-          this.pendingLocalRematch &&
-          (this.serverStatus === 'RUNNER_WON' || this.serverStatus === 'SABOTEUR_WON');
-        if (this.pendingLocalRematch && !waitingForServerRematch) {
-          this.resetRound({ timeRemaining: GAME_CONFIG.ROUND_TIME });
-        }
-        if (!waitingForServerRematch) this.setRole(role);
+        this.setRole(role);
       },
 
       onRoleAssignmentFailed: (message) => {
@@ -324,9 +480,7 @@ export class GameEngine {
       },
 
       onRunnerUpdate: (remoteState) => {
-        if (this.activeRole !== 'runner') {
-          this.runner.setState(remoteState);
-        }
+        // Role-specific replication is not used by free-for-all matches.
       },
 
       onSaboteurUpdate: (remoteState) => {
@@ -391,10 +545,8 @@ export class GameEngine {
       },
 
       onRoundStarted: (msg) => {
-        const resumeAfterRound = this.pendingLocalRematch;
         this.serverStatus = msg.status || 'PLAYING';
         this.resetRound(msg);
-        if (resumeAfterRound) this.setRole(this.activeRole);
       },
 
       onReturnToLobby: (msg) => {
@@ -414,7 +566,425 @@ export class GameEngine {
           this.powerUpManager.handleRemoteCollect(data.id);
         }
       }
-    }, this.roomCode);
+    }, this.roomCode, this.matchConfig);
+  }
+
+  applyMatchSnapshot(snapshot) {
+    if (!snapshot || !Array.isArray(snapshot.players)) return;
+    this.serverStatus = snapshot.state || this.serverStatus;
+    this.timeRemaining = snapshot.timeRemaining ?? this.timeRemaining;
+    if (snapshot.matchConfig) this.matchConfig = snapshot.matchConfig;
+    if (snapshot.room) this.roomCode = snapshot.room;
+    if (snapshot.weather) this.weatherState = snapshot.weather;
+    const previousPhase = this.dragonState?.phase;
+    this.dragonState = snapshot.dragon || this.dragonState;
+    this.playerCounts = {
+      total: snapshot.players.length,
+      alive: snapshot.players.filter((player) => player.alive).length,
+    };
+    for (const player of snapshot.players) {
+      if (player.id === this.playerId) {
+        if (!this.playerSpawned) {
+          this.runner.setState({ x: player.x, y: player.y, z: player.z, ry: player.ry, health: player.health });
+          this.playerSpawned = true;
+        }
+        this.runner.health = player.health;
+        this.runner.maxHealth = player.maxHealth;
+        this.runner.inventory = player.inventory || [];
+        this.playerResources = player.resources || {};
+        this.matchStats = player.stats || this.matchStats;
+        this.abilityCooldowns = player.abilityReadyAt || this.abilityCooldowns;
+        if (!player.alive) this.runner.enabled = false;
+        continue;
+      }
+      let remote = this.remotePlayers.get(player.id);
+      if (!remote) {
+        const group = this.runner.cloneCharacterGroup();
+        group.traverse((node) => { if (node.isMesh) node.castShadow = true; });
+        const labelCanvas = document.createElement('canvas');
+        labelCanvas.width = 320;
+        labelCanvas.height = 72;
+        const context = labelCanvas.getContext('2d');
+        context.fillStyle = 'rgba(8, 20, 24, 0.82)';
+        context.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
+        context.fillStyle = '#b8fff0';
+        context.font = 'bold 34px sans-serif';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(player.name || 'Wanderer', labelCanvas.width / 2, labelCanvas.height / 2);
+        const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false }));
+        label.position.y = 2.65;
+        label.scale.set(3.2, 0.72, 1);
+        group.add(label);
+        this.scene.add(group);
+        const snapshotTime = performance.now();
+        remote = {
+          group,
+          label,
+          state: player,
+          animator: this.runner.createCharacterAnimator(group),
+          lastSnapshotPosition: new THREE.Vector3(player.x, player.y, player.z),
+          lastSnapshotAt: snapshotTime,
+          animationState: { grounded: true },
+          attackTimer: 0,
+          hitReactTimer: 0,
+        };
+        this.remotePlayers.set(player.id, remote);
+      }
+      const snapshotTime = performance.now();
+      const snapshotDelta = Math.max(0.016, (snapshotTime - remote.lastSnapshotAt) / 1000);
+      const movementX = player.x - remote.lastSnapshotPosition.x;
+      const movementY = player.y - remote.lastSnapshotPosition.y;
+      const movementZ = player.z - remote.lastSnapshotPosition.z;
+      const horizontalDistance = Math.hypot(movementX, movementZ);
+      const snapshotSpeed = horizontalDistance / snapshotDelta;
+      const heading = player.ry || 0;
+      const forwardX = Math.sin(heading);
+      const forwardZ = Math.cos(heading);
+      const rightX = Math.cos(heading);
+      const rightZ = -Math.sin(heading);
+      const movementLength = Math.max(horizontalDistance, 0.001);
+      remote.animationState = {
+        moving: snapshotSpeed > 1.1,
+        sprinting: snapshotSpeed > 17,
+        forward: (movementX * forwardX + movementZ * forwardZ) / movementLength,
+        strafe: (movementX * rightX + movementZ * rightZ) / movementLength,
+        grounded: Math.abs(movementY) < 0.65,
+        verticalVelocity: THREE.MathUtils.clamp(movementY / snapshotDelta, -24, 24),
+      };
+      remote.lastSnapshotPosition.set(player.x, player.y, player.z);
+      remote.lastSnapshotAt = snapshotTime;
+      remote.state = player;
+      remote.group.position.set(player.x, player.y, player.z);
+      remote.group.rotation.y = player.ry || 0;
+      const range = Math.hypot(player.x - this.runner.position.x, player.z - this.runner.position.z);
+      remote.group.visible = player.alive && (range <= 95 || performance.now() < this.reconRevealUntil);
+    }
+    const currentIds = new Set(snapshot.players.filter((player) => player.id !== this.playerId).map((player) => player.id));
+    for (const [id, remote] of this.remotePlayers) {
+      if (currentIds.has(id)) continue;
+      this.scene.remove(remote.group);
+      this.remotePlayers.delete(id);
+    }
+    if (Array.isArray(snapshot.items)) {
+      this.pickups = snapshot.items;
+      for (const item of snapshot.items) {
+        if (!item.active) this.pendingPickups?.delete(item.id);
+        let mesh = this.pickupMeshes.get(item.id);
+        if (!mesh) {
+          const definition = ITEM_DEFINITIONS[item.type] || RESOURCE_DEFINITIONS[item.type];
+          const color = definition?.color || 0xffffff;
+          const size = item.rarity === 'Rare' ? 0.82 : item.rarity === 'Uncommon' ? 0.72 : 0.62;
+          mesh = new THREE.Mesh(new THREE.OctahedronGeometry(size, 0), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45 }));
+          mesh.position.set(item.x, this.worldManager.getHeightAt(item.x, item.z) + 1.15, item.z);
+          this.scene.add(mesh);
+          this.pickupMeshes.set(item.id, mesh);
+        }
+        mesh.visible = item.active;
+      }
+    }
+    const activeHazards = new Set((snapshot.hazards || []).map((hazard) => hazard.id));
+    for (const [id, mesh] of this.hazardMeshes) {
+      if (activeHazards.has(id)) continue;
+      this.scene.remove(mesh);
+      this.hazardMeshes.delete(id);
+    }
+    if (this.dragonMesh && this.dragonState) {
+      const flightHeight = Number.isFinite(this.dragonState.y) ? this.dragonState.y : 11;
+      this.dragonBaseY = this.worldManager.getHeightAt(this.dragonState.x, this.dragonState.z) + flightHeight;
+      this.dragonTargetPosition.set(this.dragonState.x, this.dragonBaseY, this.dragonState.z);
+      this.dragonTargetYaw = this.dragonState.ry || 0;
+      this.dragonMesh.visible = this.dragonState.alive;
+      this.updateDragonTelegraph(this.dragonState.attack);
+    }
+    if (previousPhase && previousPhase !== this.dragonState.phase) this.showToast(`Dragon phase: ${this.dragonState.phase}.`);
+    this.emitState();
+  }
+
+  refreshRemoteCharacterModels() {
+    if (!this.runner) return;
+    for (const remote of this.remotePlayers.values()) {
+      const previousGroup = remote.group;
+      const group = this.runner.cloneCharacterGroup();
+      group.add(remote.label);
+      group.position.copy(previousGroup.position);
+      group.rotation.copy(previousGroup.rotation);
+      group.visible = previousGroup.visible;
+      this.scene.remove(previousGroup);
+      this.scene.add(group);
+      remote.group = group;
+      remote.animator = this.runner.createCharacterAnimator(group);
+      remote.animator.update(0, remote.animationState);
+    }
+  }
+
+  updateDragonTelegraph(attack) {
+    const visible = Boolean(attack && this.dragonState?.alive);
+    if (!visible) {
+      const hadTelegraph = Boolean(this.lastTelegraphId);
+      this.dragonTelegraph.visible = false;
+      this.dragonTelegraphRing.visible = false;
+      this.dragonBreathBeam.visible = false;
+      this.clearDragonBreathTelegraph();
+      this.lastTelegraphId = null;
+      if (hadTelegraph) this.playDragonAnimation('fly_loop', true);
+      return;
+    }
+
+    const color = attack.color || 0xff6238;
+    if (attack.type === 'FIRE_BREATH') {
+      this.dragonTelegraph.visible = false;
+      this.dragonTelegraphRing.visible = false;
+      this.updateDragonBreathBeam(attack);
+      if (this.lastTelegraphId !== attack.id) {
+        this.clearDragonBreathTelegraph();
+        const segments = 32;
+        const halfAngle = Math.acos(THREE.MathUtils.clamp(attack.facingDotMin ?? 0.78, -1, 1));
+        const centerAngle = Math.atan2(attack.direction.x, attack.direction.z);
+        const vertices = new Float32Array((segments + 2) * 3);
+        const indices = [];
+        for (let i = 0; i <= segments; i += 1) {
+          const angle = centerAngle - halfAngle + (2 * halfAngle * i) / segments;
+          const offset = (i + 1) * 3;
+          vertices[offset] = Math.sin(angle) * attack.range;
+          vertices[offset + 2] = Math.cos(angle) * attack.range;
+          if (i < segments) indices.push(0, i + 1, i + 2);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+        const material = new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.28,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        this.dragonBreathTelegraph = new THREE.Mesh(geometry, material);
+        this.dragonBreathTelegraph.position.set(
+          attack.origin.x,
+          this.worldManager.getHeightAt(attack.origin.x, attack.origin.z) + 0.22,
+          attack.origin.z,
+        );
+        this.dragonBreathTelegraph.renderOrder = 2;
+        this.scene.add(this.dragonBreathTelegraph);
+      }
+    } else {
+      this.dragonBreathBeam.visible = false;
+      this.clearDragonBreathTelegraph();
+      this.dragonTelegraph.visible = true;
+      this.dragonTelegraphRing.visible = true;
+      this.dragonTelegraph.material.color.setHex(color);
+      this.dragonTelegraphRing.material.color.setHex(color);
+      this.dragonTelegraph.position.set(attack.target.x, this.worldManager.getHeightAt(attack.target.x, attack.target.z) + 0.18, attack.target.z);
+      this.dragonTelegraphRing.position.set(attack.target.x, this.dragonTelegraph.position.y + 0.02, attack.target.z);
+      this.dragonTelegraph.scale.set(attack.radius, attack.radius, attack.radius);
+      this.dragonTelegraphRing.scale.set(attack.radius, attack.radius, attack.radius);
+    }
+
+    if (this.lastTelegraphId !== attack.id) {
+      this.lastTelegraphId = attack.id;
+      this.playDragonAnimation(attack.type === 'FIRE_BREATH' ? 'roar' : 'bite', false);
+      this.showToast(`DRAGON ATTACK: ${attack.name.toUpperCase()} — DODGE THE MARKED AREA!`);
+    }
+  }
+
+  updateDragonBreathBeam(attack) {
+    if (!attack?.target || !attack.origin || !this.dragonMesh) {
+      this.dragonBreathBeam.visible = false;
+      return;
+    }
+
+    const direction = new THREE.Vector3(attack.direction.x, 0, attack.direction.z).normalize();
+    const start = new THREE.Vector3(attack.origin.x, this.dragonMesh.position.y + 1.4, attack.origin.z)
+      .addScaledVector(direction, 2.6);
+    const end = new THREE.Vector3(
+      attack.target.x,
+      this.worldManager.getHeightAt(attack.target.x, attack.target.z) + 0.55,
+      attack.target.z,
+    );
+    const beam = end.sub(start);
+    const length = beam.length();
+    if (length < 0.1) {
+      this.dragonBreathBeam.visible = false;
+      return;
+    }
+
+    beam.normalize();
+    this.dragonBreathBeam.position.copy(start).addScaledVector(beam, length / 2);
+    this.dragonBreathBeam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), beam);
+    this.dragonBreathOuter.scale.y = length;
+    this.dragonBreathInner.scale.y = length;
+    this.dragonBreathBeam.visible = true;
+  }
+
+  clearDragonBreathTelegraph() {
+    if (!this.dragonBreathTelegraph) return;
+    this.scene.remove(this.dragonBreathTelegraph);
+    this.dragonBreathTelegraph.geometry.dispose();
+    this.dragonBreathTelegraph.material.dispose();
+    this.dragonBreathTelegraph = null;
+  }
+
+  handleGameEvent(event) {
+    if (event.type === 'PLAYER_ATTACKED') {
+      const remote = this.remotePlayers.get(event.playerId);
+      if (remote) remote.attackTimer = 0.28;
+      return;
+    }
+    if (event.type === 'PLAYER_DAMAGED' && event.damage > 0) {
+      if (event.playerId === this.playerId) this.runner.hitReactTimer = 0.24;
+      else {
+        const remote = this.remotePlayers.get(event.playerId);
+        if (remote) remote.hitReactTimer = 0.24;
+      }
+    }
+
+    if (event.type === 'HAZARD_DEPLOYED') {
+      const geometry = new THREE.CylinderGeometry(0.78, 0.92, 0.28, 8);
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xc84237, emissive: 0x57100a, emissiveIntensity: 0.6 }));
+      mesh.position.set(event.hazard.x, this.worldManager.getHeightAt(event.hazard.x, event.hazard.z) + 0.2, event.hazard.z);
+      this.scene.add(mesh);
+      this.hazardMeshes.set(event.hazard.id, mesh);
+      this.showToast('Deployable hazard armed.');
+      return;
+    }
+    if (event.type === 'ATTACK_RESULT') {
+      if (!event.hit) {
+        const message = event.reason === 'cooldown'
+          ? `Knife ready in ${(event.cooldownRemaining / 1000).toFixed(1)}s.`
+          : event.reason === 'target-unavailable' ? 'Target already out of range.' : 'Knife missed. Face your target.';
+        this.showToast(message);
+      } else if (event.blocked) {
+        audio.playImpact();
+        this.showToast('Aegis Ward blocked the knife hit.');
+      } else {
+        audio.playImpact();
+        this.showToast(event.targetType === 'dragon' ? `Dragon struck for ${event.damage} damage.` : `Knife hit for ${event.damage} damage.`);
+      }
+    } else if (event.type === 'PLAYER_DAMAGED' && event.playerId === this.playerId) {
+      this.damageFlash = Date.now();
+      this.runner.health = event.health;
+      audio.playImpact();
+      if (event.damage > 0) {
+        const source = event.attackerId === 'dragon'
+          ? (event.source === 'FIRE_BREATH' ? 'Dragon fire breath' : event.source === 'GROUND_SLAM' ? 'Dragon ground slam' : 'Dragon')
+          : event.source === 'knife' ? 'Knife' : event.source === 'volcanic-ground' ? 'Volcanic ground' : 'Hazard';
+        this.showToast(`${source} hit: −${event.damage} health.`);
+      }
+    } else if (event.type === 'PLAYER_ELIMINATED') {
+      if (event.playerId === this.playerId) {
+        this.runner.enabled = false;
+        this.showToast('You were eliminated. Spectating until the match ends.');
+      } else {
+        this.showToast(`${event.player?.name || 'A rival'} was eliminated.`);
+      }
+    } else if (event.type === 'PLAYER_RECONNECTED') {
+      this.showToast(`${event.player?.name || 'A hunter'} rejoined the match.`);
+    } else if (event.type === 'ITEM_COLLECTED') {
+      const mesh = this.pickupMeshes.get(event.id);
+      if (mesh) mesh.visible = false;
+      this.pendingPickups?.delete(event.id);
+      if (event.playerId === this.playerId) {
+        this.runner.inventory = event.inventory || this.runner.inventory || [];
+        this.runner.health = event.health ?? this.runner.health;
+        this.playerResources = event.resources || this.playerResources;
+        if (event.kind === 'resource') this.stats.resourcesCollected += 1;
+        const definition = ITEM_DEFINITIONS[event.itemType] || RESOURCE_DEFINITIONS[event.itemType];
+        this.showToast(`${definition?.name || event.itemType} collected · ${event.rarity || 'Common'}.`);
+      } else {
+        this.showToast(`${this.remotePlayers.get(event.playerId)?.state?.name || 'A rival'} found ${event.itemType}.`);
+      }
+    } else if (event.type === 'ABILITY_USED' && event.playerId === this.playerId) {
+      if (event.ability === 'SPEED') {
+        this.runner.applySpeedBuff(event.duration / 1000, 1.5);
+      } else if (event.ability === 'SHIELD') {
+        this.runner.applyShield(event.duration / 1000);
+      } else if (event.ability === 'RECON') {
+        this.reconRevealUntil = performance.now() + event.duration;
+        const nearby = [...this.remotePlayers.values()].filter((remote) => remote.state.alive && Math.hypot(remote.group.position.x - this.runner.position.x, remote.group.position.z - this.runner.position.z) < 70).length;
+        this.showToast(`Recon pulse: ${nearby} rival${nearby === 1 ? '' : 's'} nearby.`);
+      }
+      this.abilityCooldowns = { ...this.abilityCooldowns, [event.ability]: event.readyAt };
+      if (event.ability !== 'RECON') this.showToast(`${ITEM_DEFINITIONS[event.ability]?.name || event.ability} activated.`);
+    } else if (event.type === 'ABILITY_RESULT' && !event.success) {
+      this.showToast(event.reason || 'Ability could not be used.');
+    } else if (event.type === 'DRAGON_DAMAGED') {
+      this.dragonState.health = event.health;
+      this.showToast(`Dragon took ${event.damage || 0} damage · ${event.health} health left.`);
+    } else if (event.type === 'DRAGON_ATTACK_TELEGRAPH') {
+      this.dragonState.attack = event.attack;
+      this.updateDragonTelegraph(event.attack);
+    } else if (event.type === 'DRAGON_ATTACK_RESOLVED') {
+      const resolvedAttack = this.dragonState.attack;
+      this.dragonState.attack = null;
+      this.updateDragonTelegraph(null);
+      if (resolvedAttack?.type === 'FIRE_BREATH' && resolvedAttack.target && this.particles) {
+        const { x, z } = resolvedAttack.target;
+        this.particles.emitExplosion({ x, y: this.worldManager.getHeightAt(x, z) + 0.1, z });
+      }
+      const localHit = event.impacted?.find((entry) => entry.playerId === this.playerId);
+      if (localHit?.damage === 0) this.showToast('Aegis Ward absorbed the dragon attack.');
+    } else if (event.type === 'DRAGON_PHASE_CHANGED') {
+      this.dragonState.phase = event.phase;
+      this.showToast(`Dragon enraged! ${event.phase === 'ENRAGED' ? 'Attacks are faster and stronger.' : ''}`);
+    } else if (event.type === 'WORLD_HAZARD_WARNING' && event.playerId === this.playerId) {
+      this.showToast('VOLCANIC GROUND: leave the glowing terrain to avoid damage.');
+    } else if (event.type === 'ROOM_FULL') {
+      this.network?.destroy();
+      this.returnToMenu(false);
+      this.roleSelectMessage = `This room is full (maximum ${event.maxPlayers} players).`;
+      this.emitState();
+    }
+  }
+
+  handleMatchResults(result) {
+    this.serverStatus = 'RESULTS';
+    this.gameState = 'FINISHED';
+    const winners = Array.isArray(result.winnerId) ? result.winnerId : [result.winnerId];
+    const didWin = winners.includes(this.playerId);
+    const localPlayer = result.snapshot?.players?.find((player) => player.id === this.playerId);
+    if (localPlayer?.stats) this.matchStats = localPlayer.stats;
+    this.gameOverData = {
+      winner: didWin ? 'you' : (result.winnerId === 'draw' ? 'draw' : 'opponent'),
+      reason: result.reason || 'The match is over.',
+      kind: result.kind || 'survival',
+      dragonRewardPolicy: result.dragonRewardPolicy,
+      stats: this.matchStats,
+    };
+    this.saveMatchHistory(this.gameOverData);
+    if (didWin) audio.playWin(); else audio.playLose();
+    this.emitState();
+  }
+
+  saveMatchHistory(result) {
+    const record = {
+      endedAt: new Date().toISOString(),
+      room: this.roomCode,
+      mode: this.matchConfig.mode,
+      seed: this.matchConfig.seed,
+      winner: result.winner,
+      kind: result.kind,
+      stats: { ...result.stats },
+    };
+    try {
+      const history = this.loadMatchHistory();
+      this.matchHistory = [record, ...history].slice(0, 10);
+      localStorage.setItem('aetherbound_match_history', JSON.stringify(this.matchHistory));
+    } catch (error) {
+      console.warn('Could not save match history:', error);
+    }
+  }
+
+  loadMatchHistory() {
+    try {
+      const history = JSON.parse(localStorage.getItem('aetherbound_match_history') || '[]');
+      if (!Array.isArray(history)) throw new TypeError('Match history must be an array.');
+      return history.slice(0, 10);
+    } catch (error) {
+      console.warn('Could not load match history:', error);
+      return [];
+    }
   }
 
   showToast(msg) {
@@ -428,21 +998,19 @@ export class GameEngine {
   }
 
   isHumanSaboteurAvailable() {
-    if (this.activeRole === 'saboteur') return true;
-    if (this.isLocalDual) return true;
-    if (this.playerCounts && this.playerCounts.saboteur > 0) return true;
     return false;
   }
 
   updateAISaboteurStatus() {
-    if (this.isHumanSaboteurAvailable()) {
-      if (this.aiSaboteur) this.aiSaboteur.enabled = false;
+    if (this.aiSaboteur) {
+      this.aiSaboteur.enabled = !this.isHumanSaboteurAvailable() && this.aiSaboteurPreferredEnabled;
     }
   }
 
   setRole(role) {
-    if (role !== 'runner' && role !== 'saboteur') {
+    if (role !== 'player') {
       this.activeRole = 'lobby';
+      this.returningToMenu = true;
       this.gameState = 'ROLE_SELECT';
       this.runner.enabled = false;
       this.saboteur.enabled = false;
@@ -454,40 +1022,14 @@ export class GameEngine {
       return;
     }
 
-    this.activeRole = role;
+    this.activeRole = 'player';
     this.gameState = 'PLAYING';
-
-    if (role === 'runner') {
-      this.runner.enabled = true;
-      this.saboteur.enabled = false;
-      document.body.classList.add('runner-mode');
-      document.body.classList.remove('saboteur-placing');
-      document.body.classList.remove('cursor-unlocked');
-      this.obstacleManager.hidePreview();
-      this.requestPointerLock();
-    } else if (role === 'saboteur') {
-      this.runner.enabled = false;
-      this.saboteur.enabled = true;
-      document.body.classList.remove('runner-mode');
-      document.body.classList.remove('cursor-unlocked');
-      if (this.saboteur.isPlacing && this.saboteur.selectedType) {
-        document.body.classList.add('saboteur-placing');
-      } else {
-        document.body.classList.remove('saboteur-placing');
-      }
-      this.saboteur.refreshPreview();
-      this.requestPointerLock();
-    } else {
-      this.runner.enabled = false;
-      this.saboteur.enabled = false;
-      document.body.classList.remove('runner-mode');
-      document.body.classList.remove('cursor-locked');
-      document.body.classList.add('cursor-unlocked');
-      document.body.classList.remove('saboteur-placing');
-      this.obstacleManager.hidePreview();
-    }
-
-    this.updateAISaboteurStatus();
+    this.runner.enabled = true;
+    this.saboteur.enabled = false;
+    document.body.classList.add('runner-mode');
+    document.body.classList.remove('saboteur-placing', 'cursor-unlocked');
+    this.obstacleManager.hidePreview();
+    this.requestPointerLock();
     this.emitState();
   }
 
@@ -507,19 +1049,18 @@ export class GameEngine {
       clearTimeout(this.gameOverTimeout);
       this.gameOverTimeout = null;
     }
-    if (notifyServer && !this.isLocalDual && this.network) {
-      this.network.returnToLobby();
+    if (notifyServer && this.network) this.network.destroy();
+    {
+      this.resetRound({
+        timeRemaining: GAME_CONFIG.ROUND_TIME,
+        seed: resetData.seed,
+        goalPosition: resetData.goalPosition,
+      });
     }
-    this.resetRound({
-      timeRemaining: GAME_CONFIG.ROUND_TIME,
-      seed: resetData.seed,
-      goalPosition: resetData.goalPosition,
-    });
     this.serverStatus = 'WAITING';
     this.activeRole = 'lobby';
-    this.pendingLocalRematch = false;
+    this.updateAISaboteurStatus();
     this.returningToMenu = true;
-    this.isLocalDual = false;
     this.roleSelectMessage = '';
     this.gameOverData = null;
     this.gameState = 'ROLE_SELECT';
@@ -528,12 +1069,6 @@ export class GameEngine {
     document.body.classList.remove('runner-mode', 'saboteur-placing', 'cursor-locked');
     document.body.classList.add('cursor-unlocked');
     if (document.pointerLockElement) document.exitPointerLock();
-    this.emitState();
-  }
-
-  setLocalDual(isLocal) {
-    this.isLocalDual = isLocal;
-    this.setRole('runner');
     this.emitState();
   }
 
@@ -560,20 +1095,18 @@ export class GameEngine {
 
   toggleAISaboteur() {
     if (this.aiSaboteur) {
-      this.aiSaboteur.enabled = !this.aiSaboteur.enabled;
+      this.aiSaboteurPreferredEnabled = !this.aiSaboteurPreferredEnabled;
       this.updateAISaboteurStatus();
       this.emitState();
     }
   }
 
   lookAtGoal() {
-    if (this.runner && this.activeRole === 'runner') this.runner.lookAtGoal();
-    if (this.saboteur && this.activeRole === 'saboteur') this.saboteur.lookAtGoal();
+    if (this.runner && this.activeRole === 'player') this.runner.lookAtGoal();
   }
 
   lookBehind() {
-    if (this.runner && this.activeRole === 'runner') this.runner.lookBehind();
-    if (this.saboteur && this.activeRole === 'saboteur') this.saboteur.lookBehind();
+    if (this.runner && this.activeRole === 'player') this.runner.lookBehind();
   }
 
   cycleRunnerSensitivity() {
@@ -591,7 +1124,7 @@ export class GameEngine {
   }
 
   craftPowerUp(recipeId) {
-    if (this.activeRole !== 'runner' || !this.powerUpManager) return;
+    if (this.activeRole !== 'player' || !this.powerUpManager) return;
     const result = this.powerUpManager.craft(recipeId);
     if (result.success) {
       this.stats.itemsCrafted += 1;
@@ -603,7 +1136,7 @@ export class GameEngine {
   }
 
   usePowerUp(itemId) {
-    if (this.activeRole !== 'runner' || !this.powerUpManager) return;
+    if (this.activeRole !== 'player' || !this.powerUpManager) return;
     const result = this.powerUpManager.useItem(itemId, this.runner);
     if (result.success) {
       this.showToast(`Used ${result.item.name}.`);
@@ -613,30 +1146,44 @@ export class GameEngine {
     this.emitState();
   }
 
+  activateAbility(ability) {
+    if (this.activeRole !== 'player' || !this.runner.inventory?.includes(ability)) return;
+    this.network?.useAbility(ability);
+  }
+
+  attack() {
+    if (this.activeRole !== 'player' || this.runner.health <= 0) return;
+    const remaining = this.attackCooldownUntil - Date.now();
+    if (remaining > 0) {
+      this.showToast(`Knife ready in ${(remaining / 1000).toFixed(1)}s.`);
+      return;
+    }
+    if (!this.network?.connected) {
+      this.showToast('Connecting to the match server…');
+      return;
+    }
+    this.attackCooldownUntil = Date.now() + KNIFE_RULES.cooldownMs;
+    this.network?.attack();
+    this.runner.playKnifeSwing();
+  }
+
   // Mobile Touch & Virtual Joystick Support
   setJoystick(x, y) {
-    if (this.activeRole === 'runner' || (this.isLocalDual && this.activeRole === 'runner')) {
+    if (this.activeRole === 'player') {
       if (this.runner) this.runner.setJoystick(x, y);
-    } else if (this.activeRole === 'saboteur' || (this.isLocalDual && this.activeRole === 'saboteur')) {
-      if (this.saboteur) this.saboteur.setJoystick(x, y);
     }
   }
 
   addLookYaw(deltaYaw) {
-    if (this.activeRole === 'runner') {
+    if (this.activeRole === 'player') {
       if (this.runner) this.runner.addCameraYaw(deltaYaw);
-    } else if (this.activeRole === 'saboteur') {
-      if (this.saboteur) this.saboteur.addCameraYaw(deltaYaw);
     }
   }
 
   // Controls item placement by screen drag on mobile
   dragItemPlacement(deltaX, deltaY) {
-    if (this.activeRole === 'saboteur' || (this.isLocalDual && this.activeRole === 'saboteur')) {
-      if (this.saboteur) {
-        this.saboteur.dragItemPlacement(deltaX, deltaY);
-      }
-    }
+    void deltaX;
+    void deltaY;
   }
 
   adjustPlacementDistance(delta) {
@@ -658,26 +1205,20 @@ export class GameEngine {
   }
 
   jump() {
-    if (this.activeRole === 'runner' || (this.isLocalDual && this.activeRole === 'runner')) {
+    if (this.activeRole === 'player') {
       if (this.runner) this.runner.triggerJump();
-    } else if (this.activeRole === 'saboteur' || (this.isLocalDual && this.activeRole === 'saboteur')) {
-      if (this.saboteur) this.saboteur.triggerJump();
     }
   }
 
   slide() {
-    if (this.activeRole === 'runner' || (this.isLocalDual && this.activeRole === 'runner')) {
+    if (this.activeRole === 'player') {
       if (this.runner) this.runner.startSlide();
-    } else if (this.activeRole === 'saboteur' || (this.isLocalDual && this.activeRole === 'saboteur')) {
-      if (this.saboteur) this.saboteur.startSlide();
     }
   }
 
   setSprint(active) {
-    if (this.activeRole === 'runner' || (this.isLocalDual && this.activeRole === 'runner')) {
+    if (this.activeRole === 'player') {
       if (this.runner) this.runner.setSprinting(active);
-    } else if (this.activeRole === 'saboteur' || (this.isLocalDual && this.activeRole === 'saboteur')) {
-      if (this.saboteur) this.saboteur.setSprinting(active);
     }
   }
 
@@ -715,7 +1256,7 @@ export class GameEngine {
 
   onObstaclePlaced(type, pos, rot) {
     this.stats.obstaclesPlaced += 1;
-    if (this.isLocalDual || !this.network.connected) {
+    if (!this.network.connected) {
       this.obstacleManager.spawnObstacle(
         'obs_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
         type,
@@ -790,7 +1331,6 @@ export class GameEngine {
   }
 
   resetRound(msg) {
-    this.pendingLocalRematch = false;
     this.returningToMenu = false;
     this.roleSelectMessage = '';
     this.gameState = 'PLAYING';
@@ -832,14 +1372,7 @@ export class GameEngine {
 
     this.obstacleManager.clear();
     if (this.particles) this.particles.clear();
-    if (this.powerUpManager) {
-      this.powerUpManager.clear();
-      for (let cx = -2; cx <= 2; cx++) {
-        for (let cz = -2; cz <= 2; cz++) {
-          this.powerUpManager.populateChunk(cx, cz);
-        }
-      }
-    }
+    if (this.powerUpManager) this.powerUpManager.clear();
 
     const startY = this.worldManager.getHeightAt(0, 0);
     this.runner.health = 100;
@@ -898,9 +1431,13 @@ export class GameEngine {
   }
 
   updateDaylight() {
-    this.todName = '☀️ DAYTIME';
-    this.todClass = 'noon';
-    const charPos = this.activeRole === 'saboteur' ? this.saboteur.position : this.runner.position;
+    this.todName = this.weatherState.name;
+    this.todClass = this.weatherState.id.toLowerCase();
+    if (this.lastWeatherId !== this.weatherState.id) {
+      this.lastWeatherId = this.weatherState.id;
+      if (this.weatherState.id !== 'CLEAR') this.showToast(`Weather changed: ${this.weatherState.name}.`);
+    }
+    const charPos = this.runner.position;
 
     this.sunLight.position.set(
       charPos.x + DAYLIGHT_CONFIG.sunOffset.x,
@@ -910,11 +1447,12 @@ export class GameEngine {
     this.sunLight.target.position.copy(charPos);
     this.sunLight.target.updateMatrixWorld();
     this.sunLight.color.setHex(DAYLIGHT_CONFIG.sun);
-    this.sunLight.intensity = DAYLIGHT_CONFIG.sunIntensity;
+    this.sunLight.intensity = this.weatherState.sunIntensity;
     this.ambientLight.color.setHex(DAYLIGHT_CONFIG.ambient);
-    this.ambientLight.intensity = DAYLIGHT_CONFIG.ambientIntensity;
-    this.scene.background.setHex(DAYLIGHT_CONFIG.sky);
-    this.scene.fog.color.setHex(DAYLIGHT_CONFIG.fog);
+    this.ambientLight.intensity = this.weatherState.ambientIntensity;
+    this.scene.background.setHex(this.weatherState.sky);
+    this.scene.fog.color.setHex(this.weatherState.fog);
+    this.scene.fog.density = this.weatherState.fogDensity;
   }
 
   animate() {
@@ -922,24 +1460,49 @@ export class GameEngine {
 
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const elapsedTime = this.clock.getElapsedTime();
+    this.dragonMixer?.update(dt);
+    if (this.dragonMesh?.visible && Number.isFinite(this.dragonBaseY)) {
+      const dragonLerp = 1 - Math.exp(-dt * 8);
+      this.dragonRenderPosition.lerp(this.dragonTargetPosition, dragonLerp);
+      this.dragonMesh.position.copy(this.dragonRenderPosition);
+      this.dragonMesh.position.y += Math.sin(elapsedTime * 2.2) * 0.38;
+      const yawDelta = Math.atan2(
+        Math.sin(this.dragonTargetYaw - this.dragonMesh.rotation.y),
+        Math.cos(this.dragonTargetYaw - this.dragonMesh.rotation.y),
+      );
+      this.dragonMesh.rotation.y += yawDelta * dragonLerp;
+      if (this.dragonState?.attack?.type === 'FIRE_BREATH') {
+        this.updateDragonBreathBeam(this.dragonState.attack);
+      }
+    }
+    if (this.dragonBreathBeam?.visible) {
+      const pulse = 0.78 + Math.sin(elapsedTime * 18) * 0.22;
+      this.dragonBreathOuter.material.opacity = 0.28 * pulse;
+      this.dragonBreathInner.material.opacity = 0.45 * pulse;
+    }
 
     if (this.gameState === 'PLAYING') {
       this.updateDaylight();
 
+      for (const remote of this.remotePlayers.values()) {
+        remote.attackTimer = Math.max(0, remote.attackTimer - dt);
+        remote.hitReactTimer = Math.max(0, remote.hitReactTimer - dt);
+        remote.animator?.update(dt, {
+          ...remote.animationState,
+          attackProgress: remote.attackTimer > 0 ? 1 - remote.attackTimer / 0.28 : 0,
+          hitProgress: remote.hitReactTimer > 0 ? 1 - remote.hitReactTimer / 0.24 : 0,
+        });
+      }
+
       this.goalBeacon.update(dt, elapsedTime);
       this.obstacleManager.update(dt);
-
-      if (this.powerUpManager) {
-        const pickupCharacters = this.activeRole === 'runner' ? [this.runner] : [];
-        this.powerUpManager.update(dt, pickupCharacters, elapsedTime);
-      }
 
       if (this.particles) {
         this.particles.update(dt);
       }
 
-      // Runner logic
-      if (this.activeRole === 'runner' || this.isLocalDual) {
+      if (this.activeRole === 'player' && this.runner.health > 0) {
+        this.runner.weatherSpeedMultiplier = this.weatherState.movementMultiplier;
         this.runner.update(dt);
         this.physics.updateCharacterPhysics(this.runner, dt);
 
@@ -955,62 +1518,38 @@ export class GameEngine {
         }
         this.lastRunnerPosForDist.copy(this.runner.position);
 
-        if (this.goalBeacon.checkRunnerInside(this.runner.position)) {
-          this.handleGameOver({
-            winner: 'runner',
-            reason: 'The Runner conquered the obstacles and reached the Beacon Goal!'
-          });
-          this.goalBeacon.triggerVictoryEffect(this.particles);
-          this.network.sendGoalReached();
-        }
-
-        if (this.runner.health <= 0) {
-          this.handleGameOver({
-            winner: 'saboteur',
-            reason: 'The Runner was eliminated by obstacles!'
-          });
-        }
-
-        if (elapsedTime - this.lastNetworkSync > 0.033) {
+        if (elapsedTime - this.lastNetworkSync > 0.05) {
           this.lastNetworkSync = elapsedTime;
-          this.network.sendRunnerMove(this.runner.getState());
+          this.network.sendPlayerMove(this.runner.getState());
         }
 
-        const aiShouldRun = !this.isHumanSaboteurAvailable() && this.aiSaboteur && this.aiSaboteur.enabled;
-        if (aiShouldRun) {
-          this.aiSaboteur.update(dt, this.runner, this.goalBeacon, true);
+        for (const item of this.pickups) {
+          if (item.active && !this.pendingPickups?.has(item.id) && Math.hypot(item.x - this.runner.position.x, item.z - this.runner.position.z) < 2.6) {
+            this.pendingPickups ||= new Set();
+            this.pendingPickups.add(item.id);
+            this.network.collectItem(item.id);
+          }
         }
       } else {
-        this.physics.updateCharacterPhysics(this.runner, dt);
+        if (this.runner.health > 0) this.physics.updateCharacterPhysics(this.runner, dt);
         this.runner.group.position.copy(this.runner.position);
         this.runner.group.rotation.y = this.runner.rotationY;
-        this.runner.group.visible = true;
-      }
-
-      // Saboteur logic
-      if (this.activeRole === 'saboteur' || this.isLocalDual) {
-        if (this.activeRole === 'saboteur') {
-          this.saboteur.update(dt, this.runner.position);
-          this.physics.updateCharacterPhysics(this.saboteur, dt);
-
-          if (this.saboteur.health <= 0) {
-            this.handleGameOver({
-              winner: 'runner',
-              reason: 'The Saboteur was neutralized by obstacles!'
-            });
+        if (this.runner.health <= 0) {
+          this.runner.group.visible = false;
+          const target = [...this.remotePlayers.values()].find((entry) => entry.state.alive);
+          if (target) {
+            const { x, y, z } = target.group.position;
+            const yaw = target.group.rotation.y;
+            this.camera.position.set(x + Math.sin(yaw) * 7, y + 4, z + Math.cos(yaw) * 7);
+            this.camera.lookAt(x, y + 1.1, z);
           }
-
-          if (elapsedTime - this.lastSaboteurSync > 0.033) {
-            this.lastSaboteurSync = elapsedTime;
-            this.network.sendSaboteurMove(this.saboteur.getState());
-          }
+        } else {
+          this.runner.group.visible = true;
         }
-      } else {
-        this.saboteur.update(dt, this.runner.position);
       }
 
-      this.physics.resolveCharacterCollision(this.runner, this.saboteur);
-      this.worldManager.update([this.runner.position, this.saboteur.position, this.camera.position], elapsedTime);
+      this.saboteur.mesh.visible = false;
+      this.worldManager.update([this.runner.position, this.camera.position, ...[...this.remotePlayers.values()].map((player) => player.group.position)], elapsedTime);
 
       // Throttle React state emission to ~20Hz
       if (elapsedTime - this.lastStateEmit > 0.05) {
@@ -1025,7 +1564,7 @@ export class GameEngine {
   emitState() {
     if (!this.onStateChange) return;
 
-    const activeChar = (this.activeRole === 'saboteur') ? this.saboteur : this.runner;
+    const activeChar = this.runner;
     let biome = null;
     if (this.worldManager && activeChar) {
       biome = this.worldManager.getDominantBiome(activeChar.position.x, activeChar.position.z);
@@ -1037,15 +1576,24 @@ export class GameEngine {
     const snapshot = {
       gameState: this.gameState,
       activeRole: this.activeRole,
-      isLocalDual: this.isLocalDual,
       roomCode: this.roomCode,
+      matchConfig: this.matchConfig,
       roleSelectMessage: this.roleSelectMessage,
       timeRemaining: this.timeRemaining,
       playerCounts: this.playerCounts,
+      playerId: this.playerId,
+      inventory: this.runner.inventory || [],
+      matchStats: this.matchStats,
+      matchHistory: this.matchHistory,
+      playerResources: this.playerResources,
+      abilityCooldowns: this.abilityCooldowns,
+      knifeCooldownMs: Math.max(0, this.attackCooldownUntil - Date.now()),
+      dragon: this.dragonState,
       environment: {
         biome,
         todName: this.todName,
         todClass: this.todClass,
+        weather: this.weatherState,
       },
       runnerStats: {
         health: this.runner.health,
@@ -1056,6 +1604,7 @@ export class GameEngine {
         compassAngle,
         sensitivity: this.runner.mouseSensitivity,
         buffs: this.runner.getActiveBuffs(),
+        knifeCooldownMs: Math.max(0, this.attackCooldownUntil - Date.now()),
         craftingInventory: this.powerUpManager.getInventory(),
       },
       saboteurStats: {
@@ -1085,6 +1634,7 @@ export class GameEngine {
   }
 
   destroy() {
+    this.destroyed = true;
     if (this.gameOverTimeout) clearTimeout(this.gameOverTimeout);
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
@@ -1092,11 +1642,22 @@ export class GameEngine {
     if (this.onResize) {
       window.removeEventListener('resize', this.onResize);
     }
+    if (this.onCombatClick && this.renderer?.domElement) {
+      this.renderer.domElement.removeEventListener('pointerdown', this.onCombatClick);
+    }
+    if (this.onAbilityKey) window.removeEventListener('keydown', this.onAbilityKey);
+    this.dragonMixer?.stopAllAction();
+    this.clearDragonBreathTelegraph();
+    this.scene?.remove(this.dragonMesh, this.dragonBreathBeam, this.dragonTelegraph, this.dragonTelegraphRing);
+    disposeThreeObject(this.dragonMesh);
+    disposeThreeObject(this.dragonBreathBeam);
+    this.dragonTelegraph?.geometry.dispose();
+    this.dragonTelegraph?.material.dispose();
+    this.dragonTelegraphRing?.geometry.dispose();
+    this.dragonTelegraphRing?.material.dispose();
     if (this.renderer && this.renderer.domElement && this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
     }
-    if (this.network && this.network.ws) {
-      this.network.ws.close();
-    }
+    if (this.network) this.network.destroy();
   }
 }

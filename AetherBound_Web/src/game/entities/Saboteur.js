@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GAME_CONFIG, OBSTACLES } from '../config.js';
 import { audio } from '../audio.js';
+import { CharacterAnimator } from './CharacterAnimator.js';
 
 export class SaboteurController {
   constructor(scene, camera, domElement, physicsSystem, obstacleManager, onPlaceCallback) {
@@ -77,6 +78,7 @@ export class SaboteurController {
     this.animTime = 0;
     this.stepTimer = 0;
     this.castTimer = 0; // Arm raise animation timer for hazard deployment
+    this.hitReactTimer = 0;
 
     // Saboteur Unique Abilities: Tactical Energy & Deployments
     this.energy = GAME_CONFIG.SABOTEUR.MAX_ENERGY;
@@ -117,6 +119,7 @@ export class SaboteurController {
 
     // Build Character Model & Visuals
     this.buildCharacterMesh();
+    this.animator = new CharacterAnimator(this.mesh);
     this.buildReconMarker();
     this.setupInputs();
   }
@@ -136,6 +139,7 @@ export class SaboteurController {
     const torsoGeo = new THREE.CapsuleGeometry(0.34, 0.48, 4, 10);
     const armorMat = coatMat;
     this.torso = new THREE.Mesh(torsoGeo, armorMat);
+    this.torso.name = 'anim-torso';
     this.torso.position.y = 1.08;
     this.torso.castShadow = true;
     this.torso.receiveShadow = true;
@@ -145,37 +149,40 @@ export class SaboteurController {
     neck.position.y = 1.67;
     this.mesh.add(neck);
 
-    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.235, 14, 12), skinMat);
+    this.head = new THREE.Group();
+    this.head.name = 'anim-head';
     this.head.position.y = 1.87;
-    this.head.castShadow = true;
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.235, 14, 12), skinMat);
+    headMesh.castShadow = true;
+    this.head.add(headMesh);
     this.mesh.add(this.head);
 
     const earGeo = new THREE.SphereGeometry(0.07, 8, 6);
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0x261d1b, roughness: 0.55 });
     [-1, 1].forEach((side) => {
       const ear = new THREE.Mesh(earGeo, skinMat);
-      ear.position.set(side * 0.22, 1.87, 0);
-      this.mesh.add(ear);
+      ear.position.set(side * 0.22, 0, 0);
+      this.head.add(ear);
 
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.027, 8, 6), eyeMat);
-      eye.position.set(side * 0.085, 1.89, 0.213);
-      this.mesh.add(eye);
+      eye.position.set(side * 0.085, 0.02, 0.213);
+      this.head.add(eye);
     });
     const nose = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), skinMat);
     nose.scale.set(0.72, 0.8, 0.8);
-    nose.position.set(0, 1.82, 0.23);
-    this.mesh.add(nose);
+    nose.position.set(0, -0.05, 0.23);
+    this.head.add(nose);
 
     const hair = new THREE.Mesh(
       new THREE.SphereGeometry(0.247, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.58),
       hairMat
     );
-    hair.position.set(0, 1.91, -0.005);
-    this.mesh.add(hair);
+    hair.position.set(0, 0.04, -0.005);
+    this.head.add(hair);
     const hood = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), coatMat);
     hood.scale.set(1.08, 0.72, 0.72);
-    hood.position.set(0, 1.89, -0.12);
-    this.mesh.add(hood);
+    hood.position.set(0, 0.02, -0.12);
+    this.head.add(hood);
 
     const collar = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 0.12, 3, 8), leatherMat);
     collar.rotation.z = Math.PI / 2;
@@ -194,6 +201,7 @@ export class SaboteurController {
       new THREE.MeshStandardMaterial({ color: 0x30273a, roughness: 0.96, side: THREE.DoubleSide })
     );
     cape.position.z = -0.34;
+    cape.name = 'anim-cape';
     cape.castShadow = true;
     this.mesh.add(cape);
 
@@ -229,6 +237,8 @@ export class SaboteurController {
     this.leftArm = makeArm(-0.48);
 
     this.rightArmGroup = makeArm(0.48, true);
+    this.leftArm.name = 'anim-left-arm';
+    this.rightArmGroup.name = 'anim-right-arm';
 
     const emitterGeo = new THREE.SphereGeometry(0.12, 10, 8);
     const emitterMat = new THREE.MeshStandardMaterial({ color: 0xc45a32, roughness: 0.7 });
@@ -253,6 +263,8 @@ export class SaboteurController {
     };
     this.leftLeg = makeLeg(-0.19);
     this.rightLeg = makeLeg(0.19);
+    this.leftLeg.name = 'anim-left-leg';
+    this.rightLeg.name = 'anim-right-leg';
     this.mesh.add(this.leftLeg, this.rightLeg);
 
     // 6. Ground Shadow Disc
@@ -958,6 +970,7 @@ export class SaboteurController {
     }
 
     this.invulnerableTimer = 0.55;
+    this.hitReactTimer = 0.24;
     this.health = Math.max(0, this.health - amount);
     audio.playDamage();
 
@@ -989,6 +1002,7 @@ export class SaboteurController {
     if (this.invulnerableTimer > 0) {
       this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
     }
+    this.hitReactTimer = Math.max(0, this.hitReactTimer - dt);
 
     if (this.speedBuffTimer > 0) {
       this.speedBuffTimer -= dt;
@@ -1056,6 +1070,10 @@ export class SaboteurController {
       }
     }
 
+    let inputForward = 0;
+    let inputRight = 0;
+    let isMoving = false;
+
     // 3. Movement & Kinematics (When player controls Saboteur on ground)
     if (this.enabled) {
       // Keyboard Camera Turn Inputs (Q / E or Left / Right Arrows)
@@ -1071,6 +1089,9 @@ export class SaboteurController {
       const forwardZ = -Math.cos(this.cameraYaw);
       const rightX = Math.cos(this.cameraYaw);
       const rightZ = -Math.sin(this.cameraYaw);
+      inputForward = (this.joystickVector.y || 0) + Number(this.keys.forward) - Number(this.keys.backward);
+      inputRight = (this.joystickVector.x || 0) + Number(this.keys.right) - Number(this.keys.left);
+      isMoving = Math.abs(inputForward) > 0.05 || Math.abs(inputRight) > 0.05;
 
       this.rotationY = this.cameraYaw + Math.PI;
       this.mesh.rotation.y = this.rotationY;
@@ -1093,10 +1114,14 @@ export class SaboteurController {
 
         this.velocity.set(0, 0, 0);
 
-        this.leftLeg.rotation.x = 0.9;
-        this.rightLeg.rotation.x = -0.4;
-        this.leftArm.rotation.x = -1.1;
-        this.rightArmGroup.rotation.x = -1.1;
+        this.animator.update(dt, {
+          grounded: false,
+          verticalVelocity: this.velocity.y,
+          vaulting: true,
+          vaultProgress: progress,
+          casting: this.castTimer > 0,
+          hitProgress: this.hitReactTimer > 0 ? 1 - this.hitReactTimer / 0.24 : 0,
+        });
 
         this.mesh.position.copy(this.position);
 
@@ -1136,19 +1161,10 @@ export class SaboteurController {
           this.particles.emitDust(this.position, 2);
         }
 
-        this.mesh.rotation.x = -0.5;
-        this.leftLeg.rotation.x = 1.1;
-        this.rightLeg.rotation.x = 0.3;
-        this.leftArm.rotation.x = -0.6;
-        this.rightArmGroup.rotation.x = -0.6;
-
         if (this.slideTimer >= this.slideDuration) {
           this.isSliding = false;
-          this.mesh.rotation.x = 0;
         }
       } else {
-        this.mesh.rotation.x = 0;
-
         let speed = (this.isSprinting ? GAME_CONFIG.RUNNER.SPRINT_SPEED : GAME_CONFIG.RUNNER.BASE_SPEED) * (this.speedMultiplier || 1.0);
         if (this.isSlowed) {
           speed *= 0.35;
@@ -1162,15 +1178,6 @@ export class SaboteurController {
             speed *= 1.25;
           }
         }
-
-        let inputForward = this.joystickVector.y || 0;
-        let inputRight = this.joystickVector.x || 0;
-        if (this.keys.forward) inputForward += 1;
-        if (this.keys.backward) inputForward -= 1;
-        if (this.keys.right) inputRight += 1;
-        if (this.keys.left) inputRight -= 1;
-
-        const isMoving = (Math.abs(inputForward) > 0.05 || Math.abs(inputRight) > 0.05);
 
         if (isMoving) {
           const len = Math.max(1.0, Math.sqrt(inputForward * inputForward + inputRight * inputRight));
@@ -1197,21 +1204,6 @@ export class SaboteurController {
             }
           }
 
-          const animDir = (inputForward < 0) ? -1 : 1;
-          this.animTime += dt * speed * 0.9 * animDir;
-          this.leftLeg.rotation.x = Math.sin(this.animTime) * 0.8;
-          this.rightLeg.rotation.x = -Math.sin(this.animTime) * 0.8;
-          this.leftArm.rotation.x = -Math.sin(this.animTime) * 0.7;
-          if (this.castTimer <= 0) {
-            this.rightArmGroup.rotation.x = Math.sin(this.animTime) * 0.7;
-          }
-        } else {
-          this.leftLeg.rotation.x *= 0.8;
-          this.rightLeg.rotation.x *= 0.8;
-          this.leftArm.rotation.x *= 0.8;
-          if (this.castTimer <= 0) {
-            this.rightArmGroup.rotation.x *= 0.8;
-          }
         }
       }
 
@@ -1231,12 +1223,27 @@ export class SaboteurController {
     }
 
     if (this.castTimer > 0) {
-      this.castTimer -= dt;
-      this.rightArmGroup.rotation.x = -Math.PI / 2.3;
+      this.castTimer = Math.max(0, this.castTimer - dt);
+    }
+    if (this.castTimer > 0) {
       this.gauntletEmitter.material.color.setHex(0xffff00);
-    } else if (!this.isSliding && !this.isVaulting) {
+    } else {
       this.gauntletEmitter.material.color.setHex(0xff7700);
     }
+
+    this.animator.update(dt, {
+      moving: isMoving && this.enabled && !this.isSliding,
+      sprinting: this.isSprinting,
+      forward: inputForward,
+      strafe: inputRight,
+      grounded: this.isGrounded,
+      verticalVelocity: this.velocity.y,
+      sliding: this.isSliding,
+      slideProgress: this.slideTimer / this.slideDuration,
+      casting: this.castTimer > 0,
+      castProgress: 1 - this.castTimer / 0.45,
+      hitProgress: this.hitReactTimer > 0 ? 1 - this.hitReactTimer / 0.24 : 0,
+    });
 
     if (this.shadowMesh) {
       const gY = this.physics.worldManager.getHeightAt(this.position.x, this.position.z);

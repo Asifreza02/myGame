@@ -13,9 +13,11 @@ namespace AetherBound
         public Color daySunColor = new Color(1f, 0.98f, 0.94f);
         public float daySunIntensity = 1.35f;
 
-        [Header("Fog Settings")]
-        public float staticFogDensity = 0.0055f;
-        public Color staticFogColor = new Color(0.72f, 0.86f, 0.82f);
+        [Header("Fog Settings (Optimized for 2km radius field)")]
+        public FogMode fogMode = FogMode.Linear;
+        public float fogStartDistance = 250f;
+        public float fogEndDistance = 1250f;
+        public Color staticFogColor = new Color(0.70f, 0.84f, 0.92f);
 
         [Header("Horizon Backdrop (Disabled for Performance)")]
         public bool generateDistantMountains = false;
@@ -32,11 +34,23 @@ namespace AetherBound
             SetupPostProcessingVolume();
             SetupAmbientAudio();
             ApplyFixedDaytimeLighting();
+            OptimizeCameraSettings();
         }
 
         private void Start()
         {
             ApplyFixedDaytimeLighting();
+            OptimizeCameraSettings();
+        }
+
+        public void OptimizeCameraSettings()
+        {
+            var cam = Camera.main ?? FindAnyObjectByType<Camera>();
+            if (cam != null)
+            {
+                cam.farClipPlane = 1300f;
+                cam.nearClipPlane = 0.25f;
+            }
         }
 
         public void ApplyFixedDaytimeLighting()
@@ -60,19 +74,19 @@ namespace AetherBound
                 sunLight.color = daySunColor;
                 sunLight.intensity = daySunIntensity;
                 sunLight.shadows = LightShadows.Soft;
+                sunLight.shadowBias = 0.08f;
+                sunLight.shadowNormalBias = 0.8f;
             }
 
-            RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = staticFogDensity;
-            RenderSettings.fogColor = staticFogColor;
+            SetupFog();
         }
 
         private void SetupFog()
         {
             RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = staticFogDensity;
+            RenderSettings.fogMode = fogMode;
+            RenderSettings.fogStartDistance = fogStartDistance;
+            RenderSettings.fogEndDistance = fogEndDistance;
             RenderSettings.fogColor = staticFogColor;
         }
 

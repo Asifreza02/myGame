@@ -9,6 +9,37 @@ namespace AetherBound.Editor
 {
     public static class SceneSetupWizard
     {
+        [MenuItem("Tools/AetherBound/Generate 2km World")]
+        public static void Generate2KmWorld()
+        {
+            var worldMgr = Object.FindAnyObjectByType<WorldManager>();
+            if (worldMgr == null)
+            {
+                var worldGo = new GameObject("WorldManager");
+                worldMgr = worldGo.AddComponent<WorldManager>();
+            }
+
+            worldMgr.InitializeWorld();
+
+            var goalBeacon = Object.FindAnyObjectByType<GoalBeacon>();
+            if (goalBeacon != null)
+            {
+                goalBeacon.SetPosition(GameConfig.GoalDefaultX, GameConfig.GoalDefaultZ);
+            }
+
+            var envMgr = Object.FindAnyObjectByType<EnvironmentManager>();
+            if (envMgr != null)
+            {
+                envMgr.OptimizeCameraSettings();
+                envMgr.ApplyFixedDaytimeLighting();
+            }
+
+            var activeScene = EditorSceneManager.GetActiveScene();
+            EditorSceneManager.MarkSceneDirty(activeScene);
+            EditorSceneManager.SaveScene(activeScene);
+            Debug.Log("[AetherBound] 2km Field World generated and saved successfully!");
+        }
+
         [MenuItem("Tools/AetherBound/Generate Game Scene")]
         public static void BuildScene()
         {

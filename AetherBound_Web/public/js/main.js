@@ -24,7 +24,6 @@ class GameApp {
   constructor() {
     this.container = document.getElementById('canvas-container');
     this.activeRole = 'runner'; // 'runner', 'saboteur', or 'spectator'
-    this.isLocalDual = false; // Toggle to control both on one screen
     this.gameState = 'PLAYING';
     this.timeRemaining = GAME_CONFIG.ROUND_TIME;
     this.playerCounts = { runner: 1, saboteur: 0, spectator: 0 };
@@ -222,9 +221,7 @@ class GameApp {
     // Detect role & room from URL query param: ?role=runner&room=XYZ
     const params = new URLSearchParams(window.location.search);
     const preferredRole = params.get('role') || 'auto';
-    this.isLocalDual = params.get('mode') === 'local';
-
-    if (params.get('role') || params.get('mode') === 'local') {
+    if (params.get('role')) {
       const modal = document.getElementById('modal-role-select');
       if (modal) modal.style.display = 'none';
       document.body.classList.remove('cursor-unlocked');
@@ -238,9 +235,7 @@ class GameApp {
 
     this.network = new NetworkClient(preferredRole, {
       onInitState: (msg) => {
-        if (!this.isLocalDual) {
-          this.setRole(msg.role);
-        }
+        this.setRole(msg.role);
         if (msg.seed) {
           this.worldManager.setSeed(msg.seed);
         }
@@ -344,9 +339,7 @@ class GameApp {
   isHumanSaboteurAvailable() {
     // 1. Current local player is playing as Saboteur
     if (this.activeRole === 'saboteur') return true;
-    // 2. Playing in local dual mode (human player controls both)
-    if (this.isLocalDual) return true;
-    // 3. In multiplayer, another connected player is Saboteur
+    // In multiplayer, another connected player is Saboteur
     if (this.playerCounts && this.playerCounts.saboteur > 0) return true;
     return false;
   }
@@ -380,11 +373,6 @@ class GameApp {
     const roleBadge = document.getElementById('role-badge');
     const aimReticle = document.getElementById('aim-reticle');
     const cursorHint = document.getElementById('cursor-unlock-hint');
-    const localHint = document.getElementById('local-dual-hint');
-
-    if (localHint) {
-      localHint.style.display = this.isLocalDual ? 'block' : 'none';
-    }
 
     if (roleBadge) {
       roleBadge.innerText = role.toUpperCase();
@@ -485,15 +473,6 @@ class GameApp {
       });
     });
 
-    // Toggle local dual mode with Tab key (Only active in explicit Local Dual Mode)
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'Tab' && this.isLocalDual) {
-        e.preventDefault();
-        const nextRole = this.activeRole === 'runner' ? 'saboteur' : 'runner';
-        this.setRole(nextRole);
-      }
-    });
-
     // Play again button
     const restartBtn = document.getElementById('restart-btn');
     if (restartBtn) {
@@ -522,7 +501,6 @@ class GameApp {
     // Role select modal buttons
     const selectRunnerBtn = document.getElementById('btn-select-runner');
     const selectSaboteurBtn = document.getElementById('btn-select-saboteur');
-    const selectLocalBtn = document.getElementById('btn-select-local');
 
     if (selectRunnerBtn) {
       selectRunnerBtn.addEventListener('click', () => {
@@ -548,23 +526,6 @@ class GameApp {
         document.getElementById('modal-role-select').style.display = 'none';
         document.body.classList.remove('cursor-unlocked');
         this.setRole('saboteur');
-        audio.ensureContext();
-        try { this.renderer.domElement.requestPointerLock(); } catch(e) {}
-      });
-    }
-    if (selectLocalBtn) {
-      selectLocalBtn.addEventListener('click', () => {
-        const targetRoom = getTargetRoom();
-        if (targetRoom !== this.roomCode) {
-          window.location.href = `?mode=local&room=${encodeURIComponent(targetRoom)}`;
-          return;
-        }
-        document.getElementById('modal-role-select').style.display = 'none';
-        document.body.classList.remove('cursor-unlocked');
-        this.isLocalDual = true;
-        this.setRole('runner');
-        const badge = document.getElementById('local-dual-hint');
-        if (badge) badge.style.display = 'block';
         audio.ensureContext();
         try { this.renderer.domElement.requestPointerLock(); } catch(e) {}
       });
@@ -626,7 +587,7 @@ class GameApp {
     this.stats.obstaclesPlaced += 1;
 
     // If playing in local mode or server disconnected, spawn immediately locally
-    if (this.isLocalDual || !this.network.connected) {
+    if (!this.network.connected) {
       this.obstacleManager.spawnObstacle(
         'obs_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
         type,
@@ -955,7 +916,7 @@ class GameApp {
       }
 
       // 3. Update active controller & physics
-      if (this.activeRole === 'runner' || this.isLocalDual) {
+      if (this.activeRole === 'runner') {
         this.runner.update(dt);
         this.physics.updateCharacterPhysics(this.runner, dt);
 
@@ -1009,8 +970,7 @@ class GameApp {
         this.runner.group.visible = true;
       }
 
-      if (this.activeRole === 'saboteur' || this.isLocalDual) {
-        if (this.activeRole === 'saboteur') {
+      if (this.activeRole === 'saboteur') {
           this.saboteur.update(dt, this.runner.position);
           this.physics.updateCharacterPhysics(this.saboteur, dt);
 
@@ -1027,7 +987,6 @@ class GameApp {
             this.lastSaboteurSync = elapsedTime;
             this.network.sendSaboteurMove(this.saboteur.getState());
           }
-        }
       } else {
         // Keep Saboteur 3D Character animating in the scene for the Runner
         this.saboteur.update(dt, this.runner.position);

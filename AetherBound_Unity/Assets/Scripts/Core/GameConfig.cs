@@ -62,23 +62,24 @@ namespace AetherBound
     {
         public const float RoundDuration = 90f; // seconds
 
-        // World settings (optimized for low-end mobile & high performance: exactly 8 chunks total)
-        public const int ChunkSize = 32;
-        public const int ChunkSegments = 14;
-        public const int MinChunkX = -1;
-        public const int MaxChunkX = 0;
-        public const int MinChunkZ = -1;
-        public const int MaxChunkZ = 2; // Total: 2 x 4 = 8 chunks!
-        public const int RenderDistance = 1;
-        public const float BaseHeightScale = 1.8f;
-        public const float NoiseScale = 0.007f;
-        public const float WaterLevel = 0.0f;
+        // World settings (2km radius field with ridges, ultra-optimized & static)
+        public const float WorldRadius = 2000.0f; // 2km radius
+        public const int ChunkSize = 200; // 200m x 200m chunks
+        public const int ChunkSegments = 16; // 16x16 quads (low poly, zero lag)
+        public const int MinChunkX = -10;
+        public const int MaxChunkX = 9;
+        public const int MinChunkZ = -10;
+        public const int MaxChunkZ = 9;
+        public const int RenderDistance = 6;
+        public const float BaseHeightScale = 1.0f;
+        public const float NoiseScale = 0.0018f;
+        public const float WaterLevel = -100.0f; // No water inside field
 
-        // Bounded Arena Limits
-        public const float ArenaMinX = -28.0f;
-        public const float ArenaMaxX = 28.0f;
-        public const float ArenaMinZ = -28.0f;
-        public const float ArenaMaxZ = 90.0f;
+        // 2km Bounded Arena Limits
+        public const float ArenaMinX = -2000.0f;
+        public const float ArenaMaxX = 2000.0f;
+        public const float ArenaMinZ = -2000.0f;
+        public const float ArenaMaxZ = 2000.0f;
 
         // Runner settings
         public const float RunnerBaseSpeed = 14.0f;
@@ -104,12 +105,12 @@ namespace AetherBound
         public const float SaboteurReconCooldown = 14.0f;
         public const float SaboteurReconDuration = 6.0f;
 
-        // Goal settings (centered along +Z)
-        public const float GoalRadius = 4.0f;
-        public const float GoalSanctuaryRadius = 9.0f;
+        // Goal settings (centered along North ridge watchtower at 800m)
+        public const float GoalRadius = 5.0f;
+        public const float GoalSanctuaryRadius = 12.0f;
         public const float GoalDefaultX = 0.0f;
-        public const float GoalDefaultZ = 72.0f;
-        public const float GoalDefaultDistance = 72.0f;
+        public const float GoalDefaultZ = 800.0f;
+        public const float GoalDefaultDistance = 800.0f;
 
         public static ObstacleDefinition GetObstacleDef(ObstacleType type)
         {

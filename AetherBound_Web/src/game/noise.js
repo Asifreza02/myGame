@@ -108,3 +108,22 @@ export class SimplexNoise {
     return total / maxValue;
   }
 }
+
+export function getBiomeWeights(noise, x, z) {
+  const climateScale = 0.0028;
+  const temp = noise.noise2D(x * climateScale, z * climateScale);
+  const moisture = noise.noise2D(x * climateScale + 350, z * climateScale + 350);
+
+  const snow = Math.max(0, -temp - 0.15);
+  const desert = Math.max(0, temp - 0.15) * Math.max(0, -moisture + 0.1);
+  const volcanic = Math.max(0, temp - 0.2) * Math.max(0, moisture + 0.1);
+  const lush = Math.max(0.12, 1.0 - (snow * 1.8 + desert * 1.8 + volcanic * 1.8));
+  const total = snow + desert + volcanic + lush;
+
+  return {
+    snow: snow / total,
+    desert: desert / total,
+    volcanic: volcanic / total,
+    lush: lush / total,
+  };
+}

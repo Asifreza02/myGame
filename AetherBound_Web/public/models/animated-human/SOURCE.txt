@@ -1,0 +1,5 @@
+﻿Asset: Animated Human by Quaternius
+Source: https://opengameart.org/content/animated-human-low-poly
+License: CC0 1.0 Universal (public domain dedication)
+
+The source archive includes the full license and was downloaded from OpenGameArt.

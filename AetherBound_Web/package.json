@@ -1,16 +1,16 @@
 {
   "name": "aetherbound-sabotage",
   "version": "1.0.0",
-  "description": "Two-Player Open-World 3D Asymmetric Game - Runner vs. Saboteur",
+  "description": "Multiplayer free-for-all survival game with a dragon hunt",
   "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start ",
+    "start": "next start",
     "server": "node server/server.js"
   },
   "engines": {
-    "node": "24.x"
+    "node": ">=20.9.0"
   },
   "dependencies": {
     "express": "^4.21.2",

@@ -13,6 +13,7 @@ import { GameOverModal } from './components/GameOverModal.jsx';
 import { VirtualJoystick } from './components/mobile/VirtualJoystick.jsx';
 import { TouchLookZone } from './components/mobile/TouchLookZone.jsx';
 import { MobileActionPad } from './components/mobile/MobileActionPad.jsx';
+import { ITEM_DEFINITIONS } from './game/data/combat.js';
 
 export function App() {
   const containerRef = useRef(null);
@@ -20,11 +21,13 @@ export function App() {
 
   const [engineState, setEngineState] = useState({
     gameState: 'ROLE_SELECT',
-    activeRole: 'runner',
-    isLocalDual: false,
+    activeRole: 'player',
     roomCode: 'default',
+    matchConfig: { mode: 'ffa', durationSeconds: 300, seed: null },
     timeRemaining: 120,
-    playerCounts: { runner: 1, saboteur: 0, lobby: 0 },
+    playerCounts: { total: 1, alive: 1 },
+    inventory: [],
+    abilityCooldowns: {},
     environment: { biome: null, todName: '☀️ DAYTIME', todClass: 'noon' },
     runnerStats: {
       health: 100,
@@ -79,42 +82,35 @@ export function App() {
     });
     engineRef.current = engine;
 
-    // Handle Tab key in Local Dual mode
-    const handleKeyDown = (e) => {
-      if (e.code === 'Tab' && engine.isLocalDual) {
-        e.preventDefault();
-        const nextRole = engine.activeRole === 'runner' ? 'saboteur' : 'runner';
-        engine.setRole(nextRole);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
       engine.destroy();
     };
   }, []);
 
-  const handleSelectRole = useCallback((role, room) => {
+  const handleSelectRole = useCallback((role, room, matchConfig = engineRef.current?.matchConfig) => {
     if (!engineRef.current) return;
-    if (room && room !== engineRef.current.roomCode) {
-      window.location.href = `?role=${encodeURIComponent(role)}&room=${encodeURIComponent(room)}`;
+    if (room) {
+      const query = new URLSearchParams({
+        role: 'player',
+        room,
+        mode: matchConfig?.mode || 'ffa',
+        duration: String(matchConfig?.durationSeconds || 300),
+      });
+      if (matchConfig?.seed) query.set('seed', String(matchConfig.seed));
+      window.location.href = `?${query.toString()}`;
       return;
     }
     engineRef.current.selectRole(role);
   }, []);
 
-  const handleSelectLocalDual = useCallback((room) => {
-    if (!engineRef.current) return;
-    if (engineRef.current.returningToMenu) {
-      window.location.href = '?mode=local';
-      return;
+  const handleShareRoom = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      engineRef.current?.showToast('Room link copied. Share it with your hunters.');
+    } catch (error) {
+      console.warn('Could not copy the room link:', error);
+      engineRef.current?.showToast('Could not copy the room link. Copy it from the address bar.');
     }
-    if (room && room !== engineRef.current.roomCode) {
-      window.location.href = `?mode=local&room=${encodeURIComponent(room)}`;
-      return;
-    }
-    engineRef.current.setLocalDual(true);
   }, []);
 
   const handleToggleAI = useCallback(() => {
@@ -211,6 +207,10 @@ export function App() {
     if (engineRef.current) engineRef.current.jump();
   }, []);
 
+  const handleKnifeAttack = useCallback(() => {
+    if (engineRef.current) engineRef.current.attack();
+  }, []);
+
   const handleSlide = useCallback(() => {
     if (engineRef.current) engineRef.current.slide();
   }, []);
@@ -258,8 +258,8 @@ export function App() {
     if (engineRef.current) engineRef.current.requestPointerLock();
   }, []);
 
-  const isRunner = engineState.activeRole === 'runner' || engineState.isLocalDual;
-  const isSaboteur = engineState.activeRole === 'saboteur' || (engineState.isLocalDual && engineState.activeRole === 'saboteur');
+  const isRunner = engineState.activeRole === 'player';
+  const isSaboteur = false;
   const isPlacingMode =
     isSaboteur &&
     engineState.saboteurStats.isPlacing &&
@@ -296,22 +296,22 @@ export function App() {
       {engineState.gameState !== 'ROLE_SELECT' && (
         <TopHud
           timeRemaining={engineState.timeRemaining}
-          activeRole={engineState.activeRole}
           roomCode={engineState.roomCode}
           playerCounts={engineState.playerCounts}
           environment={engineState.environment}
-          aiEnabled={engineState.aiEnabled}
-          humanSaboteurAvailable={engineState.humanSaboteurAvailable}
-          onToggleAI={handleToggleAI}
+          dragon={engineState.dragon}
+          matchConfig={engineState.matchConfig}
           toastMessage={engineState.toastMessage}
-          isLocalDual={engineState.isLocalDual}
+          onExitToLobby={handleRestart}
+          onShareRoom={handleShareRoom}
         />
       )}
 
       {/* Runner HUD */}
-      {engineState.gameState === 'PLAYING' && isRunner && engineState.activeRole === 'runner' && (
+      {engineState.gameState === 'PLAYING' && isRunner && (
         <RunnerHud
           stats={engineState.runnerStats}
+          resources={engineState.playerResources}
           onLookAtGoal={handleLookAtGoal}
           onLookBehind={handleLookBehind}
           onToggleSteering={handleToggleSteering}
@@ -319,6 +319,21 @@ export function App() {
           onCraft={handleCraftPowerUp}
           onUse={handleUsePowerUp}
         />
+      )}
+
+      {engineState.gameState === 'PLAYING' && isRunner && engineState.inventory?.length > 0 && (
+        <div id="ability-hotbar" aria-label="Scavenged abilities">
+          {engineState.inventory.map((ability, index) => {
+            const definition = ITEM_DEFINITIONS[ability];
+            const readyAt = engineState.abilityCooldowns?.[ability] || 0;
+            const cooldownSeconds = Math.max(0, Math.ceil((readyAt - Date.now()) / 1000));
+            return (
+              <button key={ability} type="button" className="interactive" disabled={cooldownSeconds > 0} onClick={() => engineRef.current?.activateAbility(ability)} title={definition?.description || ability}>
+                {index + 1} · {definition?.name || ability} {cooldownSeconds > 0 ? `${cooldownSeconds}s` : 'READY'}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* Saboteur HUD */}
@@ -349,6 +364,7 @@ export function App() {
             activeRole={engineState.activeRole}
             isPlacing={isPlacingMode}
             onJump={handleJump}
+            onAttack={handleKnifeAttack}
             onSlide={handleSlide}
             onSprintToggle={handleSprintToggle}
             onDeploy={handleDeploy}
@@ -365,14 +381,15 @@ export function App() {
       <RoleSelectModal
         visible={engineState.gameState === 'ROLE_SELECT'}
         currentRoom={engineState.roomCode}
+        currentConfig={engineState.matchConfig}
         message={engineState.roleSelectMessage}
         onSelectRole={handleSelectRole}
-        onSelectLocalDual={handleSelectLocalDual}
       />
 
       {/* Game Over Modal */}
       <GameOverModal
         data={engineState.gameOverData}
+        history={engineState.matchHistory}
         onRestart={handleRestart}
       />
     </div>

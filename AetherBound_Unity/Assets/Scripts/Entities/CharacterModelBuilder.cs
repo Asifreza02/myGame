@@ -101,23 +101,6 @@ namespace AetherBound
                 knight.transform.localRotation = Quaternion.identity;
                 knight.transform.localScale = new Vector3(0.9f, 0.9f, 0.9f);
 
-                // Add Aether Energy Aura Ring and glow light
-                var aura = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                aura.name = "AetherAuraRing";
-                aura.transform.parent = root.transform;
-                aura.transform.localPosition = new Vector3(0, 0.05f, 0);
-                aura.transform.localScale = new Vector3(1.1f, 0.02f, 1.1f);
-                RemoveCollider(aura);
-                aura.GetComponent<Renderer>().sharedMaterial = cyanGlowMat;
-
-                var lightGo = new GameObject("AetherGlowLight");
-                lightGo.transform.parent = root.transform;
-                lightGo.transform.localPosition = new Vector3(0, 1.2f, 0);
-                var l = lightGo.AddComponent<Light>();
-                l.color = new Color(0f, 0.85f, 1f);
-                l.intensity = 1.2f;
-                l.range = 4f;
-
                 var anim = root.AddComponent<LightweightCharacterAnimator>();
                 anim.FindMeshAndAnimator();
                 anim.AutoPopulateClips();
@@ -235,23 +218,6 @@ namespace AetherBound
                 rogue.transform.localPosition = Vector3.zero;
                 rogue.transform.localRotation = Quaternion.identity;
                 rogue.transform.localScale = new Vector3(0.9f, 0.9f, 0.9f);
-
-                // Add Shadow Energy Aura
-                var aura = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                aura.name = "ShadowAuraRing";
-                aura.transform.parent = root.transform;
-                aura.transform.localPosition = new Vector3(0, 0.05f, 0);
-                aura.transform.localScale = new Vector3(1.1f, 0.02f, 1.1f);
-                RemoveCollider(aura);
-                aura.GetComponent<Renderer>().sharedMaterial = orangeGlowMat;
-
-                var lightGo = new GameObject("ShadowGlowLight");
-                lightGo.transform.parent = root.transform;
-                lightGo.transform.localPosition = new Vector3(0, 1.2f, 0);
-                var l = lightGo.AddComponent<Light>();
-                l.color = new Color(1f, 0.4f, 0.05f);
-                l.intensity = 1.2f;
-                l.range = 4f;
 
                 var anim = root.AddComponent<LightweightCharacterAnimator>();
                 anim.FindMeshAndAnimator();

@@ -4,6 +4,7 @@ export function MobileActionPad({
   activeRole = 'runner',
   isPlacing = false,
   onJump,
+  onAttack,
   onSlide,
   onSprintToggle,
   onDeploy,
@@ -21,7 +22,7 @@ export function MobileActionPad({
     if (onSprintToggle) onSprintToggle(nextState);
   };
 
-  const isRunner = activeRole === 'runner';
+  const isRunner = activeRole === 'runner' || activeRole === 'player';
   const isSaboteur = activeRole === 'saboteur';
 
   return (
@@ -58,6 +59,9 @@ export function MobileActionPad({
             </div>
 
             <div className="mobile-action-main-row">
+              <button className="mobile-round-btn interactive" onClick={onAttack}>
+                🗡️ KNIFE
+              </button>
               <button
                 className={`mobile-round-btn sprint-btn interactive ${sprintActive ? 'active' : ''}`}
                 onClick={handleSprint}

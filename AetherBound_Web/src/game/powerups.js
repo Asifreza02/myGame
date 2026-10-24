@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CRAFTING_RECIPES, POWERUPS, RESOURCES } from './config.js';
 import { audio } from './audio.js';
+import { loadGameModel, normalizeModel, setModelShadows, tintModelMaterials } from './modelAssets.js';
 
 function createResourceModels() {
   const material = (color, options = {}) => new THREE.MeshStandardMaterial({
@@ -99,6 +100,8 @@ export class PowerUpManager {
     this.spawnedChunks = new Set();
     this.resourceTypes = Object.keys(RESOURCES);
     this.resourceModels = createResourceModels();
+    this.externalResourceModels = new Map();
+    this.loadResourceModels();
     this.inventoryVersion = 0;
     this.inventory = {
       resources: Object.fromEntries(this.resourceTypes.map((type) => [type, 0])),
@@ -111,6 +114,52 @@ export class PowerUpManager {
     this.scene.add(this.group);
   }
 
+  loadResourceModels() {
+    const assets = {
+      EMBER_ORE: { model: 'resource-stone-large', tint: 0xe39b62 },
+      IRONWOOD: { model: 'resource-wood' },
+      MOON_HERB: { model: 'grass-large', tint: 0xc5e3ad },
+    };
+
+    Promise.all(Object.entries(assets).map(async ([type, asset]) => {
+      try {
+        const model = normalizeModel(await loadGameModel(asset.model));
+        if (asset.tint) tintModelMaterials(model, asset.tint);
+        setModelShadows(model, true, false);
+        return [type, model];
+      } catch (error) {
+        console.warn(`Could not load resource model "${asset.model}".`, error);
+        return null;
+      }
+    })).then((loaded) => {
+      for (const entry of loaded) {
+        if (!entry) continue;
+        const [type, model] = entry;
+        this.externalResourceModels.set(type, model);
+        for (const resource of this.resources.values()) {
+          if (resource.type === type) this.replaceResourceModel(resource);
+        }
+      }
+    });
+  }
+
+  createResourceItem(type) {
+    const template = this.externalResourceModels.get(type);
+    if (!template) return this.resourceModels[type].clone(true);
+
+    const item = template.clone(true);
+    const size = type === 'MOON_HERB' ? 0.9 : 0.78;
+    item.scale.setScalar(size);
+    return item;
+  }
+
+  replaceResourceModel(resource) {
+    const nextItem = this.createResourceItem(resource.type);
+    resource.mesh.remove(resource.itemMesh);
+    resource.mesh.add(nextItem);
+    resource.itemMesh = nextItem;
+  }
+
   spawnResource(id, type, x, z) {
     const def = RESOURCES[type];
     if (!def) return null;
@@ -118,7 +167,7 @@ export class PowerUpManager {
     const y = this.worldManager.getHeightAt(x, z) + 0.48;
     const resourceGroup = new THREE.Group();
     resourceGroup.position.set(x, y, z);
-    const itemMesh = this.resourceModels[type].clone(true);
+    const itemMesh = this.createResourceItem(type);
     resourceGroup.add(itemMesh);
 
     const ringMesh = new THREE.Mesh(

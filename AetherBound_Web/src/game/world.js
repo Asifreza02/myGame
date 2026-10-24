@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { SimplexNoise } from './noise.js';
+import { SimplexNoise, getBiomeWeights } from './noise.js';
 import { GAME_CONFIG, BIOMES } from './config.js';
+import { loadGameModel, normalizeModel, scaleModelToSize, setModelShadows, tintModelMaterials } from './modelAssets.js';
 
 export class WorldManager {
   constructor(scene, seed = 1337) {
@@ -74,6 +75,75 @@ export class WorldManager {
     this.foliageMat = new THREE.MeshLambertMaterial({ color: 0x24582e, flatShading: true });
     this.snowFoliageMat = new THREE.MeshLambertMaterial({ color: 0xd8e8f2, flatShading: true });
     this.desertShrubMat = new THREE.MeshLambertMaterial({ color: 0xa87f44, flatShading: true });
+
+    this.environmentModels = { trees: { LUSH: [], SNOW: [] }, rocks: {} };
+    this.loadEnvironmentModels();
+  }
+
+  loadEnvironmentModels() {
+    const specs = [
+      { asset: 'tree', category: 'trees', biome: 'LUSH' },
+      { asset: 'tree-tall', category: 'trees', biome: 'LUSH' },
+      { asset: 'tree-autumn', category: 'trees', biome: 'SNOW', tint: 0xdce9f2 },
+      { asset: 'tree-autumn-tall', category: 'trees', biome: 'SNOW', tint: 0xdce9f2 },
+      ...['rock-a', 'rock-b', 'rock-c'].map((asset) => ({
+        asset,
+        category: 'rocks',
+        biome: 'LUSH',
+        tint: 0xcac6c1,
+      })),
+      ...['rock-a', 'rock-b', 'rock-flat'].map((asset) => ({
+        asset,
+        category: 'rocks',
+        biome: 'SNOW',
+        tint: 0xdce8ef,
+      })),
+      ...['rock-sand-a', 'rock-sand-b', 'rock-sand-c'].map((asset) => ({
+        asset,
+        category: 'rocks',
+        biome: 'DESERT',
+        tint: 0xe9b994,
+      })),
+      ...['rock-a', 'rock-c', 'rock-flat'].map((asset) => ({
+        asset,
+        category: 'rocks',
+        biome: 'VOLCANIC',
+        tint: 0x403b3b,
+      })),
+    ];
+
+    Promise.all(specs.map(async (spec) => {
+      try {
+        const model = normalizeModel(await loadGameModel(spec.asset));
+        if (spec.tint) tintModelMaterials(model, spec.tint);
+        setModelShadows(model);
+        return { ...spec, model };
+      } catch (error) {
+        console.warn(`Could not load environment model "${spec.asset}".`, error);
+        return null;
+      }
+    })).then((loaded) => {
+      for (const entry of loaded) {
+        if (!entry) continue;
+        this.environmentModels[entry.category][entry.biome] ||= [];
+        this.environmentModels[entry.category][entry.biome].push(entry.model);
+      }
+      this.refreshChunkProps();
+    });
+  }
+
+  refreshChunkProps() {
+    for (const [key, chunk] of this.chunks.entries()) {
+      if (chunk.propsGroup) this.scene.remove(chunk.propsGroup);
+      for (const collider of chunk.colliders || []) {
+        const colliderIndex = this.colliders.indexOf(collider);
+        if (colliderIndex !== -1) this.colliders.splice(colliderIndex, 1);
+      }
+
+      const [cx, cz] = key.split(',').map(Number);
+      chunk.propsGroup = this.createChunkProps(cx, cz);
+      chunk.colliders = chunk.propsGroup ? chunk.propsGroup.userData.colliders : [];
+    }
   }
 
   setSeed(newSeed) {
@@ -105,23 +175,7 @@ export class WorldManager {
 
   // Phase 3: Macro-scale climate calculation (Temperature & Moisture) for 4 Biomes
   getBiomeWeights(x, z) {
-    const climateScale = 0.0028;
-    const temp = this.noise.noise2D(x * climateScale, z * climateScale);
-    const moisture = this.noise.noise2D(x * climateScale + 350, z * climateScale + 350);
-
-    // Compute weights
-    let weightSnow = Math.max(0, -temp - 0.15);
-    let weightDesert = Math.max(0, temp - 0.15) * Math.max(0, -moisture + 0.1);
-    let weightVolcanic = Math.max(0, temp - 0.2) * Math.max(0, moisture + 0.1);
-    let weightLush = Math.max(0.12, 1.0 - (weightSnow * 1.8 + weightDesert * 1.8 + weightVolcanic * 1.8));
-
-    const total = weightSnow + weightDesert + weightVolcanic + weightLush;
-    return {
-      snow: weightSnow / total,
-      desert: weightDesert / total,
-      volcanic: weightVolcanic / total,
-      lush: weightLush / total,
-    };
+    return getBiomeWeights(this.noise, x, z);
   }
 
   getDominantBiome(x, z) {
@@ -388,20 +442,26 @@ export class WorldManager {
       if (Math.sqrt(wx * wx + wz * wz) > 25) {
         const wy = this.getHeightAt(wx, wz);
         if (wy > this.waterLevel + 0.2) {
-          let rockMat = this.bigRockMat;
-          if (dominantBiome === BIOMES.DESERT) rockMat = this.desertRockMat;
-          else if (dominantBiome === BIOMES.SNOW) rockMat = this.snowRockMat;
-          else if (dominantBiome === BIOMES.VOLCANIC) rockMat = this.obsidianMat;
-
-          const rockMesh = new THREE.Mesh(this.bigRockGeo, rockMat);
           const rx = 5.0 + rng() * 6.0;
           const ry = 4.0 + rng() * 5.0;
           const rz = 5.0 + rng() * 6.0;
-          rockMesh.scale.set(rx, ry, rz);
+          const rockModels = this.environmentModels.rocks[dominantBiome.id] || [];
+          let fallbackRockMaterial = this.bigRockMat;
+          if (dominantBiome === BIOMES.DESERT) fallbackRockMaterial = this.desertRockMat;
+          else if (dominantBiome === BIOMES.SNOW) fallbackRockMaterial = this.snowRockMat;
+          else if (dominantBiome === BIOMES.VOLCANIC) fallbackRockMaterial = this.obsidianMat;
+          const rockMesh = rockModels.length > 0
+            ? rockModels[Math.floor(rng() * rockModels.length)].clone(true)
+            : new THREE.Mesh(this.bigRockGeo, fallbackRockMaterial);
+          if (rockModels.length > 0) {
+            scaleModelToSize(rockMesh, rx * 2, ry * 2, rz * 2);
+          } else {
+            rockMesh.scale.set(rx, ry, rz);
+          }
 
           const rotY = rng() * Math.PI * 2;
           rockMesh.rotation.set(rng() * 0.2, rotY, rng() * 0.2);
-          rockMesh.position.set(wx, wy + ry, wz);
+          rockMesh.position.set(wx, wy + (rockModels.length > 0 ? 0 : ry), wz);
           rockMesh.castShadow = true;
           rockMesh.receiveShadow = true;
           group.add(rockMesh);
@@ -433,45 +493,32 @@ export class WorldManager {
       const wy = this.getHeightAt(wx, wz);
       if (wy <= this.waterLevel + 0.3) continue;
 
-      if (dominantBiome === BIOMES.LUSH) {
-        // Lush pine tree
-        const tree = new THREE.Group();
-        const trunk = new THREE.Mesh(this.trunkGeo, this.trunkMat);
-        trunk.position.y = 1.5;
-        trunk.castShadow = true;
-        tree.add(trunk);
+      if (dominantBiome === BIOMES.LUSH || dominantBiome === BIOMES.SNOW) {
+        const treeModels = this.environmentModels.trees[dominantBiome.id] || [];
+        const tree = treeModels.length > 0
+          ? treeModels[Math.floor(rng() * treeModels.length)].clone(true)
+          : new THREE.Group();
+        const s = dominantBiome === BIOMES.SNOW
+          ? 0.8 + rng() * 0.6
+          : 0.7 + rng() * 0.5;
 
-        const foliage = new THREE.Mesh(this.foliageGeo, this.foliageMat);
-        foliage.position.y = 3.6;
-        foliage.castShadow = true;
-        tree.add(foliage);
+        if (treeModels.length > 0) {
+          tree.scale.setScalar(5.35 * s);
+        } else {
+          const trunk = new THREE.Mesh(this.trunkGeo, this.trunkMat);
+          trunk.position.y = 1.5;
+          trunk.castShadow = true;
+          tree.add(trunk);
+          const foliage = new THREE.Mesh(
+            this.foliageGeo,
+            dominantBiome === BIOMES.SNOW ? this.snowFoliageMat : this.foliageMat,
+          );
+          foliage.position.y = 3.6;
+          foliage.castShadow = true;
+          tree.add(foliage);
+          tree.scale.set(s, s, s);
+        }
 
-        const s = 0.7 + rng() * 0.5;
-        tree.scale.set(s, s, s);
-        tree.position.set(wx, wy, wz);
-        group.add(tree);
-        const collider = {
-          id: `tree_${cx}_${cz}_${i}`,
-          type: 'CYLINDER',
-          center: { x: wx, y: wy + 1.5 * s, z: wz },
-          radius: 0.5 * s,
-          height: 3 * s,
-        };
-        this.colliders.push(collider);
-        group.userData.colliders.push(collider);
-      } else if (dominantBiome === BIOMES.SNOW) {
-        // Snow-capped conifer
-        const tree = new THREE.Group();
-        const trunk = new THREE.Mesh(this.trunkGeo, this.trunkMat);
-        trunk.position.y = 1.5;
-        tree.add(trunk);
-
-        const foliage = new THREE.Mesh(this.foliageGeo, this.snowFoliageMat);
-        foliage.position.y = 3.6;
-        tree.add(foliage);
-
-        const s = 0.8 + rng() * 0.6;
-        tree.scale.set(s, s, s);
         tree.position.set(wx, wy, wz);
         group.add(tree);
         const collider = {
@@ -484,26 +531,43 @@ export class WorldManager {
         this.colliders.push(collider);
         group.userData.colliders.push(collider);
       } else if (dominantBiome === BIOMES.DESERT) {
-        // Sandstone pillar / desert scrub
-        const shrubGeo = new THREE.DodecahedronGeometry(0.9, 0);
-        const shrub = new THREE.Mesh(shrubGeo, this.desertShrubMat);
-        shrub.position.set(wx, wy + 0.8, wz);
-        shrub.scale.set(1.2 + rng() * 0.8, 1.4 + rng() * 1.2, 1.2 + rng() * 0.8);
+        // Sandstone scrub uses the pack's varied desert rock meshes.
+        const rockModels = this.environmentModels.rocks.DESERT || [];
+        const shrubWidth = 2.2 + rng() * 1.4;
+        const shrubHeight = 2.4 + rng() * 1.6;
+        const shrubDepth = 2.2 + rng() * 1.4;
+        const shrub = rockModels.length > 0
+          ? rockModels[Math.floor(rng() * rockModels.length)].clone(true)
+          : new THREE.Mesh(this.bigRockGeo, this.desertShrubMat);
+        if (rockModels.length > 0) {
+          scaleModelToSize(shrub, shrubWidth, shrubHeight, shrubDepth);
+          shrub.position.set(wx, wy, wz);
+        } else {
+          shrub.scale.set(shrubWidth / 1.8, shrubHeight / 1.8, shrubDepth / 1.8);
+          shrub.position.set(wx, wy + shrubHeight / 2, wz);
+        }
         group.add(shrub);
         const collider = {
           id: `shrub_${cx}_${cz}_${i}`,
           type: 'CYLINDER',
-          center: { x: wx, y: wy + shrub.scale.y * 0.9, z: wz },
-          radius: Math.max(shrub.scale.x, shrub.scale.z) * 0.65,
-          height: shrub.scale.y * 1.8,
+          center: { x: wx, y: wy + shrubHeight / 2, z: wz },
+          radius: Math.max(shrubWidth, shrubDepth) * 0.5,
+          height: shrubHeight,
         };
         this.colliders.push(collider);
         group.userData.colliders.push(collider);
       } else if (dominantBiome === BIOMES.VOLCANIC) {
-        // Glowing magma vent / basalt spire
-        const ventGeo = new THREE.CylinderGeometry(0.8, 1.4, 1.2, 6);
-        const vent = new THREE.Mesh(ventGeo, this.obsidianMat);
-        vent.position.set(wx, wy + 0.6, wz);
+        // Glowing magma vent with a dark basalt rock base.
+        const rockModels = this.environmentModels.rocks.VOLCANIC || [];
+        const vent = rockModels.length > 0
+          ? rockModels[Math.floor(rng() * rockModels.length)].clone(true)
+          : new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.4, 1.2, 6), this.obsidianMat);
+        if (rockModels.length > 0) {
+          scaleModelToSize(vent, 2.8, 1.2, 2.8);
+          vent.position.set(wx, wy, wz);
+        } else {
+          vent.position.set(wx, wy + 0.6, wz);
+        }
         group.add(vent);
         const collider = {
           id: `vent_${cx}_${cz}_${i}`,

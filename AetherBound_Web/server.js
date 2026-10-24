@@ -31,6 +31,7 @@ class GameRoom {
     this.obstacles = []; // array of { id, type, position, rotation, timestamp }
     this.runnerState = { x: 0, y: 10, z: 0, rx: 0, ry: 0, speed: 0, isGrounded: true };
     this.timerInterval = null;
+    this.roundEndsAt = null;
     this.scores = { runner: 0, saboteur: 0 };
   }
 
@@ -45,22 +46,26 @@ class GameRoom {
   }
 
   startRound() {
+    this.stopTimer();
     this.timeRemaining = this.roundDuration;
     this.status = 'PLAYING';
     this.obstacles = [];
     this.goalPosition = this.calculateGoalPosition();
     this.seed = Math.floor(Math.random() * 1000000);
 
-    if (this.timerInterval) clearInterval(this.timerInterval);
-
+    this.roundEndsAt = Date.now() + this.roundDuration * 1000;
     this.timerInterval = setInterval(() => {
-      if (this.status !== 'PLAYING') return;
+      if (this.status !== 'PLAYING') {
+        this.stopTimer();
+        return;
+      }
 
-      this.timeRemaining -= 1;
+      this.timeRemaining = Math.max(0, Math.ceil((this.roundEndsAt - Date.now()) / 1000));
       if (this.timeRemaining <= 0) {
         this.timeRemaining = 0;
         this.status = 'SABOTEUR_WON';
         this.scores.saboteur += 1;
+        this.stopTimer();
         this.broadcast({
           type: 'GAME_OVER',
           winner: 'saboteur',
@@ -88,6 +93,12 @@ class GameRoom {
 
   resetRound() {
     this.startRound();
+  }
+
+  stopTimer() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.timerInterval = null;
+    this.roundEndsAt = null;
   }
 
   broadcast(message, senderWs = null) {
@@ -286,6 +297,7 @@ wss.on('connection', (ws, req) => {
         case 'GOAL_REACHED':
           if (room.status === 'PLAYING') {
             room.status = 'RUNNER_WON';
+            room.stopTimer();
             room.scores.runner += 1;
             room.broadcastAll({
               type: 'GAME_OVER',

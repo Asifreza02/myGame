@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OBSTACLES } from './config.js';
+import { loadGameModel, normalizeModel, scaleModelToSize, setModelShadows, tintModelMaterials } from './modelAssets.js';
 
 export class ObstacleManager {
   constructor(scene, worldManager) {
@@ -41,6 +42,52 @@ export class ObstacleManager {
     this.previewGroup.visible = false;
     this.scene.add(this.previewGroup);
     this.currentPreviewType = null;
+    this.assetModels = {};
+    this.loadObstacleModels();
+  }
+
+  loadObstacleModels() {
+    const assets = [
+      ['barrel', 'BARREL'],
+      ['metal-panel-screws', 'WALL'],
+      ['rock-sand-a', 'BOULDER'],
+    ];
+
+    Promise.all(assets.map(async ([asset, type]) => {
+      try {
+        const model = normalizeModel(await loadGameModel(asset));
+        if (type === 'BOULDER') tintModelMaterials(model, 0xbcb8b0);
+        setModelShadows(model);
+        return [type, model];
+      } catch (error) {
+        console.warn(`Could not load obstacle model "${asset}".`, error);
+        return null;
+      }
+    })).then((loaded) => {
+      for (const entry of loaded) {
+        if (!entry) continue;
+        this.assetModels[entry[0]] = entry[1];
+      }
+      this.refreshObstacleModels();
+    });
+  }
+
+  refreshObstacleModels() {
+    for (const obstacle of this.obstacles.values()) {
+      if (!this.assetModels[obstacle.type]) continue;
+      const replacement = this.createObstacleMesh(
+        obstacle.type,
+        obstacle.mesh.position,
+        obstacle.mesh.rotation,
+      );
+      if (!replacement?.userData.usesExternalModel) continue;
+
+      this.scene.remove(obstacle.mesh);
+      this.scene.add(replacement);
+      obstacle.mesh = replacement;
+      obstacle.position = replacement.position;
+      obstacle.rotation = replacement.rotation;
+    }
   }
 
   clear() {
@@ -67,6 +114,26 @@ export class ObstacleManager {
 
     switch (type) {
       case 'WALL': {
+        const panelModel = this.assetModels.WALL;
+        if (panelModel) {
+          const panelCount = 4;
+          const panelWidth = def.size.width / panelCount;
+          for (let index = 0; index < panelCount; index += 1) {
+            const panel = panelModel.clone(true);
+            scaleModelToSize(panel, panelWidth, def.size.height, def.size.depth);
+            panel.position.x = (index - (panelCount - 1) / 2) * panelWidth;
+            group.add(panel);
+          }
+          const trim = new THREE.Mesh(
+            new THREE.BoxGeometry(def.size.width * 1.02, 0.2, def.size.depth * 1.02),
+            new THREE.MeshBasicMaterial({ color: 0xffaa00 }),
+          );
+          trim.position.y = def.size.height + 0.1;
+          group.add(trim);
+          group.userData.usesExternalModel = true;
+          break;
+        }
+
         const geo = new THREE.BoxGeometry(def.size.width, def.size.height, def.size.depth);
         const mat = new THREE.MeshStandardMaterial({
           color: def.color,
@@ -135,6 +202,15 @@ export class ObstacleManager {
       }
 
       case 'BOULDER': {
+        if (this.assetModels.BOULDER) {
+          const boulder = this.assetModels.BOULDER.clone(true);
+          scaleModelToSize(boulder, def.radius * 2, def.radius * 2, def.radius * 2);
+          boulder.position.y = def.radius;
+          group.add(boulder);
+          group.userData.usesExternalModel = true;
+          break;
+        }
+
         const geo = new THREE.DodecahedronGeometry(def.radius, 2);
         const mat = new THREE.MeshStandardMaterial({
           color: def.color,
@@ -151,6 +227,27 @@ export class ObstacleManager {
       }
 
       case 'BARREL': {
+        if (this.assetModels.BARREL) {
+          const barrel = this.assetModels.BARREL.clone(true);
+          scaleModelToSize(barrel, def.size.radius * 2, def.size.height, def.size.radius * 2);
+          group.add(barrel);
+
+          const warningRing = new THREE.Mesh(
+            new THREE.CylinderGeometry(def.size.radius * 0.98, def.size.radius * 0.98, 0.16, 16),
+            new THREE.MeshBasicMaterial({ color: 0xff3300 }),
+          );
+          warningRing.position.y = def.size.height * 0.56;
+          group.add(warningRing);
+          const cap = new THREE.Mesh(
+            new THREE.CylinderGeometry(def.size.radius * 0.88, def.size.radius * 0.88, 0.12, 16),
+            new THREE.MeshBasicMaterial({ color: 0xffaa00 }),
+          );
+          cap.position.y = def.size.height + 0.04;
+          group.add(cap);
+          group.userData.usesExternalModel = true;
+          break;
+        }
+
         const barrelGeo = new THREE.CylinderGeometry(def.size.radius, def.size.radius, def.size.height, 16);
         const barrelMat = new THREE.MeshStandardMaterial({
           color: 0x1f2326,

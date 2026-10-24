@@ -1,103 +1,40 @@
 import React from 'react';
 
-export function GameOverModal({ data = null, onRestart }) {
+export function GameOverModal({ data = null, history = [], onRestart }) {
   if (!data) return null;
-
-  const {
-    winner = 'runner',
-    reason = '',
-    scores = { runner: 0, saboteur: 0 },
-    metrics = {},
-  } = data;
-
-  const isRunnerWin = winner === 'runner';
-  const titleColor = isRunnerWin ? '#00ffff' : '#ff3344';
-  const titleText = isRunnerWin ? 'RUNNER ESCAPED!' : 'SABOTEUR VICTORIOUS!';
-
-  const {
-    dist = 0,
-    resources = 0,
-    traps = 0,
-    timeElapsed = 0,
-    bestDist = dist,
-    bestResources = resources,
-    isNewBestDist = false,
-    isNewBestResources = false,
-  } = metrics;
-
+  const won = data.winner === 'you';
+  const draw = data.winner === 'draw';
+  const title = data.kind === 'dragon'
+    ? (won ? 'DRAGON SLAIN!' : 'THE DRAGON IS DEFEATED')
+    : (draw ? 'MATCH DRAW' : won ? 'LAST ONE STANDING!' : 'YOU WERE ELIMINATED');
   return (
     <div className="modal-overlay" id="game-over-modal">
       <div className="modal-card">
-        <h1 className="modal-title" id="game-over-title" style={{ color: titleColor }}>
-          {titleText}
-        </h1>
-        <p className="modal-subtitle" id="game-over-desc">
-          {reason}
-        </p>
-
-        <div
-          id="game-over-score"
-          style={{
-            fontSize: '18px',
-            color: 'var(--neon-green)',
-            marginBottom: '16px',
-            fontWeight: 800,
-          }}
-        >
-          Score — Runner: {scores.runner || 0} | Saboteur: {scores.saboteur || 0}
-        </div>
-
-        {/* Phase 3 Match Performance Stats & Records */}
-        <div className="match-stats-container" id="match-stats-container">
-          <div className="match-stats-title">📊 MATCH PERFORMANCE METRICS</div>
-          <div className="match-stats-grid">
-            <div className="stat-item">
-              <span className="stat-name">🏃 Traversed Distance:</span>
-              <span className="stat-value">
-                {dist}m {isNewBestDist && <span className="stat-best">★ RECORD</span>}
-              </span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-name">🧰 Resources Gathered:</span>
-              <span className="stat-value">
-                {resources} {isNewBestResources && <span className="stat-best">★ RECORD</span>}
-              </span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-name">🧱 Traps Deployed:</span>
-              <span className="stat-value">{traps}</span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-name">⏱️ Match Duration:</span>
-              <span className="stat-value">{timeElapsed}s</span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-name">🏆 All-Time Record Distance:</span>
-              <span className="stat-value" style={{ color: '#ffaa00' }}>
-                {bestDist}m
-              </span>
-            </div>
-
-            <div className="stat-item">
-              <span className="stat-name">⭐ All-Time Resource Record:</span>
-              <span className="stat-value" style={{ color: '#00d4ff' }}>
-                {bestResources}
-              </span>
-            </div>
+        <h1 className="modal-title" id="game-over-title" style={{ color: won ? '#00ffff' : '#ff6677' }}>{title}</h1>
+        <p className="modal-subtitle" id="game-over-desc">{data.reason}</p>
+        {data.kind === 'dragon' && <p className="modal-subtitle">Dragon victory credit: {data.dragonRewardPolicy === 'shared' ? 'all living players' : 'final attacker'}.</p>}
+        {data.stats && (
+          <div className="match-stat-grid" aria-label="Match statistics">
+            <span><strong>{data.stats.kills || 0}</strong> Eliminations</span>
+            <span><strong>{data.stats.survivalTime || 0}s</strong> Survival</span>
+            <span><strong>{data.stats.itemsCollected || 0}</strong> Items found</span>
+            <span><strong>{data.stats.damageDealt || 0}</strong> Damage dealt</span>
+            <span><strong>{data.stats.dragonDamage || 0}</strong> Dragon damage</span>
           </div>
-        </div>
-
-        <button
-          className="btn-primary interactive"
-          id="restart-btn"
-          onClick={onRestart}
-        >
-          RETURN TO MAIN MENU
-        </button>
+        )}
+        {history.length > 0 && (
+          <section className="match-history" aria-label="Recent match history">
+            <h2>RECENT MATCHES</h2>
+            {history.slice(0, 3).map((match) => (
+              <div className="match-history-row" key={match.endedAt}>
+                <span>{match.winner === 'you' ? 'VICTORY' : match.winner === 'draw' ? 'DRAW' : 'DEFEAT'}</span>
+                <span>{match.stats?.kills || 0} ELIMS</span>
+                <span>{match.stats?.damageDealt || 0} DMG</span>
+              </div>
+            ))}
+          </section>
+        )}
+        <button className="btn-primary interactive" id="restart-btn" onClick={onRestart}>RETURN TO LOBBY</button>
       </div>
     </div>
   );
