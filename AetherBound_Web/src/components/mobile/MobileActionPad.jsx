@@ -85,24 +85,21 @@ export function MobileActionPad({
               )}
             </div>
 
-            <div className="mobile-action-main-row">
-              <button
-                className={`mobile-round-btn attack-btn interactive ${hasNoAmmo ? 'no-ammo' : ''} ${isKnifeCooling ? 'cooling-down' : ''}`}
-                onPointerUp={(event) => activateFromPointer(event, onAttack)}
-                onClick={(event) => activateFromKeyboard(event, onAttack)}
-                title={isMelee ? 'Knife Attack' : `Fire ${currentWeaponDef.name} (${currentAmmo} ammo)`}
-              >
-                <span className="mobile-btn-icon">{currentWeaponDef.icon || '🗡️'}</span>
-                <span className="mobile-btn-label">
-                  {isMelee ? (isKnifeCooling ? `${(knifeCooldownMs / 1000).toFixed(1)}s` : 'KNIFE') : `${currentAmmo}`}
-                </span>
-              </button>
+            <div className="mobile-action-grid">
               <button
                 className={`mobile-round-btn sprint-btn interactive ${sprintActive ? 'active' : ''}`}
                 onPointerUp={(event) => activateFromPointer(event, handleSprint)}
                 onClick={(event) => activateFromKeyboard(event, handleSprint)}
               >
                 ⚡ SPRINT
+              </button>
+
+              <button
+                className="mobile-round-btn jump-btn interactive"
+                onPointerUp={(event) => activateFromPointer(event, onJump)}
+                onClick={(event) => activateFromKeyboard(event, onJump)}
+              >
+                🚀 JUMP
               </button>
 
               <button
@@ -114,11 +111,15 @@ export function MobileActionPad({
               </button>
 
               <button
-                className="mobile-round-btn jump-btn interactive"
-                onPointerUp={(event) => activateFromPointer(event, onJump)}
-                onClick={(event) => activateFromKeyboard(event, onJump)}
+                className={`mobile-round-btn attack-btn primary-action interactive ${hasNoAmmo ? 'no-ammo' : ''} ${isKnifeCooling ? 'cooling-down' : ''}`}
+                onPointerUp={(event) => activateFromPointer(event, onAttack)}
+                onClick={(event) => activateFromKeyboard(event, onAttack)}
+                title={isMelee ? 'Knife Attack' : `Fire ${currentWeaponDef.name} (${currentAmmo} ammo)`}
               >
-                🚀 JUMP
+                <span className="mobile-btn-icon">{currentWeaponDef.icon || '🗡️'}</span>
+                <span className="mobile-btn-label">
+                  {isMelee ? (isKnifeCooling ? `${(knifeCooldownMs / 1000).toFixed(1)}s` : 'ATTACK') : `${currentAmmo}`}
+                </span>
               </button>
             </div>
           </>

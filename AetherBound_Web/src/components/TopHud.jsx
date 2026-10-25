@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export function TopHud({
   roomCode = 'default',
@@ -19,10 +19,21 @@ export function TopHud({
 }) {
   const [showRoster, setShowRoster] = useState(() => {
     if (typeof window !== 'undefined') {
-      return window.innerWidth > 900 && !window.matchMedia('(pointer: coarse)').matches;
+      const isMobile = window.innerWidth <= 900 || window.innerHeight <= 600 || window.matchMedia('(pointer: coarse)').matches;
+      return !isMobile;
     }
-    return true;
+    return false;
   });
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 900 || window.innerHeight <= 600) {
+        setShowRoster(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const alive = playerCounts.alive ?? playerCounts.total ?? 1;
   const maxPlayers = matchConfig.maxPlayers || playerCounts.max || 5;
   const total = Math.min(maxPlayers, Math.max(playerCounts.total || 1, competitors.length));
@@ -139,7 +150,15 @@ export function TopHud({
         <aside className="competitors-panel" aria-label="5-Player Match Standings">
           <div className="competitors-header">
             <span className="competitors-title">5-PLAYER STANDINGS</span>
-            <span className="competitors-count">{alive} ALIVE</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="competitors-count">{alive} ALIVE</span>
+              <button
+                type="button"
+                className="competitors-close-btn interactive"
+                onClick={() => setShowRoster(false)}
+                title="Close Standings"
+              >✕</button>
+            </div>
           </div>
           <div className="competitors-list">
             {competitors.slice(0, 5).map((comp) => {

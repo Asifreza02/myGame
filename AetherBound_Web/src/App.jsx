@@ -183,6 +183,7 @@ export function App() {
   }, []);
 
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [dismissOrientation, setDismissOrientation] = useState(false);
   const [orientationMessage, setOrientationMessage] = useState(
     'If your phone does not rotate, enable Auto-rotate and turn it sideways.',
   );
@@ -305,20 +306,28 @@ export function App() {
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {/* Three.js Container */}
-      <div id="canvas-container" ref={containerRef} />
-      <div className="orientation-hint" role="status">
-        <span className="orientation-icon" aria-hidden="true">↻</span>
-        <span>Play AetherBound in landscape</span>
-        <button
-          type="button"
-          className="orientation-button interactive"
-          onClick={handleRequestLandscape}
-        >
-          TRY LANDSCAPE
-        </button>
-        <span className="orientation-message">{orientationMessage}</span>
-      </div>
+      {/* Orientation hint for portrait gameplay */}
+      {engineState.gameState === 'PLAYING' && !dismissOrientation && (
+        <div className="orientation-hint" role="status">
+          <span className="orientation-icon" aria-hidden="true">↻</span>
+          <span>Play AetherBound in landscape</span>
+          <button
+            type="button"
+            className="orientation-button interactive"
+            onClick={handleRequestLandscape}
+          >
+            TRY LANDSCAPE
+          </button>
+          <span className="orientation-message">{orientationMessage}</span>
+          <button
+            type="button"
+            className="orientation-dismiss-btn interactive"
+            onClick={() => setDismissOrientation(true)}
+          >
+            CONTINUE IN PORTRAIT
+          </button>
+        </div>
+      )}
 
       {/* Reticle */}
       <AimReticle

@@ -153,9 +153,8 @@ export class GameEngine {
       seed: params.get('seed'),
       fillBots: params.get('bots'),
     });
-    const navigationEntry = performance.getEntriesByType('navigation')[0];
-    const preferredRole = navigationEntry?.type === 'reload' ? null : params.get('role');
     this.returningToMenu = params.get('menu') === '1';
+    const preferredRole = this.returningToMenu ? null : params.get('role');
     this.roleSelectMessage = '';
 
     if (preferredRole) {
