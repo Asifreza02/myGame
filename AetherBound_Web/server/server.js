@@ -2,10 +2,11 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { DRAGON_ATTACKS, ITEM_DEFINITIONS, KNIFE_RULES, WEAPON_DEFINITIONS, WEAPON_CRAFTING_RECIPES } from '../src/game/data/combat.js';
+import { DRAGON_ATTACKS, getDragonPhase, ITEM_DEFINITIONS, KNIFE_RULES, WEAPON_DEFINITIONS, WEAPON_CRAFTING_RECIPES } from '../src/game/data/combat.js';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS, getWeatherState } from '../src/game/data/world.js';
 import { MATCH_MODES, normalizeMatchConfig, PLAYER_SLOT_THEMES, MAX_MATCH_PLAYERS } from '../src/game/data/matchModes.js';
 import { SimplexNoise, getBiomeWeights } from '../src/game/noise.js';
+import { GAME_CONFIG } from '../src/game/config.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -16,6 +17,7 @@ const SERVER_TICK_MS = 50;
 const STATE_BROADCAST_MS = 100;
 const RECONNECT_GRACE_MS = 30_000;
 const DRAGON_REWARD_POLICY = process.env.DRAGON_REWARD_POLICY || 'final-blow';
+const WORLD_RADIUS = GAME_CONFIG.WORLD.RADIUS;
 
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok', maxPlayers: MAX_PLAYERS }));
 
@@ -24,6 +26,13 @@ const safeSend = (ws, payload) => {
 };
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const clampToWorld = (x, z) => {
+  const radius = Math.hypot(x, z);
+  const maxRadius = WORLD_RADIUS - 2;
+  if (radius <= maxRadius) return { x, z };
+  const scale = maxRadius / radius;
+  return { x: x * scale, z: z * scale };
+};
 
 class GameRoom {
   constructor(id, requestedConfig = {}) {
@@ -43,8 +52,7 @@ class GameRoom {
     this.players = new Map();
     this.state = 'LOBBY';
     this.worldNoise = new SimplexNoise(this.seed);
-    this.timeRemaining = this.config.durationSeconds;
-    this.dragon = { x: 42, y: 11, z: -34, health: 420, maxHealth: 420, alive: true, phase: 'STALKING', attack: null, nextAttackAt: 0 };
+    this.dragon = { x: 42, y: 11, z: -34, health: 420, maxHealth: 420, alive: true, phase: 'PASSIVE', attack: null, nextAttackAt: 0, roamTarget: null, nextRoamTargetAt: 0 };
     this.items = this.createItems();
     this.hazards = [];
     this.interval = null;
@@ -110,7 +118,6 @@ class GameRoom {
         seed: this.seed,
         matchConfig: this.matchConfig,
         state: this.state,
-        timeRemaining: this.timeRemaining,
         snapshot: this.snapshot(),
       });
       this.broadcast({ type: 'PLAYER_RECONNECTED', player: this.publicPlayer(returningPlayer) }, ws);
@@ -152,6 +159,7 @@ class GameRoom {
       y: spawnY,
       z: spawnZ,
       ry: spawnAngle + Math.PI,
+      pitch: 0,
       health: 100,
       maxHealth: 100,
       alive: true,
@@ -195,7 +203,6 @@ class GameRoom {
       seed: this.seed,
       matchConfig: this.matchConfig,
       state: this.state,
-      timeRemaining: this.timeRemaining,
       snapshot: this.snapshot(),
     });
     this.broadcast({ type: 'PLAYER_JOINED', player: this.publicPlayer(player) });
@@ -221,6 +228,7 @@ class GameRoom {
       y: spawnY,
       z: spawnZ,
       ry: spawnAngle + Math.PI,
+      pitch: 0,
       health: 100,
       maxHealth: 100,
       alive: true,
@@ -332,13 +340,13 @@ class GameRoom {
   }
 
   publicPlayer(player) {
-    const { id, name, slot, color, colorHex, isBot, x, y, z, ry, health, maxHealth, alive, connected, inventory, abilityReadyAt, activeAbilities, resources, weapons, equippedWeapon, ammo } = player;
+    const { id, name, slot, color, colorHex, isBot, x, y, z, ry, pitch, health, maxHealth, alive, connected, inventory, abilityReadyAt, activeAbilities, resources, weapons, equippedWeapon, ammo } = player;
     const stats = {
       ...player.stats,
       survivalTime: Math.floor(player.stats.survivalTime),
     };
     return {
-      id, name, slot, color, colorHex, isBot: Boolean(isBot), x, y, z, ry, health, maxHealth, alive, connected,
+      id, name, slot, color, colorHex, isBot: Boolean(isBot), x, y, z, ry, pitch: pitch || 0, health, maxHealth, alive, connected,
       inventory, abilityReadyAt, activeAbilities, resources,
       weapons: weapons || ['KNIFE'],
       equippedWeapon: equippedWeapon || 'KNIFE',
@@ -351,7 +359,6 @@ class GameRoom {
     return {
       room: this.id,
       state: this.state,
-      timeRemaining: this.timeRemaining,
       matchConfig: this.matchConfig,
       players: [...this.players.values()].map((player) => this.publicPlayer(player)),
       items: this.items.map((item) => ({ ...item })),
@@ -365,7 +372,9 @@ class GameRoom {
   start() {
     this.state = 'ACTIVE';
     this.matchStartedAt = Date.now();
-    this.dragon.nextAttackAt = this.matchStartedAt + 4500;
+    this.dragon.nextAttackAt = this.matchStartedAt + 18_000;
+    this.dragon.roamTarget = this.pickDragonRoamTarget();
+    this.dragon.nextRoamTargetAt = this.matchStartedAt + 30_000;
 
     // Auto-fill bots to complete the 5-player roster if enabled
     if (this.config.fillBots !== false && this.mode.id !== 'solo') {
@@ -378,24 +387,20 @@ class GameRoom {
     this.interval = setInterval(() => {
       if (this.state !== 'ACTIVE') return;
       const now = Date.now();
-      this.timeRemaining = Math.max(0, this.config.durationSeconds - Math.floor((Date.now() - this.matchStartedAt) / 1000));
-      if (this.timeRemaining <= 0) {
-        const livingPlayer = [...this.players.values()].find((player) => player.alive);
-        if (this.config.mode === 'solo' && livingPlayer) {
-          this.finish(livingPlayer.id, 'You survived the full match.', 'survival');
-        } else {
-          this.finish('draw', 'The match timer expired.');
-        }
-      } else {
-        this.updateSurvivalTime(now);
-        this.updateBots(now, SERVER_TICK_MS / 1000);
-        this.updateDragon(now, SERVER_TICK_MS / 1000);
-        this.hazards = this.hazards.filter((hazard) => !hazard.triggered && hazard.expiresAt > now);
-        this.broadcastState();
-      }
+      this.updateSurvivalTime(now);
+      this.updateBots(now, SERVER_TICK_MS / 1000);
+      this.updateDragon(now, SERVER_TICK_MS / 1000);
+      this.hazards = this.hazards.filter((hazard) => !hazard.triggered && hazard.expiresAt > now);
+      this.broadcastState();
     }, SERVER_TICK_MS);
 
-    this.broadcast({ type: 'MATCH_STARTED', seed: this.seed, duration: this.config.durationSeconds, matchConfig: this.matchConfig });
+    this.broadcast({ type: 'MATCH_STARTED', seed: this.seed, matchConfig: this.matchConfig });
+  }
+
+  pickDragonRoamTarget() {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 150 + Math.random() * (WORLD_RADIUS - 250);
+    return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
   }
 
   updateSurvivalTime(now) {
@@ -509,10 +514,14 @@ class GameRoom {
 
         if (hasRangedAmmo && closestOpponentDist <= weaponDef.range) {
           // Ranged shootout
+          const oppDy = (closestOpponent.y + 1.0) - (bot.y + 1.2);
+          const opp3dDist = Math.hypot(dx, oppDy, dz) || 1;
+          bot.pitch = Math.asin(oppDy / opp3dDist);
+
           if (now - (bot.lastWeaponFireAt || 0) >= weaponDef.cooldownMs + 220) {
             this.fireWeapon(null, bot, {
               origin: { x: bot.x, y: bot.y + 1.2, z: bot.z },
-              direction: { x: Math.sin(bot.ry), y: 0, z: Math.cos(bot.ry) },
+              direction: { x: dx / opp3dDist, y: oppDy / opp3dDist, z: dz / opp3dDist },
             });
           }
           if (closestOpponentDist > 7.0) {
@@ -534,15 +543,19 @@ class GameRoom {
       } else if (this.dragon.alive && distance(bot, this.dragon) < 34) {
         // Shoot at dragon if in range
         const dx = this.dragon.x - bot.x;
+        const dy = (this.dragon.y + 2.0) - (bot.y + 1.2);
         const dz = this.dragon.z - bot.z;
+        const dragon3dDist = Math.hypot(dx, dy, dz) || 1;
         bot.ry = Math.atan2(dx, dz);
+        bot.pitch = Math.asin(dy / dragon3dDist);
+
         const currentWeapon = bot.equippedWeapon || 'KNIFE';
         const weaponDef = WEAPON_DEFINITIONS[currentWeapon] || WEAPON_DEFINITIONS.KNIFE;
         if (weaponDef.type !== 'melee' && (bot.ammo[currentWeapon] || 0) > 0) {
           if (now - (bot.lastWeaponFireAt || 0) >= weaponDef.cooldownMs + 250) {
             this.fireWeapon(null, bot, {
               origin: { x: bot.x, y: bot.y + 1.2, z: bot.z },
-              direction: { x: Math.sin(bot.ry), y: 0, z: Math.cos(bot.ry) },
+              direction: { x: dx / dragon3dDist, y: dy / dragon3dDist, z: dz / dragon3dDist },
             });
           }
         }
@@ -587,6 +600,9 @@ class GameRoom {
         bot.x += moveX * step;
         bot.z += moveZ * step;
       }
+      const boundedPosition = clampToWorld(bot.x, bot.z);
+      bot.x = boundedPosition.x;
+      bot.z = boundedPosition.z;
       bot.y = this.getTerrainHeight(bot.x, bot.z) + 1.0;
 
       // Abilities
@@ -695,23 +711,23 @@ class GameRoom {
 
   updateDragon(now, tickSeconds) {
     if (!this.dragon.alive) return;
-    const nextPhase = this.dragon.health <= this.dragon.maxHealth * 0.5 ? 'ENRAGED' : 'STALKING';
-    if (nextPhase !== this.dragon.phase) {
-      this.dragon.phase = nextPhase;
-      this.broadcast({ type: 'DRAGON_PHASE_CHANGED', phase: nextPhase });
+    const elapsedSeconds = (now - this.matchStartedAt) / 1000;
+    const profile = getDragonPhase(elapsedSeconds);
+    if (profile.id !== this.dragon.phase) {
+      this.dragon.phase = profile.id;
+      this.broadcast({ type: 'DRAGON_PHASE_CHANGED', phase: profile.id });
     }
 
     const alivePlayers = [...this.players.values()].filter((player) => player.alive && player.connected);
-    const target = alivePlayers.sort((a, b) => distance(a, this.dragon) - distance(b, this.dragon))[0];
+    let target = alivePlayers.sort((a, b) => distance(a, this.dragon) - distance(b, this.dragon))[0];
+    if (target && distance(target, this.dragon) > profile.aggroRange) target = null;
     if (this.dragon.attack) {
       if (now >= this.dragon.attack.impactAt) this.resolveDragonAttack(now);
       return;
     }
 
-    const moveSpeed = this.dragon.phase === 'ENRAGED' ? 16 : 11;
-    const elapsed = (now - this.matchStartedAt) / 1000;
-    if (target) {
-      const orbitAngle = elapsed * (this.dragon.phase === 'ENRAGED' ? 0.68 : 0.46);
+    if (target && profile.id !== 'PASSIVE') {
+      const orbitAngle = elapsedSeconds * (profile.id === 'PHASE_3' ? 0.68 : 0.46);
       const orbitRadius = 2.6;
       const orbitX = target.x + Math.cos(orbitAngle) * orbitRadius;
       const orbitZ = target.z + Math.sin(orbitAngle) * orbitRadius;
@@ -719,19 +735,33 @@ class GameRoom {
       const moveZ = orbitZ - this.dragon.z;
       const moveDistance = Math.hypot(moveX, moveZ);
       if (moveDistance > 0.5) {
-        const step = Math.min(moveDistance, moveSpeed * tickSeconds);
+        const step = Math.min(moveDistance, profile.speed * tickSeconds);
         this.dragon.x += (moveX / moveDistance) * step;
         this.dragon.z += (moveZ / moveDistance) * step;
       }
       this.dragon.ry = Math.atan2(target.x - this.dragon.x, target.z - this.dragon.z);
     } else {
-      this.dragon.x = 42 + Math.cos(elapsed * 0.18) * 10;
-      this.dragon.z = -34 + Math.sin(elapsed * 0.18) * 10;
-      this.dragon.ry = elapsed * 0.18 - Math.PI / 2;
+      if (!this.dragon.roamTarget || now >= this.dragon.nextRoamTargetAt
+        || distance(this.dragon, this.dragon.roamTarget) < 12) {
+        this.dragon.roamTarget = this.pickDragonRoamTarget();
+        this.dragon.nextRoamTargetAt = now + 30_000;
+      }
+      const dx = this.dragon.roamTarget.x - this.dragon.x;
+      const dz = this.dragon.roamTarget.z - this.dragon.z;
+      const roamDistance = Math.hypot(dx, dz);
+      if (roamDistance > 0.5) {
+        const step = Math.min(roamDistance, profile.speed * tickSeconds);
+        this.dragon.x += (dx / roamDistance) * step;
+        this.dragon.z += (dz / roamDistance) * step;
+        this.dragon.ry = Math.atan2(dx, dz);
+      }
     }
+    const boundedPosition = clampToWorld(this.dragon.x, this.dragon.z);
+    this.dragon.x = boundedPosition.x;
+    this.dragon.z = boundedPosition.z;
 
     if (!target || now < this.dragon.nextAttackAt) return;
-    const attack = this.nextDragonAttack();
+    const attack = this.nextDragonAttack(profile);
     const targetDistance = distance(target, this.dragon);
     if (targetDistance > attack.range) {
       this.dragon.nextAttackAt = now + 800;
@@ -763,14 +793,18 @@ class GameRoom {
     this.broadcast({ type: 'DRAGON_ATTACK_TELEGRAPH', attack: this.dragon.attack });
   }
 
-  nextDragonAttack() {
+  nextDragonAttack(profile) {
     const options = Object.values(DRAGON_ATTACKS);
     const next = options.find((attack) => attack.id !== this.lastDragonAttackType) || options[0];
     this.lastDragonAttackType = next.id;
-    if (this.dragon.phase === 'ENRAGED') {
-      return { ...next, telegraphMs: Math.max(750, next.telegraphMs - 250), cooldownMs: next.cooldownMs * 0.72, damage: next.damage + 8 };
-    }
-    return next;
+    return {
+      ...next,
+      telegraphMs: Math.max(600, next.telegraphMs * profile.telegraphMultiplier),
+      cooldownMs: Math.max(1_200, next.cooldownMs * profile.cooldownMultiplier),
+      damage: Math.max(1, Math.round(next.damage * profile.damageMultiplier)),
+      range: next.range * profile.rangeMultiplier,
+      radius: next.radius ? next.radius * profile.rangeMultiplier : undefined,
+    };
   }
 
   resolveDragonAttack(now) {
@@ -828,7 +862,7 @@ class GameRoom {
   checkLastPlayer() {
     const alive = [...this.players.values()].filter((player) => player.alive);
     if (this.config.mode === 'solo' && this.state === 'ACTIVE' && alive.length === 0) {
-      this.finish('none', 'You were eliminated before the timer expired.', 'survival');
+      this.finish('none', 'You were eliminated.', 'survival');
       return;
     }
     if (this.config.mode === 'dragon-hunt' && this.state === 'ACTIVE' && alive.length === 0) {
@@ -1226,7 +1260,8 @@ class GameRoom {
       const state = message.state || {};
       const now = Date.now();
       const dt = clamp((now - player.lastMoveAt) / 1000, 0.01, 0.2);
-      const nx = clamp(state.x, -5000, 5000), nz = clamp(state.z, -5000, 5000);
+      const requestedPosition = clampToWorld(clamp(state.x, -WORLD_RADIUS, WORLD_RADIUS), clamp(state.z, -WORLD_RADIUS, WORLD_RADIUS));
+      const nx = requestedPosition.x, nz = requestedPosition.z;
       const weather = getWeatherState((now - this.matchStartedAt) / 1000);
       const speedCap = ((player.activeAbilities.SPEED || 0) > now ? 34 : 27) * weather.movementMultiplier;
       const maxStep = speedCap * dt + 2.5;
@@ -1238,6 +1273,7 @@ class GameRoom {
       } else { player.x = nx; player.z = nz; }
       player.y = clamp(state.y, -20, 250);
       player.ry = clamp(state.ry, -1000, 1000);
+      player.pitch = Number.isFinite(state.pitch) ? clamp(state.pitch, -1.5, 1.5) : (player.pitch || 0);
       player.lastMoveAt = now;
       if (Number.isFinite(state.ry)) player.ry = Math.atan2(Math.sin(state.ry), Math.cos(state.ry));
       player.activeAbilities = Object.fromEntries(Object.entries(player.activeAbilities).filter(([, endsAt]) => endsAt > now));
@@ -1377,6 +1413,87 @@ class GameRoom {
 const rooms = new Map();
 const normalizeRoom = (value) => String(value || 'default').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'default';
 
+// Enable CORS and body parsing for room discovery APIs
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+app.use(express.json());
+
+// API: List all active public rooms
+app.get(['/api/rooms', '/rooms'], (_req, res) => {
+  const activeRooms = [...rooms.values()]
+    .filter((room) => room.players.size > 0 || room.id !== 'default')
+    .map((room) => {
+      const humanCount = [...room.players.values()].filter((p) => !p.isBot).length;
+      const isFull = room.players.size >= room.maxPlayers && ![...room.players.values()].some((p) => p.isBot);
+      return {
+        id: room.id.toUpperCase(),
+        code: room.id.toUpperCase(),
+        mode: room.matchConfig.mode,
+        modeName: room.matchConfig.modeName || room.mode.name,
+        maxPlayers: room.maxPlayers,
+        playerCount: room.players.size,
+        humanCount,
+        aliveCount: [...room.players.values()].filter((p) => p.alive).length,
+        state: room.state,
+        seed: room.seed,
+        isFull,
+      };
+    });
+  res.status(200).json({ rooms: activeRooms, count: activeRooms.length });
+});
+
+// API: Query status of a specific room code
+app.get(['/api/rooms/:roomId', '/rooms/:roomId'], (req, res) => {
+  const roomId = normalizeRoom(req.params.roomId);
+  const room = rooms.get(roomId);
+  if (!room) {
+    return res.status(200).json({ exists: false, id: req.params.roomId.toUpperCase() });
+  }
+  const humanCount = [...room.players.values()].filter((p) => !p.isBot).length;
+  const isFull = room.players.size >= room.maxPlayers && ![...room.players.values()].some((p) => p.isBot);
+  res.status(200).json({
+    exists: true,
+    id: room.id.toUpperCase(),
+    code: room.id.toUpperCase(),
+    mode: room.matchConfig.mode,
+    modeName: room.matchConfig.modeName || room.mode.name,
+    maxPlayers: room.maxPlayers,
+    playerCount: room.players.size,
+    humanCount,
+    aliveCount: [...room.players.values()].filter((p) => p.alive).length,
+    state: room.state,
+    seed: room.seed,
+    isFull,
+  });
+});
+
+// API: Create or reserve a room with unique code and config
+app.post(['/api/rooms', '/rooms'], (req, res) => {
+  const requestedRoom = normalizeRoom(req.body?.roomCode);
+  const requestedConfig = normalizeMatchConfig(req.body?.config || {});
+  let room = rooms.get(requestedRoom);
+  if (!room) {
+    room = new GameRoom(requestedRoom, requestedConfig);
+    rooms.set(requestedRoom, room);
+  }
+  res.status(200).json({
+    success: true,
+    room: {
+      id: room.id.toUpperCase(),
+      code: room.id.toUpperCase(),
+      mode: room.matchConfig.mode,
+      modeName: room.matchConfig.modeName || room.mode.name,
+      maxPlayers: room.maxPlayers,
+      seed: room.seed,
+    },
+  });
+});
+
 wss.on('connection', (ws, req) => {
   const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
   const requestedRoom = normalizeRoom(params.get('room'));
@@ -1384,7 +1501,6 @@ wss.on('connection', (ws, req) => {
   const requestedName = (params.get('name') || '').trim().slice(0, 24);
   const requestedConfig = normalizeMatchConfig({
     mode: params.get('mode'),
-    durationSeconds: params.get('duration'),
     seed: params.get('seed'),
     fillBots: params.get('bots') !== 'false' && params.get('bots') !== 'none',
   });
@@ -1402,7 +1518,6 @@ wss.on('connection', (ws, req) => {
       : [...rooms.values()].find((candidate) => (
         candidate.state === 'ACTIVE'
         && candidate.matchConfig.mode === requestedConfig.mode
-        && candidate.matchConfig.durationSeconds === requestedConfig.durationSeconds
         && [...candidate.players.values()].filter((p) => !p.isBot).length < candidate.maxPlayers
       ));
     roomId = existingRoom?.id || normalizeRoom(`quick-${randomUUID().slice(0, 8)}`);

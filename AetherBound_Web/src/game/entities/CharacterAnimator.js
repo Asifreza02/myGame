@@ -162,6 +162,11 @@ export class CharacterAnimator {
     torsoZ += 0.32 * hitEnvelope;
     headX += 0.18 * hitEnvelope;
 
+    // Upper body aim pitch tilt
+    const aimPitch = THREE.MathUtils.clamp(state.pitch || 0, -0.75, 1.15);
+    torsoX -= aimPitch * 0.22;
+    headX -= aimPitch * 0.45;
+
     if (this.leftLeg) this.leftLeg.rotation.set(leftLegX, 0, 0);
     if (this.rightLeg) this.rightLeg.rotation.set(rightLegX, 0, 0);
     if (this.leftKnee) this.leftKnee.rotation.set(leftKneeX, 0, 0);

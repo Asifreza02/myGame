@@ -92,13 +92,13 @@ export class RunnerController {
     this.onPointerLockChange = null;
     this.onSensitivityChange = null;
 
-    // Single Fixed Third-Person Camera Angle (Left/Right POV Only, No Zoom, Fixed Aim Point)
+    // Third-Person Camera with full Yaw & 3D Pitch Aiming
     this.mouseSensitivity = 1.2;
     this.prevMouseX = 0;
     this.prevMouseY = 0;
-    this.cameraDistance = 6.2; // Fixed distance, no zoom in/out
-    this.cameraHeight = 2.6;   // Fixed height
-    this.cameraPitch = 0.20;   // Fixed pitch, no up/down look
+    this.cameraDistance = 6.2; // Fixed orbit distance
+    this.cameraHeight = 2.6;   // Base eye-level camera height
+    this.cameraPitch = 0.05;   // Pitch angle in radians (down < 0, up > 0)
     this.cameraYaw = 0;
     this.isPointerLocked = false;
 
@@ -130,6 +130,8 @@ export class RunnerController {
       slide: false,
       turnLeft: false,
       turnRight: false,
+      pitchUp: false,
+      pitchDown: false,
     };
     this.joystickVector = { x: 0, y: 0 };
 
@@ -470,6 +472,7 @@ export class RunnerController {
       } else if (weaponId === 'GUN') {
         url = '/models/weapons/blaster-rifle.glb';
         scale = 0.54;
+        tint = 0xffb84d;
       } else if (weaponId === 'LASER_GUN') {
         url = '/models/weapons/blaster-rifle.glb';
         scale = 0.58;
@@ -477,6 +480,7 @@ export class RunnerController {
       } else if (weaponId === 'PLASMA_CANNON') {
         url = '/models/weapons/blaster-heavy.glb';
         scale = 0.65;
+        tint = 0xff5268;
       }
 
       const scene = await loadCustomModel(url);
@@ -523,6 +527,17 @@ export class RunnerController {
         case 'ArrowRight': this.keys.turnRight = true; break;
         case 'KeyQ': this.keys.turnLeft = true; break;
         case 'KeyE': this.keys.turnRight = true; break;
+        case 'PageUp':
+        case 'KeyR':
+          this.keys.pitchUp = true;
+          break;
+        case 'PageDown':
+        case 'KeyF':
+          this.keys.pitchDown = true;
+          break;
+        case 'Home':
+          this.cameraPitch = 0.05;
+          break;
         case 'KeyC':
           this.startSlide();
           break;
@@ -565,6 +580,14 @@ export class RunnerController {
         case 'ArrowRight': this.keys.turnRight = false; break;
         case 'KeyQ': this.keys.turnLeft = false; break;
         case 'KeyE': this.keys.turnRight = false; break;
+        case 'PageUp':
+        case 'KeyR':
+          this.keys.pitchUp = false;
+          break;
+        case 'PageDown':
+        case 'KeyF':
+          this.keys.pitchDown = false;
+          break;
         case 'Space': this.keys.jump = false; break;
         case 'ShiftLeft': case 'ShiftRight': this.keys.sprint = false; break;
       }
@@ -607,23 +630,29 @@ export class RunnerController {
       }
     });
 
-    // 1. Mouse Movement: Left/Right POV Rotation Only (Active when pointer locked)
+    // 1. Mouse Movement: Look Yaw & Pitch (Active when pointer locked)
     window.addEventListener('mousemove', (e) => {
       if (!this.enabled) return;
 
       let dx = 0;
+      let dy = 0;
       if (this.isPointerLocked) {
         dx = e.movementX;
+        dy = e.movementY;
       } else {
         // When cursor is unlocked via Esc, user can freely use the cursor without spinning POV
         this.prevMouseX = e.clientX;
+        this.prevMouseY = e.clientY;
         return;
       }
 
+      const sens = 0.0032 * this.mouseSensitivity;
       if (dx !== 0 && Math.abs(dx) < 250) {
-        const sens = 0.0032 * this.mouseSensitivity;
         this.cameraYaw -= dx * sens;
-        // Pitch is fixed: strictly no up/down camera pitch change
+      }
+      if (dy !== 0 && Math.abs(dy) < 250) {
+        this.cameraPitch -= dy * sens;
+        this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch));
       }
     });
 
@@ -636,11 +665,13 @@ export class RunnerController {
       }
     }, { passive: true });
 
-    // 3. Touchpad / Touchscreen Horizontal Swipe Handling
+    // 3. Touchpad / Touchscreen Horizontal & Vertical Swipe Handling
     let touchStartX = 0;
+    let touchStartY = 0;
     this.domElement.addEventListener('touchstart', (e) => {
       if (e.touches.length > 0) {
         touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
       }
     }, { passive: true });
 
@@ -648,10 +679,14 @@ export class RunnerController {
       if (!this.enabled) return;
       if (e.touches.length > 0) {
         const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
         touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
 
         const sens = 0.005 * this.mouseSensitivity;
         this.cameraYaw -= dx * sens;
+        this.cameraPitch -= dy * sens;
+        this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch));
       }
     }, { passive: true });
   }
@@ -710,6 +745,17 @@ export class RunnerController {
 
   addCameraYaw(deltaYaw) {
     this.cameraYaw += deltaYaw;
+  }
+
+  addCameraPitch(deltaPitch) {
+    this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch + deltaPitch));
+  }
+
+  addCameraLook(deltaYaw, deltaPitch) {
+    if (deltaYaw) this.cameraYaw += deltaYaw;
+    if (deltaPitch) {
+      this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch + deltaPitch));
+    }
   }
 
   setSprinting(active) {
@@ -875,12 +921,18 @@ export class RunnerController {
 
     this.knifeSwingTimer = Math.max(0, this.knifeSwingTimer - dt);
 
-    // 1. Keyboard Camera Turn Inputs (Q / E or Left / Right Arrows)
+    // 1. Keyboard Camera Turn & Pitch Inputs
     if (this.keys.turnLeft) {
       this.cameraYaw += 2.4 * dt;
     }
     if (this.keys.turnRight) {
       this.cameraYaw -= 2.4 * dt;
+    }
+    if (this.keys.pitchUp) {
+      this.cameraPitch = Math.min(1.15, this.cameraPitch + 1.8 * dt);
+    }
+    if (this.keys.pitchDown) {
+      this.cameraPitch = Math.max(-0.75, this.cameraPitch - 1.8 * dt);
     }
 
     // 2. Player Seeing Direction & Heading Vectors
@@ -926,6 +978,7 @@ export class RunnerController {
         hitProgress: this.hitReactTimer > 0 ? 1 - this.hitReactTimer / 0.24 : 0,
       });
 
+      this.constrainToWorld();
       this.group.position.copy(this.position);
 
       if (progress >= 1.0) {
@@ -1027,6 +1080,7 @@ export class RunnerController {
       verticalVelocity: this.velocity.y,
       sliding: this.isSliding,
       slideProgress: this.slideTimer / this.slideDuration,
+      pitch: this.cameraPitch,
       attackProgress: this.knifeSwingTimer > 0 ? 1 - this.knifeSwingTimer / 0.28 : 0,
       hitProgress: this.hitReactTimer > 0 ? 1 - this.hitReactTimer / 0.24 : 0,
     });
@@ -1037,29 +1091,68 @@ export class RunnerController {
     this.velocity.x *= 0.85;
     this.velocity.z *= 0.85;
 
+    this.constrainToWorld();
     // Update avatar mesh position and rotation
     this.group.position.copy(this.position);
     this.group.rotation.y = this.rotationY;
 
-    // 6. Update Camera: Fixed Third-Person View locked behind the player aiming at the center reticle
+    // 6. Update Camera: 3D Third-Person View with Yaw and Pitch aiming
     this.updateCamera(forwardX, forwardZ);
+  }
+
+  constrainToWorld() {
+    const maxRadius = GAME_CONFIG.WORLD.RADIUS - 2;
+    const radius = Math.hypot(this.position.x, this.position.z);
+    if (radius <= maxRadius) return;
+
+    const scale = maxRadius / radius;
+    this.position.x *= scale;
+    this.position.z *= scale;
+    const outwardVelocity = this.velocity.x * this.position.x + this.velocity.z * this.position.z;
+    if (outwardVelocity > 0) {
+      this.velocity.x = 0;
+      this.velocity.z = 0;
+    }
   }
 
   updateCamera(forwardX, forwardZ) {
     this.group.visible = true;
-    const cameraDist = this.cameraDistance; // 6.2
-    const cameraHeight = this.cameraHeight; // 2.6
+    const pitch = this.cameraPitch || 0;
+    const cosPitch = Math.cos(pitch);
+    const sinPitch = Math.sin(pitch);
 
-    this.camera.position.set(
-      this.position.x - forwardX * cameraDist,
-      this.position.y + cameraHeight,
-      this.position.z - forwardZ * cameraDist
-    );
+    // 3D Aim forward unit vector
+    const aimDirX = forwardX * cosPitch;
+    const aimDirY = sinPitch;
+    const aimDirZ = forwardZ * cosPitch;
 
-    // Look target points 25 meters ahead along the player's forward vector at eye level
-    const lookTargetX = this.position.x + forwardX * 25.0;
-    const lookTargetY = this.position.y + 1.6;
-    const lookTargetZ = this.position.z + forwardZ * 25.0;
+    // Camera orbit positioning:
+    // Slightly compress horizontal orbit distance when looking steeply up or down for comfortable framing
+    const horizDist = this.cameraDistance * Math.cos(pitch * 0.45);
+    const camX = this.position.x - forwardX * horizDist;
+    const camZ = this.position.z - forwardZ * horizDist;
+
+    // Pitch height adjustment:
+    // When aiming down (pitch < 0), camera raises up behind the player so the player doesn't occlude the ground.
+    // When aiming up (pitch > 0), camera drops down slightly so the player doesn't occlude the sky/dragon.
+    let camY = this.position.y + this.cameraHeight - sinPitch * 1.35;
+
+    // Prevent camera from clipping through terrain
+    let minGroundY = this.position.y + 0.5;
+    if (this.worldManager && typeof this.worldManager.getHeightAt === 'function') {
+      const terrainY = this.worldManager.getHeightAt(camX, camZ);
+      minGroundY = Math.max(minGroundY, terrainY + 0.8);
+    }
+    camY = Math.max(minGroundY, camY);
+
+    this.camera.position.set(camX, camY, camZ);
+
+    // Look target points 35 meters ahead along the player's 3D aim direction from eye level
+    const eyeHeight = 1.65;
+    const lookDist = 35.0;
+    const lookTargetX = this.position.x + aimDirX * lookDist;
+    const lookTargetY = this.position.y + eyeHeight + aimDirY * lookDist;
+    const lookTargetZ = this.position.z + aimDirZ * lookDist;
 
     this.camera.lookAt(lookTargetX, lookTargetY, lookTargetZ);
   }
@@ -1071,6 +1164,7 @@ export class RunnerController {
       y: this.position.y,
       z: this.position.z,
       ry: this.rotationY,
+      pitch: this.cameraPitch || 0,
       speed: (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right || Math.abs(this.joystickVector.x) > 0.1 || Math.abs(this.joystickVector.y) > 0.1) ? 1 : 0,
       isGrounded: this.isGrounded,
       stamina: this.stamina,
@@ -1082,6 +1176,7 @@ export class RunnerController {
   setState(st) {
     this.position.set(st.x, st.y, st.z);
     this.rotationY = st.ry || 0;
+    if (st.pitch !== undefined) this.cameraPitch = st.pitch;
     if (st.health !== undefined) this.health = st.health;
     this.group.position.copy(this.position);
     this.group.rotation.y = this.rotationY;

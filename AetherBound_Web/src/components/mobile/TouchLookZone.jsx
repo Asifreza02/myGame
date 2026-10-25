@@ -46,9 +46,9 @@ export function TouchLookZone({
           // deltaX aims the POV, deltaY moves item distance far/near!
           onDragItemPlacement(deltaX, deltaY);
         } else if (onLookDrag) {
-          // Normal horizontal camera view aiming
+          // Horizontal and vertical camera view aiming
           const sens = 0.004;
-          onLookDrag(-deltaX * sens);
+          onLookDrag(-deltaX * sens, -deltaY * sens);
         }
         break;
       }

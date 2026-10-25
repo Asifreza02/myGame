@@ -177,6 +177,22 @@ export const WEAPON_CRAFTING_RECIPES = [
   },
 ];
 
+export const DRAGON_PHASES = [
+  { id: 'PASSIVE', startsAtSeconds: 0, speed: 8, aggroRange: 38, damageMultiplier: 0.25, cooldownMultiplier: 2.5, telegraphMultiplier: 1.3, rangeMultiplier: 0.75 },
+  { id: 'PHASE_1', startsAtSeconds: 180, speed: 12, aggroRange: Infinity, damageMultiplier: 1, cooldownMultiplier: 1, telegraphMultiplier: 1, rangeMultiplier: 1 },
+  { id: 'PHASE_2', startsAtSeconds: 360, speed: 15, aggroRange: Infinity, damageMultiplier: 1.4, cooldownMultiplier: 0.8, telegraphMultiplier: 0.9, rangeMultiplier: 1.08 },
+  { id: 'PHASE_3', startsAtSeconds: 540, speed: 18, aggroRange: Infinity, damageMultiplier: 1.85, cooldownMultiplier: 0.65, telegraphMultiplier: 0.78, rangeMultiplier: 1.2 },
+];
+
+export function getDragonPhase(elapsedSeconds) {
+  let phase = DRAGON_PHASES[0];
+  for (const candidate of DRAGON_PHASES) {
+    if (elapsedSeconds < candidate.startsAtSeconds) break;
+    phase = candidate;
+  }
+  return phase;
+}
+
 export const DRAGON_ATTACKS = {
   FIRE_BREATH: {
     id: 'FIRE_BREATH', name: 'Fire Breath', telegraphMs: 1500,

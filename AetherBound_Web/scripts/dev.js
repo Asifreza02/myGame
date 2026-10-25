@@ -49,7 +49,7 @@ async function isGameServerHealthy(port) {
 }
 
 async function waitForGameServer(port) {
-  const deadline = Date.now() + 5000;
+  const deadline = Date.now() + 15000;
   while (!stopping && Date.now() < deadline) {
     if (await isGameServerHealthy(port)) return true;
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -68,7 +68,7 @@ async function main() {
         GAME_SERVER_PORT: gameServerPort,
       });
       if (!(await waitForGameServer(gameServerPort))) {
-        throw new Error(`Game server did not become healthy on port ${gameServerPort}.`);
+        throw new Error(`Game server did not become healthy on port ${gameServerPort} within 15 seconds.`);
       }
     }
   }

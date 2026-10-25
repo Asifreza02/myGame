@@ -52,13 +52,13 @@ export class SaboteurController {
     this.stamina = GAME_CONFIG.RUNNER.STAMINA_MAX;
     this.isSprinting = false;
 
-    // Single Fixed Third-Person Camera Angle (Identical to Runner)
+    // Third-Person Camera with full Yaw & 3D Pitch Aiming
     this.mouseSensitivity = 1.2;
     this.prevMouseX = 0;
     this.prevMouseY = 0;
-    this.cameraDistance = 6.2; // Fixed distance, strictly no zoom in/out
-    this.cameraHeight = 2.6;   // Fixed height
-    this.cameraPitch = 0.20;   // Fixed pitch, strictly no up/down look
+    this.cameraDistance = 6.2; // Fixed orbit distance
+    this.cameraHeight = 2.6;   // Base eye-level camera height
+    this.cameraPitch = 0.05;   // Pitch angle in radians (down < 0, up > 0)
     this.cameraYaw = 0;
     this.isPointerLocked = false;
 
@@ -493,11 +493,17 @@ export class SaboteurController {
         this.cameraYaw -= dx * sens;
       }
 
-      if (this.isPlacing && dy !== 0 && Math.abs(dy) < 250) {
-        this.placementDistance = Math.min(
-          this.maxPlacementDist,
-          Math.max(this.minPlacementDist, this.placementDistance - dy * 0.09)
-        );
+      if (dy !== 0 && Math.abs(dy) < 250) {
+        if (this.isPlacing) {
+          this.placementDistance = Math.min(
+            this.maxPlacementDist,
+            Math.max(this.minPlacementDist, this.placementDistance - dy * 0.09)
+          );
+        } else {
+          const sens = 0.0032 * this.mouseSensitivity;
+          this.cameraPitch -= dy * sens;
+          this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch));
+        }
       }
 
       this.refreshPreview();
@@ -1210,18 +1216,33 @@ export class SaboteurController {
 
   updateCamera(forwardX, forwardZ) {
     this.mesh.visible = true;
-    const cameraDist = this.cameraDistance; // 6.2
-    const cameraHeight = this.cameraHeight; // 2.6
+    const pitch = this.cameraPitch || 0;
+    const cosPitch = Math.cos(pitch);
+    const sinPitch = Math.sin(pitch);
 
-    this.camera.position.set(
-      this.position.x - forwardX * cameraDist,
-      this.position.y + cameraHeight,
-      this.position.z - forwardZ * cameraDist
-    );
+    const aimDirX = forwardX * cosPitch;
+    const aimDirY = sinPitch;
+    const aimDirZ = forwardZ * cosPitch;
 
-    const lookTargetX = this.position.x + forwardX * 25.0;
-    const lookTargetY = this.position.y + 1.6;
-    const lookTargetZ = this.position.z + forwardZ * 25.0;
+    const horizDist = this.cameraDistance * Math.cos(pitch * 0.45);
+    const camX = this.position.x - forwardX * horizDist;
+    const camZ = this.position.z - forwardZ * horizDist;
+    let camY = this.position.y + this.cameraHeight - sinPitch * 1.35;
+
+    let minGroundY = this.position.y + 0.5;
+    if (this.physics?.worldManager && typeof this.physics.worldManager.getHeightAt === 'function') {
+      const terrainY = this.physics.worldManager.getHeightAt(camX, camZ);
+      minGroundY = Math.max(minGroundY, terrainY + 0.8);
+    }
+    camY = Math.max(minGroundY, camY);
+
+    this.camera.position.set(camX, camY, camZ);
+
+    const eyeHeight = 1.65;
+    const lookDist = 35.0;
+    const lookTargetX = this.position.x + aimDirX * lookDist;
+    const lookTargetY = this.position.y + eyeHeight + aimDirY * lookDist;
+    const lookTargetZ = this.position.z + aimDirZ * lookDist;
 
     this.camera.lookAt(lookTargetX, lookTargetY, lookTargetZ);
   }

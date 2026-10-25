@@ -55,7 +55,6 @@ export class NetworkClient {
     const wsUrl = new URL(serverUrl);
     wsUrl.searchParams.set('room', this.room);
     wsUrl.searchParams.set('mode', this.matchConfig.mode || 'ffa');
-    wsUrl.searchParams.set('duration', String(this.matchConfig.durationSeconds || 300));
     if (this.matchConfig.seed) wsUrl.searchParams.set('seed', String(this.matchConfig.seed));
     if (this.matchConfig.fillBots !== undefined) wsUrl.searchParams.set('bots', String(this.matchConfig.fillBots));
     if (this.reconnectToken) wsUrl.searchParams.set('token', this.reconnectToken);
@@ -201,14 +200,6 @@ export class NetworkClient {
 
       case 'RECON_SCAN':
         if (this.callbacks.onReconScan) this.callbacks.onReconScan(msg);
-        break;
-
-      case 'TIMER_TICK':
-        if (this.callbacks.onTimerTick) this.callbacks.onTimerTick(msg.timeRemaining, msg.status);
-        break;
-
-      case 'GAME_OVER':
-        if (this.callbacks.onGameOver) this.callbacks.onGameOver(msg);
         break;
 
       case 'ROLE_ASSIGNED':

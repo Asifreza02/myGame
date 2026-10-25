@@ -24,8 +24,7 @@ export function App() {
     gameState: 'ROLE_SELECT',
     activeRole: 'player',
     roomCode: 'default',
-    matchConfig: { mode: 'ffa', durationSeconds: 300, seed: null, maxPlayers: 5 },
-    timeRemaining: 120,
+    matchConfig: { mode: 'ffa', seed: null, maxPlayers: 5 },
     playerCounts: { total: 1, alive: 1, max: 5 },
     competitors: [],
     killfeed: [],
@@ -91,32 +90,35 @@ export function App() {
     };
   }, []);
 
-  const handleSelectRole = useCallback((role, room, matchConfig = engineRef.current?.matchConfig) => {
+  const handleSelectRole = useCallback((role, room, matchConfig = engineRef.current?.matchConfig, playerName = '') => {
     if (!engineRef.current) return;
     if (room) {
+      const cleanRoom = String(room).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
       const query = new URLSearchParams({
         role: 'player',
-        room,
+        room: cleanRoom,
         mode: matchConfig?.mode || 'ffa',
-        duration: String(matchConfig?.durationSeconds || 300),
       });
       if (matchConfig?.seed) query.set('seed', String(matchConfig.seed));
       if (matchConfig?.fillBots !== undefined) query.set('bots', String(matchConfig.fillBots));
+      if (playerName) query.set('name', playerName.trim().slice(0, 20));
       window.location.href = `?${query.toString()}`;
       return;
     }
     engineRef.current.selectRole(role);
   }, []);
 
-  const handleShareRoom = useCallback(async () => {
+  const handleShareRoom = useCallback(async (customCode = null) => {
     try {
-      await navigator.clipboard.writeText(window.location.href);
-      engineRef.current?.showToast('Room link copied. Share it with your hunters.');
+      const currentCode = (customCode || engineState.roomCode || 'default').toUpperCase();
+      const inviteUrl = window.location.href;
+      await navigator.clipboard.writeText(inviteUrl);
+      engineRef.current?.showToast(`Room code ${currentCode} & link copied! Share with up to 4 rivals.`);
     } catch (error) {
       console.warn('Could not copy the room link:', error);
-      engineRef.current?.showToast('Could not copy the room link. Copy it from the address bar.');
+      engineRef.current?.showToast(`Room code: ${engineState.roomCode}`);
     }
-  }, []);
+  }, [engineState.roomCode]);
 
   const handleToggleAI = useCallback(() => {
     if (engineRef.current) {
@@ -208,8 +210,8 @@ export function App() {
     if (engineRef.current) engineRef.current.setJoystick(vec.x, vec.y);
   }, []);
 
-  const handleLookDrag = useCallback((deltaYaw) => {
-    if (engineRef.current) engineRef.current.addLookYaw(deltaYaw);
+  const handleLookDrag = useCallback((deltaYaw, deltaPitch) => {
+    if (engineRef.current) engineRef.current.addLook(deltaYaw, deltaPitch);
   }, []);
 
   const handleDragItemPlacement = useCallback((deltaX, deltaY) => {
@@ -308,7 +310,6 @@ export function App() {
       {/* Top HUD */}
       {engineState.gameState !== 'ROLE_SELECT' && (
         <TopHud
-          timeRemaining={engineState.timeRemaining}
           roomCode={engineState.roomCode}
           playerCounts={engineState.playerCounts}
           competitors={engineState.competitors}

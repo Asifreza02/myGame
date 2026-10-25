@@ -249,6 +249,11 @@ export class WorldManager {
         for (let dz = -this.renderDistance; dz <= this.renderDistance; dz++) {
           const cx = centerCX + dx;
           const cz = centerCZ + dz;
+          const minX = cx * this.chunkSize;
+          const minZ = cz * this.chunkSize;
+          const closestX = THREE.MathUtils.clamp(0, minX, minX + this.chunkSize);
+          const closestZ = THREE.MathUtils.clamp(0, minZ, minZ + this.chunkSize);
+          if (Math.hypot(closestX, closestZ) > GAME_CONFIG.WORLD.RADIUS) continue;
           const key = `${cx},${cz}`;
           activeChunkKeys.add(key);
 
@@ -609,6 +614,8 @@ export class WorldManager {
     // Position within macro cell
     const wx = originX + (rng() - 0.5) * (bGrid * 0.6);
     const wz = originZ + (rng() - 0.5) * (bGrid * 0.6);
+
+    if (Math.hypot(wx, wz) > GAME_CONFIG.WORLD.RADIUS - 20) return;
 
     // Keep clear from the player spawn
     if (Math.sqrt(wx * wx + wz * wz) < 35) return;

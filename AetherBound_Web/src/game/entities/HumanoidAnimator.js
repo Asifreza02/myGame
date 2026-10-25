@@ -85,10 +85,11 @@ export class HumanoidAnimator {
     const hit = Math.sin(Math.PI * hitProgress);
     const strafe = THREE.MathUtils.clamp(state.strafe || 0, -1, 1);
     const sprintLean = state.moving && state.sprinting ? 0.07 : 0;
+    const aimPitch = THREE.MathUtils.clamp(state.pitch || 0, -0.75, 1.15);
 
     this.poseRoot.rotation.x = damp(
       this.poseRoot.rotation.x,
-      sprintLean + slide * 0.82 + vault * 0.12,
+      -aimPitch * 0.32 + sprintLean + slide * 0.82 + vault * 0.12,
       frame,
       16,
     );

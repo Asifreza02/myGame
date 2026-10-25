@@ -43,6 +43,7 @@ Collect raw materials, titanium scrap, and crystals scattered across the biomes,
 - 🪨 **Ember Ore**: Geothermal mineral chunks mined from the volcanic badlands.
 - 🔹 **Aether Essence**: Pure ambient energy orbs floating throughout the valley.
 - 🌿 **Moon Herb**: Healing flora found across tundra fields.
+- All seven pickups use locally bundled, CC0 Kenney 3D models, with color accents to distinguish materials; the game does not fetch models from a third-party host at runtime.
 
 ### 2. Craftable Firearms (CC0 Kenney 3D Blaster Kit)
 - 🔫 **Aether Blaster Pistol** (`blaster-smg.glb`):
@@ -78,4 +79,6 @@ Collect raw materials, titanium scrap, and crystals scattered across the biomes,
 
 ## Match rules
 
-The authoritative WebSocket server validates positions, speeds, melee combat range, hit detection, damage, item pickups, and eliminations. A match ends when one survivor remains, the dragon is defeated, or the timer expires. Eliminated players automatically spectate living contenders until the match ends.
+The authoritative WebSocket server validates positions, speeds, melee combat range, hit detection, damage, item pickups, and eliminations. Matches have no time limit and end when one survivor remains, the dragon is defeated, or all contenders are eliminated. The dragon roams passively for the first 3 minutes, then escalates through three stronger phases at 3-minute intervals. Eliminated players automatically spectate living contenders until the match ends.
+
+The playable world is bounded to a 1,000-meter radius from the center.

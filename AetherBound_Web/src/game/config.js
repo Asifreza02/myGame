@@ -1,8 +1,8 @@
 // Game Configuration and Data-Driven Entity Definitions
 
 export const GAME_CONFIG = {
-  ROUND_TIME: 90, // seconds
   WORLD: {
+    RADIUS: 1000,
     CHUNK_SIZE: 32,
     CHUNK_SEGMENTS: 16,
     RENDER_DISTANCE: 4, // 4 chunks radius in all directions

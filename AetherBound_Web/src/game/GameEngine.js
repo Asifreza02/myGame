@@ -119,7 +119,6 @@ export class GameEngine {
 
     this.activeRole = 'player';
     this.gameState = 'ROLE_SELECT';
-    this.timeRemaining = 300;
     this.playerCounts = { total: 1, alive: 1, max: 5 };
     this.competitors = [];
     this.killfeed = [];
@@ -130,7 +129,6 @@ export class GameEngine {
     this.roomCode = params.get('room') || 'default';
     this.matchConfig = normalizeMatchConfig({
       mode: params.get('mode'),
-      durationSeconds: params.get('duration'),
       seed: params.get('seed'),
       fillBots: params.get('bots'),
     });
@@ -170,7 +168,7 @@ export class GameEngine {
     this.pickupMeshes = new Map();
     this.pickups = [];
     this.hazardMeshes = new Map();
-    this.dragonState = { health: 420, maxHealth: 420, alive: true, phase: 'STALKING' };
+    this.dragonState = { health: 420, maxHealth: 420, alive: true, phase: 'PASSIVE' };
     this.abilityCooldowns = {};
     this.attackCooldownUntil = 0;
     this.reconRevealUntil = 0;
@@ -536,7 +534,6 @@ export class GameEngine {
           this.worldManager.setSeed(msg.seed);
         }
         if (msg.snapshot) this.applyMatchSnapshot(msg.snapshot);
-        this.timeRemaining = msg.timeRemaining;
         if (msg.resumed) this.showToast('Connection restored. You rejoined your match.');
         this.emitState();
       },
@@ -625,21 +622,6 @@ export class GameEngine {
         }
       },
 
-      onTimerTick: (timeRemaining, status) => {
-        this.timeRemaining = timeRemaining;
-        this.serverStatus = status;
-        this.gameState = this.gameOverData ? 'FINISHED' : status;
-        if (this.timeRemaining <= 15) {
-          audio.playTick();
-        }
-        this.emitState();
-      },
-
-      onGameOver: (msg) => {
-        this.serverStatus = msg.winner === 'runner' ? 'RUNNER_WON' : 'SABOTEUR_WON';
-        this.handleGameOver(msg);
-      },
-
       onRoundStarted: (msg) => {
         this.serverStatus = msg.status || 'PLAYING';
         this.resetRound(msg);
@@ -668,7 +650,6 @@ export class GameEngine {
   applyMatchSnapshot(snapshot) {
     if (!snapshot || !Array.isArray(snapshot.players)) return;
     this.serverStatus = snapshot.state || this.serverStatus;
-    this.timeRemaining = snapshot.timeRemaining ?? this.timeRemaining;
     if (snapshot.matchConfig) this.matchConfig = snapshot.matchConfig;
     if (snapshot.room) this.roomCode = snapshot.room;
     if (snapshot.weather) this.weatherState = snapshot.weather;
@@ -755,6 +736,8 @@ export class GameEngine {
           lastDrawnName: player.name,
           targetPosition: new THREE.Vector3(player.x, player.y, player.z),
           targetYaw: player.ry || 0,
+          targetPitch: player.pitch || 0,
+          pitch: player.pitch || 0,
           state: player,
           animator: this.runner.createCharacterAnimator(group),
           lastSnapshotPosition: new THREE.Vector3(player.x, player.y, player.z),
@@ -776,6 +759,7 @@ export class GameEngine {
       }
       remote.targetPosition.set(player.x, player.y, player.z);
       remote.targetYaw = player.ry || 0;
+      remote.targetPitch = player.pitch || 0;
 
       const snapshotTime = performance.now();
       const snapshotDelta = Math.max(0.016, (snapshotTime - remote.lastSnapshotAt) / 1000);
@@ -1144,7 +1128,12 @@ export class GameEngine {
       if (localHit?.damage === 0) this.showToast('Aegis Ward absorbed the dragon attack.');
     } else if (event.type === 'DRAGON_PHASE_CHANGED') {
       this.dragonState.phase = event.phase;
-      this.showToast(`Dragon enraged! ${event.phase === 'ENRAGED' ? 'Attacks are faster and stronger.' : ''}`);
+      const phaseMessages = {
+        PHASE_1: '3 minutes passed. The dragon has awakened.',
+        PHASE_2: '6 minutes passed. The dragon is hunting.',
+        PHASE_3: '9 minutes passed. The dragon is at full power.',
+      };
+      this.showToast(phaseMessages[event.phase] || `Dragon phase: ${event.phase}.`);
     } else if (event.type === 'WORLD_HAZARD_WARNING' && event.playerId === this.playerId) {
       this.showToast('VOLCANIC GROUND: leave the glowing terrain to avoid damage.');
     } else if (event.type === 'ROOM_FULL') {
@@ -1267,10 +1256,7 @@ export class GameEngine {
     }
     if (notifyServer && this.network) this.network.destroy();
     {
-      this.resetRound({
-        timeRemaining: GAME_CONFIG.ROUND_TIME,
-        seed: resetData.seed,
-      });
+      this.resetRound({ seed: resetData.seed });
     }
     this.serverStatus = 'WAITING';
     this.activeRole = 'lobby';
@@ -1463,11 +1449,52 @@ export class GameEngine {
       else if (def.sound === 'laser') audio.playLaser();
       else if (def.sound === 'plasma') audio.playPlasma();
 
-      const dir = new THREE.Vector3();
-      this.camera.getWorldDirection(dir);
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
       const origin = new THREE.Vector3(this.runner.position.x, this.runner.position.y + 1.2, this.runner.position.z);
 
-      this.network?.fireWeapon(currentWeapon, origin, dir);
+      // Third-person reticle convergence: Raycast from camera along center reticle
+      const maxRayDist = def.range || 70;
+      let targetPoint = this.camera.position.clone().addScaledVector(camDir, maxRayDist);
+
+      let closestHitDist = maxRayDist;
+      const camPos = this.camera.position;
+
+      // 1. Dragon target convergence
+      if (this.dragonMesh && this.dragonMesh.visible && this.dragonState?.alive) {
+        const dragonPos = this.dragonMesh.position;
+        const toDragon = dragonPos.clone().sub(camPos);
+        const distAlong = toDragon.dot(camDir);
+        if (distAlong > 0 && distAlong < closestHitDist) {
+          const proj = camPos.clone().addScaledVector(camDir, distAlong);
+          if (proj.distanceTo(dragonPos) <= 5.5) {
+            closestHitDist = distAlong;
+            targetPoint = proj;
+          }
+        }
+      }
+
+      // 2. Remote competitor contenders convergence
+      for (const remote of this.remotePlayers.values()) {
+        if (!remote.state?.alive || !remote.group.visible) continue;
+        const pPos = remote.group.position.clone();
+        pPos.y += 1.0;
+        const toPlayer = pPos.clone().sub(camPos);
+        const distAlong = toPlayer.dot(camDir);
+        if (distAlong > 0 && distAlong < closestHitDist) {
+          const proj = camPos.clone().addScaledVector(camDir, distAlong);
+          if (proj.distanceTo(pPos) <= 1.6) {
+            closestHitDist = distAlong;
+            targetPoint = proj;
+          }
+        }
+      }
+
+      // Calculate weapon ray from player's weapon towards target point
+      const fireDir = targetPoint.clone().sub(origin).normalize();
+      const finalDir = fireDir.dot(camDir) > 0.2 ? fireDir : camDir;
+
+      this.network?.fireWeapon(currentWeapon, origin, finalDir);
       this.runner.knifeSwingTimer = 0.12;
     }
   }
@@ -1502,10 +1529,18 @@ export class GameEngine {
     }
   }
 
-  addLookYaw(deltaYaw) {
+  addLook(deltaYaw, deltaPitch = 0) {
     if (this.activeRole === 'player') {
-      if (this.runner) this.runner.addCameraYaw(deltaYaw);
+      if (this.runner) this.runner.addCameraLook(deltaYaw, deltaPitch);
     }
+  }
+
+  addLookYaw(deltaYaw) {
+    this.addLook(deltaYaw, 0);
+  }
+
+  addLookPitch(deltaPitch) {
+    this.addLook(0, deltaPitch);
   }
 
   // Controls item placement by screen drag on mobile
@@ -1594,74 +1629,11 @@ export class GameEngine {
     this.emitState();
   }
 
-  handleGameOver(msg) {
-    if (this.gameState === 'FINISHED') return;
-    this.gameState = 'FINISHED';
-
-    const timeElapsed = Math.max(1, Math.round(GAME_CONFIG.ROUND_TIME - this.timeRemaining));
-    const dist = Math.round(this.stats.distanceTraversed);
-    const resources = this.stats.resourcesCollected;
-    const traps = this.stats.obstaclesPlaced;
-
-    let bestStats = { bestDist: 0, bestResources: 0, bestTime: 999 };
-    try {
-      const saved = localStorage.getItem('aetherbound_best_stats');
-      if (saved) bestStats = JSON.parse(saved);
-    } catch (e) {}
-
-    let isNewBestDist = false;
-    let isNewBestResources = false;
-
-    if (dist > (bestStats.bestDist || 0)) {
-      bestStats.bestDist = dist;
-      isNewBestDist = true;
-    }
-    const previousBestResources = bestStats.bestResources || bestStats.bestCrystals || 0;
-    if (resources > previousBestResources) {
-      bestStats.bestResources = resources;
-      isNewBestResources = true;
-    }
-    if (msg.winner === 'runner' && timeElapsed < (bestStats.bestTime || 999)) {
-      bestStats.bestTime = timeElapsed;
-    }
-
-    try {
-      localStorage.setItem('aetherbound_best_stats', JSON.stringify(bestStats));
-    } catch (e) {}
-
-    if (msg.winner === 'runner') {
-      audio.playWin();
-    } else {
-      audio.playLose();
-    }
-
-    this.gameOverData = {
-      winner: msg.winner,
-      reason: msg.reason || (msg.winner === 'runner' ? 'The Runner escaped!' : 'Time ran out!'),
-      scores: msg.scores || { runner: 0, saboteur: 0 },
-      metrics: {
-        dist,
-        resources,
-        traps,
-        timeElapsed,
-        bestDist: bestStats.bestDist || dist,
-        bestResources: bestStats.bestResources || resources,
-        isNewBestDist,
-        isNewBestResources,
-      }
-    };
-
-    this.gameOverTimeout = setTimeout(() => this.returnToMenu(), 4000);
-
-    this.emitState();
-  }
-
   resetRound(msg) {
     this.returningToMenu = false;
     this.roleSelectMessage = '';
     this.gameState = 'PLAYING';
     this.gameOverData = null;
-    this.timeRemaining = msg.timeRemaining ?? GAME_CONFIG.ROUND_TIME;
     this.damageFlash = 0;
     this.toastMessage = null;
     if (this.toastTimeout) {
@@ -1813,10 +1785,12 @@ export class GameEngine {
           );
           remote.group.rotation.y += yawDelta * lerpFactor;
         }
+        remote.pitch = THREE.MathUtils.lerp(remote.pitch || 0, remote.targetPitch || 0, 1 - Math.exp(-dt * 12));
         remote.attackTimer = Math.max(0, remote.attackTimer - dt);
         remote.hitReactTimer = Math.max(0, remote.hitReactTimer - dt);
         remote.animator?.update(dt, {
           ...remote.animationState,
+          pitch: remote.pitch,
           attackProgress: remote.attackTimer > 0 ? 1 - remote.attackTimer / 0.28 : 0,
           hitProgress: remote.hitReactTimer > 0 ? 1 - remote.hitReactTimer / 0.24 : 0,
         });
@@ -1933,7 +1907,6 @@ export class GameEngine {
       roomCode: this.roomCode,
       matchConfig: this.matchConfig,
       roleSelectMessage: this.roleSelectMessage,
-      timeRemaining: this.timeRemaining,
       playerCounts: this.playerCounts,
       competitors: this.competitors || [],
       killfeed: this.killfeed || [],

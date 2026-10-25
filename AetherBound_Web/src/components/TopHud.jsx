@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 
 export function TopHud({
-  timeRemaining = 300,
   roomCode = 'default',
   playerCounts = {},
   competitors = [],
@@ -15,9 +14,6 @@ export function TopHud({
   onShareRoom,
 }) {
   const [showRoster, setShowRoster] = useState(true);
-  const mins = Math.floor(timeRemaining / 60);
-  const secs = timeRemaining % 60;
-  const timerStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   const alive = playerCounts.alive ?? playerCounts.total ?? 1;
   const maxPlayers = matchConfig.maxPlayers || playerCounts.max || 5;
   const total = Math.min(maxPlayers, Math.max(playerCounts.total || 1, competitors.length));
@@ -32,8 +28,16 @@ export function TopHud({
   return (
     <>
       <div id="top-hud">
-        <div className="hud-panel"><span className="room-tag">ROOM: {roomCode}</span></div>
-        <div className="hud-panel" id="timer-box"><span className="hud-label">SURVIVAL</span><span id="hud-timer" className={timeRemaining <= 30 ? 'urgent' : ''}>{timerStr}</span></div>
+        <div className="hud-panel">
+          <button
+            type="button"
+            className="room-tag-btn interactive"
+            onClick={() => onShareRoom?.(roomCode)}
+            title="Click to copy Room Code & Invite Link"
+          >
+            <span className="room-tag">ROOM: {String(roomCode).toUpperCase()} 📋</span>
+          </button>
+        </div>
         <div className="hud-panel"><span className="role-tag player">{modeName.toUpperCase()}</span></div>
         {matchConfig.seed && <div className="hud-panel"><span className="room-tag">SEED: {matchConfig.seed}</span></div>}
         {biome && <div className="hud-panel"><span className="biome-tag">{biome.name}</span></div>}
@@ -57,14 +61,18 @@ export function TopHud({
           </button>
         </div>
         <div className="hud-panel dragon-status" aria-live="polite">
-          <div className="dragon-status-heading">DRAGON · {dragon.alive === false ? 'DEFEATED' : (dragon.phase || 'STALKING')}</div>
+          <div className="dragon-status-heading">DRAGON · {dragon.alive === false ? 'DEFEATED' : (dragon.phase || 'PASSIVE')}</div>
           <div className="dragon-health-track"><div className="dragon-health-fill" style={{ width: `${dragonHealthPct}%` }} /></div>
           <span className="dragon-health-value">{dragonHealth} / {dragonMaxHealth}</span>
           {dragon.attack && <strong className="dragon-telegraph-copy">⚠ {dragon.attack.name} · DODGE THE MARKED AREA</strong>}
         </div>
         <div className="hud-panel hud-action-buttons">
-          <button id="share-room-button" className="interactive" type="button" onClick={onShareRoom}>SHARE MATCH</button>
-          <button id="exit-lobby-button" className="interactive" type="button" onClick={onExitToLobby}>EXIT TO LOBBY</button>
+          <button id="share-room-button" className="interactive" type="button" onClick={() => onShareRoom?.(roomCode)}>
+            🔗 SHARE ROOM
+          </button>
+          <button id="exit-lobby-button" className="interactive" type="button" onClick={onExitToLobby}>
+            🚪 LOBBY / ROOMS
+          </button>
         </div>
       </div>
 

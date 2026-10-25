@@ -20,9 +20,9 @@ export function AimReticle({ visible = true, isPointerLocked = false, onLockRequ
         onClick={onLockRequest}
       >
         {isPointerLocked ? (
-          <span>🖱️ Press <b>[Esc]</b> to unlock cursor</span>
+          <span>🖱️ <b>Aim Active</b> · Move mouse to aim in 3D · [Esc] unlock</span>
         ) : (
-          <span>🖱️ Click screen to lock cursor & aim</span>
+          <span>🖱️ Click to lock cursor & aim (Mouse / Touch / WASD)</span>
         )}
       </div>
     </>

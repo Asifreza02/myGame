@@ -20,7 +20,7 @@ export const MATCH_MODES = {
   solo: {
     id: 'solo',
     name: 'Solo Survival',
-    description: 'Survive the world and the dragon until the match timer ends.',
+    description: 'Survive the wilds and defeat the dragon as it grows stronger over time.',
     maxPlayers: 1,
     playerCombat: false,
     dragonRewardPolicy: 'final-blow',
@@ -35,15 +35,12 @@ export const MATCH_MODES = {
   },
 };
 
-export const MATCH_DURATIONS = [180, 300, 480, 600];
-
 export const CURATED_CHALLENGES = [
   {
     id: 'emberfall',
     name: 'Emberfall',
     description: 'A long volcanic survival run.',
     mode: 'solo',
-    durationSeconds: 480,
     seed: 731942,
   },
   {
@@ -51,7 +48,6 @@ export const CURATED_CHALLENGES = [
     name: 'Dragon Vanguard',
     description: 'A coordinated dragon hunt on a fixed world.',
     mode: 'dragon-hunt',
-    durationSeconds: 300,
     seed: 248613,
   },
   {
@@ -59,17 +55,12 @@ export const CURATED_CHALLENGES = [
     name: 'Wildcard',
     description: 'A 5-player free-for-all on a shared, repeatable map.',
     mode: 'ffa',
-    durationSeconds: 180,
     seed: 905177,
   },
 ];
 
 export function normalizeMatchConfig(config = {}) {
   const mode = Object.hasOwn(MATCH_MODES, config.mode) ? config.mode : 'ffa';
-  const requestedDuration = Number(config.durationSeconds);
-  const durationSeconds = Number.isFinite(requestedDuration)
-    ? Math.min(900, Math.max(60, Math.round(requestedDuration / 30) * 30))
-    : 300;
   const requestedSeed = config.seed === null || config.seed === undefined || config.seed === ''
     ? null
     : Number(config.seed);
@@ -78,14 +69,12 @@ export function normalizeMatchConfig(config = {}) {
     : null;
   const challenge = CURATED_CHALLENGES.find((entry) => (
     entry.mode === mode
-    && entry.durationSeconds === durationSeconds
     && entry.seed === seed
   ));
   const fillBots = config.fillBots !== false && config.fillBots !== 'false';
 
   return {
     mode,
-    durationSeconds,
     seed,
     fillBots,
     maxPlayers: MATCH_MODES[mode]?.maxPlayers || MAX_MATCH_PLAYERS,

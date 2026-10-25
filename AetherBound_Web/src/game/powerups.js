@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CRAFTING_RECIPES, POWERUPS, RESOURCES } from './config.js';
 import { audio } from './audio.js';
-import { loadGameModel, loadCustomModel, normalizeModel, setModelShadows, tintModelMaterials } from './modelAssets.js';
+import { loadGameModel, normalizeModel, setModelShadows, tintModelMaterials } from './modelAssets.js';
 
 function createResourceModels() {
   const material = (color, options = {}) => new THREE.MeshStandardMaterial({
@@ -172,9 +172,13 @@ export class PowerUpManager {
 
   loadResourceModels() {
     const assets = {
-      EMBER_ORE: { model: 'resource-stone-large', tint: 0xe39b62 },
-      IRONWOOD: { model: 'resource-wood' },
-      MOON_HERB: { model: 'grass-large', tint: 0xc5e3ad },
+      AETHER_ESSENCE: { model: 'resource-stone', tint: 0x55eaff, size: 0.56 },
+      EMBER_ORE: { model: 'resource-stone-large', tint: 0xe39b62, size: 0.78 },
+      IRONWOOD: { model: 'resource-wood', tint: 0xb58a54, size: 0.78 },
+      MOON_HERB: { model: 'grass-large', tint: 0x83e879, size: 0.9 },
+      TITANIUM_SCRAP: { model: 'metal-panel-screws', tint: 0x8ea2b8, size: 0.62 },
+      CRYSTAL_LENS: { model: 'resource-stone', tint: 0x00dfff, size: 0.56 },
+      ENERGY_CELL: { model: 'barrel', tint: 0xffd95b, size: 0.62 },
     };
 
     Promise.all(Object.entries(assets).map(async ([type, asset]) => {
@@ -182,7 +186,7 @@ export class PowerUpManager {
         const model = normalizeModel(await loadGameModel(asset.model));
         if (asset.tint) tintModelMaterials(model, asset.tint);
         setModelShadows(model, true, false);
-        return [type, model];
+        return [type, { model, size: asset.size }];
       } catch (error) {
         console.warn(`Could not load resource model "${asset.model}".`, error);
         return null;
@@ -190,19 +194,8 @@ export class PowerUpManager {
     })).then((loaded) => {
       for (const entry of loaded) {
         if (!entry) continue;
-        const [type, model] = entry;
-        this.externalResourceModels.set(type, model);
-        if (!this.crateLoaded) {
-          this.crateLoaded = true;
-          loadCustomModel('/models/weapons/crate-small.glb').then((scene) => {
-            const m = normalizeModel(scene);
-            setModelShadows(m, true, false);
-            this.externalResourceModels.set('TITANIUM_SCRAP', m);
-            for (const res of this.resources.values()) {
-              if (res.type === 'TITANIUM_SCRAP') this.replaceResourceModel(res);
-            }
-          }).catch(() => {});
-        }
+        const [type, asset] = entry;
+        this.externalResourceModels.set(type, asset);
         for (const resource of this.resources.values()) {
           if (resource.type === type) this.replaceResourceModel(resource);
         }
@@ -211,12 +204,11 @@ export class PowerUpManager {
   }
 
   createResourceItem(type) {
-    const template = this.externalResourceModels.get(type);
-    if (!template) return this.resourceModels[type].clone(true);
+    const asset = this.externalResourceModels.get(type);
+    if (!asset) return this.resourceModels[type].clone(true);
 
-    const item = template.clone(true);
-    const size = type === 'MOON_HERB' ? 0.9 : 0.78;
-    item.scale.setScalar(size);
+    const item = asset.model.clone(true);
+    item.scale.setScalar(asset.size);
     return item;
   }
 
