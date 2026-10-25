@@ -10,6 +10,10 @@ export function TopHud({
   dragon = {},
   matchConfig = {},
   toastMessage = null,
+  voiceState = {},
+  onToggleVoiceMute,
+  onToggleVoiceDeafen,
+  onTogglePushToTalk,
   onExitToLobby,
   onShareRoom,
 }) {
@@ -66,6 +70,55 @@ export function TopHud({
           <span className="dragon-health-value">{dragonHealth} / {dragonMaxHealth}</span>
           {dragon.attack && <strong className="dragon-telegraph-copy">⚠ {dragon.attack.name} · DODGE THE MARKED AREA</strong>}
         </div>
+
+        {/* Room Voice Chat HUD Controls */}
+        <div className="hud-panel voice-controls-panel">
+          <button
+            type="button"
+            className={`voice-hud-btn interactive ${voiceState.isMuted ? 'muted' : voiceState.isSpeaking ? 'speaking' : 'active'}`}
+            onClick={onToggleVoiceMute}
+            title={voiceState.isMuted ? 'Microphone Muted (Click to Unmute)' : voiceState.pushToTalk ? 'Push-To-Talk [V] active (Hold [V] to talk, or click to Mute)' : 'Microphone Active (Click to Mute)'}
+          >
+            <span className="voice-icon">
+              {voiceState.isMuted ? '🔇' : voiceState.isSpeaking ? '🎙️' : '🎤'}
+            </span>
+            <span className="voice-label">
+              {voiceState.permissionState === 'listen-only' || voiceState.permissionState === 'unsupported'
+                ? 'LISTEN ONLY'
+                : voiceState.isMuted
+                ? 'MIC MUTED'
+                : voiceState.pushToTalk
+                ? (voiceState.isSpeaking ? 'TALKING [V]' : 'HOLD [V]')
+                : (voiceState.isSpeaking ? 'TALKING' : 'MIC ON')}
+            </span>
+            {voiceState.isSpeaking && (
+              <span className="voice-waves" aria-hidden="true">
+                <span className="wave-bar b1" />
+                <span className="wave-bar b2" />
+                <span className="wave-bar b3" />
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className={`voice-ptt-toggle-btn interactive ${voiceState.pushToTalk ? 'ptt-active' : ''}`}
+            onClick={onTogglePushToTalk}
+            title={voiceState.pushToTalk ? 'Push-To-Talk Enabled [V] (Click to switch to Open Mic)' : 'Open Mic (Click to switch to Push-To-Talk [V])'}
+          >
+            {voiceState.pushToTalk ? 'PTT [V]' : 'OPEN MIC'}
+          </button>
+
+          <button
+            type="button"
+            className={`voice-deafen-btn interactive ${voiceState.isDeafened ? 'deafened' : ''}`}
+            onClick={onToggleVoiceDeafen}
+            title={voiceState.isDeafened ? 'Audio Deafened (Click to Undeafen)' : 'Click to Deafen Room Voice Chat'}
+          >
+            {voiceState.isDeafened ? '🔇 DEAFENED' : '🎧'}
+          </button>
+        </div>
+
         <div className="hud-panel hud-action-buttons">
           <button id="share-room-button" className="interactive" type="button" onClick={() => onShareRoom?.(roomCode)}>
             🔗 SHARE ROOM
@@ -105,6 +158,19 @@ export function TopHud({
                       {isYou && <span className="you-pill">YOU</span>}
                       {comp.isBot && <span className="bot-pill">BOT</span>}
                     </span>
+                    {!comp.isBot && (
+                      <span className="competitor-voice-indicator">
+                        {comp.isSpeaking ? (
+                          <span className="voice-speaking-badge" title="Speaking">
+                            <span className="mini-wave b1" />
+                            <span className="mini-wave b2" />
+                            <span className="mini-wave b3" />
+                          </span>
+                        ) : comp.isMuted ? (
+                          <span className="voice-muted-badge" title="Muted">🔇</span>
+                        ) : null}
+                      </span>
+                    )}
                     <span className="competitor-kills" title="Eliminations">⚔️ {kills}</span>
                   </div>
                   <div className="competitor-hp-bar-track">

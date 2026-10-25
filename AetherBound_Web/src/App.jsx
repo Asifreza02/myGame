@@ -14,6 +14,7 @@ import { GameOverModal } from './components/GameOverModal.jsx';
 import { VirtualJoystick } from './components/mobile/VirtualJoystick.jsx';
 import { TouchLookZone } from './components/mobile/TouchLookZone.jsx';
 import { MobileActionPad } from './components/mobile/MobileActionPad.jsx';
+import { EquipmentToggleBar } from './components/EquipmentToggleBar.jsx';
 import { ITEM_DEFINITIONS } from './game/data/combat.js';
 
 export function App() {
@@ -160,6 +161,10 @@ export function App() {
     if (engineRef.current) engineRef.current.equipWeapon(weaponId);
   }, []);
 
+  const handleActivateAbility = useCallback((abilityId) => {
+    if (engineRef.current) engineRef.current.activateAbility(abilityId);
+  }, []);
+
   const handleCycleSaboteurSens = useCallback(() => {
     if (engineRef.current) engineRef.current.cycleSaboteurSensitivity();
   }, []);
@@ -246,6 +251,24 @@ export function App() {
     if (engineRef.current) engineRef.current.toggleFullscreen();
   }, []);
 
+  const handleToggleVoiceMute = useCallback(() => {
+    engineRef.current?.toggleVoiceMute();
+  }, []);
+
+  const handleToggleVoiceDeafen = useCallback(() => {
+    engineRef.current?.toggleVoiceDeafen();
+  }, []);
+
+  const handleTogglePushToTalk = useCallback(() => {
+    if (engineRef.current && engineRef.current.voiceState) {
+      engineRef.current.setVoicePushToTalk(!engineRef.current.voiceState.pushToTalk);
+    }
+  }, []);
+
+  const handleVoicePttActive = useCallback((active) => {
+    engineRef.current?.setVoicePttActive(active);
+  }, []);
+
   const handleRequestLandscape = useCallback(async () => {
     try {
       const root = document.documentElement;
@@ -319,6 +342,10 @@ export function App() {
           dragon={engineState.dragon}
           matchConfig={engineState.matchConfig}
           toastMessage={engineState.toastMessage}
+          voiceState={engineState.voiceState || {}}
+          onToggleVoiceMute={handleToggleVoiceMute}
+          onToggleVoiceDeafen={handleToggleVoiceDeafen}
+          onTogglePushToTalk={handleTogglePushToTalk}
           onExitToLobby={handleRestart}
           onShareRoom={handleShareRoom}
         />
@@ -341,19 +368,19 @@ export function App() {
         />
       )}
 
-      {engineState.gameState === 'PLAYING' && isRunner && engineState.inventory?.length > 0 && (
-        <div id="ability-hotbar" aria-label="Scavenged abilities">
-          {engineState.inventory.map((ability, index) => {
-            const definition = ITEM_DEFINITIONS[ability];
-            const readyAt = engineState.abilityCooldowns?.[ability] || 0;
-            const cooldownSeconds = Math.max(0, Math.ceil((readyAt - Date.now()) / 1000));
-            return (
-              <button key={ability} type="button" className="interactive" disabled={cooldownSeconds > 0} onClick={() => engineRef.current?.activateAbility(ability)} title={definition?.description || ability}>
-                {index + 1} · {definition?.name || ability} {cooldownSeconds > 0 ? `${cooldownSeconds}s` : 'READY'}
-              </button>
-            );
-          })}
-        </div>
+      {/* On-Screen Weapon & Skill Equipment Toggle Bar */}
+      {engineState.gameState === 'PLAYING' && isRunner && (
+        <EquipmentToggleBar
+          weapons={engineState.weapons || ['KNIFE']}
+          equippedWeapon={engineState.equippedWeapon || 'KNIFE'}
+          ammo={engineState.playerAmmo || {}}
+          inventory={engineState.inventory || []}
+          abilityCooldowns={engineState.abilityCooldowns || {}}
+          knifeCooldownMs={engineState.knifeCooldownMs || 0}
+          onEquipWeapon={handleEquipWeapon}
+          onActivateAbility={handleActivateAbility}
+          onOpenCrafting={handleOpenCrafting}
+        />
       )}
 
       {/* Saboteur HUD */}
@@ -381,6 +408,9 @@ export function App() {
           <MobileActionPad
             activeRole={engineState.activeRole}
             isPlacing={isPlacingMode}
+            voiceState={engineState.voiceState || {}}
+            onToggleVoiceMute={handleToggleVoiceMute}
+            onVoicePttActive={handleVoicePttActive}
             onJump={handleJump}
             onAttack={handleKnifeAttack}
             onSlide={handleSlide}

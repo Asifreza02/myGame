@@ -1,27 +1,27 @@
 export const ITEM_DEFINITIONS = {
   HEALTH: {
     id: 'HEALTH', name: 'Vitality Draught', rarity: 'Common', weight: 25,
-    kind: 'consumable', heal: 35, color: 0xff4f7e,
+    kind: 'consumable', heal: 35, color: 0xff4f7e, icon: '❤️',
     description: 'Restores 35 health when picked up.',
   },
   SPEED: {
     id: 'SPEED', name: 'Windrunner Boots', rarity: 'Common', weight: 25,
-    kind: 'ability', durationMs: 6000, cooldownMs: 16000, color: 0xffdf46,
+    kind: 'ability', durationMs: 6000, cooldownMs: 16000, color: 0xffdf46, icon: '⚡',
     description: 'Move 50% faster for 6 seconds.',
   },
   RECON: {
     id: 'RECON', name: 'Seeker Pulse', rarity: 'Uncommon', weight: 20,
-    kind: 'ability', durationMs: 6000, cooldownMs: 22000, color: 0xa56aff,
+    kind: 'ability', durationMs: 6000, cooldownMs: 22000, color: 0xa56aff, icon: '📡',
     description: 'Reveal distant rivals for 6 seconds.',
   },
   HAZARD: {
     id: 'HAZARD', name: 'Snare Mine', rarity: 'Uncommon', weight: 18,
-    kind: 'ability', durationMs: 20000, cooldownMs: 28000, color: 0xff8038,
+    kind: 'ability', durationMs: 20000, cooldownMs: 28000, color: 0xff8038, icon: '💣',
     description: 'Deploy a mine that damages the next rival who crosses it.',
   },
   SHIELD: {
     id: 'SHIELD', name: 'Aegis Ward', rarity: 'Rare', weight: 12,
-    kind: 'ability', durationMs: 8000, cooldownMs: 26000, color: 0x39d9ff,
+    kind: 'ability', durationMs: 8000, cooldownMs: 26000, color: 0x39d9ff, icon: '🛡️',
     description: 'Block one hit for 8 seconds.',
   },
 };

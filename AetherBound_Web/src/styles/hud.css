@@ -3840,3 +3840,592 @@
   }
 }
 
+/* ================= Voice Communication HUD & Controls ================= */
+.voice-controls-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(8, 16, 26, 0.85);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 8px;
+  padding: 4px 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.voice-hud-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: #b8fff0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.voice-hud-btn:hover {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: #00f0ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.35);
+}
+
+.voice-hud-btn.speaking {
+  background: rgba(0, 255, 136, 0.22);
+  border-color: #00ff88;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.55);
+}
+
+.voice-hud-btn.muted {
+  background: rgba(255, 68, 102, 0.15);
+  border-color: rgba(255, 68, 102, 0.5);
+  color: #ff8899;
+}
+
+.voice-hud-btn.muted:hover {
+  background: rgba(255, 68, 102, 0.25);
+  border-color: #ff4466;
+  box-shadow: 0 0 10px rgba(255, 68, 102, 0.35);
+}
+
+.voice-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.voice-label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Animated Equalizer Wave Bars */
+.voice-waves {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  margin-left: 2px;
+}
+
+.wave-bar {
+  width: 3px;
+  background: #00ff88;
+  border-radius: 1px;
+  box-shadow: 0 0 4px #00ff88;
+  animation: voiceWaveAnim 0.65s ease-in-out infinite alternate;
+}
+
+.wave-bar.b1 {
+  height: 5px;
+  animation-delay: 0s;
+}
+
+.wave-bar.b2 {
+  height: 14px;
+  animation-delay: 0.18s;
+}
+
+.wave-bar.b3 {
+  height: 8px;
+  animation-delay: 0.36s;
+}
+
+@keyframes voiceWaveAnim {
+  0% {
+    height: 3px;
+    opacity: 0.5;
+  }
+  100% {
+    height: 14px;
+    opacity: 1;
+  }
+}
+
+.voice-ptt-toggle-btn {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #88ddff;
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.voice-ptt-toggle-btn:hover {
+  border-color: #00f0ff;
+  background: rgba(0, 240, 255, 0.15);
+  color: #fff;
+}
+
+.voice-ptt-toggle-btn.ptt-active {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: #00f0ff;
+  color: #00ffff;
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+}
+
+.voice-deafen-btn {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.voice-deafen-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #fff;
+}
+
+.voice-deafen-btn.deafened {
+  background: rgba(255, 68, 102, 0.25);
+  border-color: #ff4466;
+  color: #ff6688;
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(255, 68, 102, 0.4);
+}
+
+/* Standings Roster Voice Indicators */
+.competitor-voice-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.voice-speaking-badge {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  padding: 2px 4px;
+  background: rgba(0, 255, 136, 0.18);
+  border: 1px solid #00ff88;
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+}
+
+.mini-wave {
+  width: 2.5px;
+  background: #00ff88;
+  border-radius: 1px;
+  animation: voiceWaveAnim 0.55s ease-in-out infinite alternate;
+}
+
+.mini-wave.b1 {
+  height: 4px;
+  animation-delay: 0s;
+}
+
+.mini-wave.b2 {
+  height: 11px;
+  animation-delay: 0.15s;
+}
+
+.mini-wave.b3 {
+  height: 7px;
+  animation-delay: 0.3s;
+}
+
+.voice-muted-badge {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+/* Mobile Action Pad Voice Button */
+.mobile-aux-btn.voice-btn {
+  background: rgba(12, 24, 38, 0.88);
+  border: 1.5px solid rgba(0, 240, 255, 0.45);
+  color: #b8fff0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-height: 40px;
+  touch-action: manipulation;
+  user-select: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  transition: all 0.15s ease;
+}
+
+.mobile-aux-btn.voice-btn:active,
+.mobile-aux-btn.voice-btn.active {
+  background: rgba(0, 255, 136, 0.3);
+  border-color: #00ff88;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(0, 255, 136, 0.65);
+  transform: scale(0.97);
+}
+
+.mobile-aux-btn.voice-btn.speaking {
+  background: rgba(0, 255, 136, 0.25);
+  border-color: #00ff88;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.55);
+}
+
+.mobile-aux-btn.voice-btn.muted {
+  background: rgba(255, 68, 102, 0.18);
+  border-color: rgba(255, 68, 102, 0.55);
+  color: #ff8899;
+}
+
+/* ================= On-Screen Equipment Toggle Dock (Weapons & Skills) ================= */
+.equipment-toggle-dock {
+  position: fixed;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(180deg, rgba(8, 18, 30, 0.94) 0%, rgba(4, 10, 18, 0.98) 100%);
+  border: 1.5px solid rgba(0, 240, 255, 0.4);
+  border-radius: 14px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.65), 0 0 18px rgba(0, 240, 255, 0.22);
+  backdrop-filter: blur(14px);
+  padding: 6px 12px;
+  pointer-events: auto;
+  user-select: none;
+  animation: dockFloat 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dockFloat {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.equipment-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.equipment-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.equipment-group-header .group-label {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #a4eaff;
+  text-transform: uppercase;
+}
+
+.equipment-group-header .group-hint {
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.04em;
+}
+
+.equipment-slots-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Individual Equipment Slot Button */
+.equip-slot-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  height: 58px;
+  padding: 4px 6px;
+  background: rgba(12, 24, 38, 0.85);
+  border: 1.5px solid rgba(0, 240, 255, 0.25);
+  border-radius: 9px;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  outline: none;
+}
+
+.equip-slot-btn:hover {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: #00f0ff;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.equip-slot-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.equip-slot-btn .slot-hotkey-badge {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  font-size: 9px;
+  font-weight: 900;
+  color: #00f0ff;
+  background: rgba(0, 240, 255, 0.2);
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 1.2;
+}
+
+.equip-slot-btn .slot-icon {
+  font-size: 22px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+  margin-top: 2px;
+}
+
+.equip-slot-btn .slot-details {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  margin-top: 1px;
+}
+
+.equip-slot-btn .slot-name {
+  font-size: 9px;
+  font-weight: 800;
+  color: #9cb5c5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.equip-slot-btn .slot-ammo {
+  font-size: 10px;
+  font-weight: 900;
+  color: #00f0ff;
+  letter-spacing: 0.04em;
+}
+
+.equip-slot-btn .slot-ammo.empty-ammo {
+  color: #ff4466;
+  text-shadow: 0 0 6px rgba(255, 68, 102, 0.6);
+}
+
+/* Equipped Active Weapon State */
+.equip-slot-btn.weapon-slot.is-equipped {
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.28) 0%, rgba(0, 140, 220, 0.4) 100%);
+  border-color: #00f0ff;
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.6), inset 0 0 10px rgba(0, 240, 255, 0.3);
+  transform: translateY(-4px);
+}
+
+.equip-slot-btn.weapon-slot.is-equipped .slot-name {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.equip-slot-btn .equipped-pill {
+  position: absolute;
+  bottom: -6px;
+  font-size: 8px;
+  font-weight: 900;
+  background: #00f0ff;
+  color: #04121a;
+  border-radius: 4px;
+  padding: 1px 5px;
+  letter-spacing: 0.06em;
+  box-shadow: 0 0 8px #00f0ff;
+}
+
+/* Forge Shortcut Button */
+.equip-slot-btn.forge-shortcut-btn {
+  background: rgba(255, 170, 0, 0.12);
+  border-color: rgba(255, 170, 0, 0.45);
+}
+
+.equip-slot-btn.forge-shortcut-btn:hover {
+  background: rgba(255, 170, 0, 0.25);
+  border-color: #ffaa00;
+  box-shadow: 0 0 14px rgba(255, 170, 0, 0.5);
+}
+
+.equip-slot-btn.forge-shortcut-btn .slot-hotkey-badge {
+  color: #ffaa00;
+  background: rgba(255, 170, 0, 0.2);
+  border-color: rgba(255, 170, 0, 0.4);
+}
+
+.equip-slot-btn.forge-shortcut-btn .slot-ammo {
+  color: #ffc966;
+}
+
+/* Neon Divider */
+.equipment-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.equipment-divider .divider-line {
+  width: 1.5px;
+  height: 18px;
+  background: linear-gradient(180deg, transparent, rgba(0, 240, 255, 0.5), transparent);
+}
+
+.equipment-divider .divider-rune {
+  font-size: 12px;
+  color: #00f0ff;
+  text-shadow: 0 0 8px #00f0ff;
+  animation: runePulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes runePulse {
+  0% { opacity: 0.6; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1.1); }
+}
+
+/* Skill Slots */
+.equip-slot-btn.skill-slot {
+  border-color: var(--skill-color, rgba(0, 240, 255, 0.35));
+}
+
+.equip-slot-btn.skill-slot.is-ready {
+  background: rgba(14, 28, 44, 0.85);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+}
+
+.equip-slot-btn.skill-slot.is-ready:hover {
+  border-color: #00ff88;
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.5);
+}
+
+.equip-slot-btn.skill-slot.is-cooldown {
+  opacity: 0.55;
+  filter: grayscale(0.45);
+  cursor: not-allowed;
+  border-style: dashed;
+}
+
+.equip-slot-btn .slot-status.ready-text {
+  font-size: 9px;
+  font-weight: 900;
+  color: #00ff88;
+  text-shadow: 0 0 6px rgba(0, 255, 136, 0.6);
+}
+
+.equip-slot-btn .slot-status.cooldown-text {
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffaa00;
+}
+
+.cooldown-overlay-sweep {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* Empty Skill Hint */
+.empty-skill-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  height: 58px;
+  border: 1.5px dashed rgba(0, 240, 255, 0.25);
+  border-radius: 9px;
+  background: rgba(0, 240, 255, 0.04);
+  color: rgba(184, 255, 240, 0.6);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.empty-skill-hint .empty-hint-icon {
+  font-size: 14px;
+  color: #00f0ff;
+  animation: runePulse 1.8s ease-in-out infinite alternate;
+}
+
+/* Responsive Scaling for Mobile & Smaller Screens */
+@media (max-width: 900px) {
+  .equipment-toggle-dock {
+    bottom: max(78px, calc(env(safe-area-inset-bottom) + 72px));
+    max-width: calc(100vw - 16px);
+    gap: 8px;
+    padding: 5px 8px;
+  }
+  .equip-slot-btn {
+    min-width: 52px;
+    height: 52px;
+    padding: 3px 4px;
+  }
+  .equip-slot-btn .slot-icon {
+    font-size: 18px;
+  }
+  .equip-slot-btn .slot-name {
+    font-size: 8px;
+  }
+  .equip-slot-btn .slot-ammo {
+    font-size: 9px;
+  }
+  .empty-skill-hint {
+    height: 52px;
+    padding: 6px 10px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 600px) {
+  .equipment-toggle-dock {
+    bottom: max(88px, calc(env(safe-area-inset-bottom) + 82px));
+    gap: 6px;
+    padding: 4px 6px;
+  }
+  .equipment-group-header .group-hint {
+    display: none;
+  }
+  .equip-slot-btn {
+    min-width: 46px;
+    height: 48px;
+  }
+  .equip-slot-btn .slot-icon {
+    font-size: 16px;
+  }
+  .empty-skill-hint {
+    font-size: 8px;
+    padding: 4px 8px;
+    height: 48px;
+  }
+}
+
+
+

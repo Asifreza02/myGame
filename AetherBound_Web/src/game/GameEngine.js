@@ -15,6 +15,7 @@ import { ITEM_DEFINITIONS, KNIFE_RULES, WEAPON_DEFINITIONS, WEAPON_CRAFTING_RECI
 import { RESOURCE_DEFINITIONS, getWeatherState } from './data/world.js';
 import { normalizeMatchConfig } from './data/matchModes.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VoiceManager } from './voice/VoiceManager.js';
 
 function disposeThreeObject(root) {
   root?.traverse((object) => {
@@ -31,22 +32,27 @@ function disposeThreeObject(root) {
   });
 }
 
-function drawPlayerNameplate(canvas, ctx, name, health, maxHealth, color = '#00f0ff', isAlive = true, isBot = false) {
+function drawPlayerNameplate(canvas, ctx, name, health, maxHealth, color = '#00f0ff', isAlive = true, isBot = false, isSpeaking = false, isMuted = false) {
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  // Background rounded glass panel
+  // Background rounded glass panel with speaking halo glow
+  if (isSpeaking) {
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 12;
+  }
   ctx.fillStyle = 'rgba(8, 16, 24, 0.9)';
-  ctx.strokeStyle = color || '#00f0ff';
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = isSpeaking ? '#00ff88' : (color || '#00f0ff');
+  ctx.lineWidth = isSpeaking ? 3.5 : 3;
   ctx.beginPath();
   ctx.roundRect(4, 4, w - 8, h - 8, 12);
   ctx.fill();
   ctx.stroke();
+  ctx.shadowBlur = 0; // Clear shadow
 
   // Color Indicator Dot
-  ctx.fillStyle = color || '#00f0ff';
+  ctx.fillStyle = isSpeaking ? '#00ff88' : (color || '#00f0ff');
   ctx.beginPath();
   ctx.arc(28, 28, 9, 0, Math.PI * 2);
   ctx.fill();
@@ -58,14 +64,15 @@ function drawPlayerNameplate(canvas, ctx, name, health, maxHealth, color = '#00f
   ctx.textBaseline = 'middle';
   const cleanName = String(name || 'Survivor').slice(0, 16);
   ctx.fillText(cleanName, 46, 28);
+  const textWidth = ctx.measureText(cleanName).width;
 
-  // Bot badge if applicable
+  // Bot badge or Voice Indicator
+  const curBadgeX = 52 + textWidth;
   if (isBot) {
+    const badgeX = Math.min(w - 70, curBadgeX);
     ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
     ctx.strokeStyle = '#00f0ff';
     ctx.lineWidth = 1.5;
-    const textWidth = ctx.measureText(cleanName).width;
-    const badgeX = Math.min(w - 70, 52 + textWidth);
     ctx.beginPath();
     ctx.roundRect(badgeX, 17, 56, 22, 6);
     ctx.fill();
@@ -74,6 +81,19 @@ function drawPlayerNameplate(canvas, ctx, name, health, maxHealth, color = '#00f
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('BOT', badgeX + 28, 28);
+  } else if (isSpeaking) {
+    const badgeX = Math.min(w - 44, curBadgeX);
+    // Draw 3 audio wave bars
+    ctx.fillStyle = '#00ff88';
+    ctx.fillRect(badgeX, 23, 4, 10);
+    ctx.fillRect(badgeX + 6, 17, 4, 22);
+    ctx.fillRect(badgeX + 12, 20, 4, 16);
+  } else if (isMuted) {
+    const badgeX = Math.min(w - 38, curBadgeX);
+    ctx.fillStyle = '#ff4466';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🔇', badgeX + 14, 28);
   }
 
   // Health Bar
@@ -183,6 +203,20 @@ export class GameEngine {
     this.activeTracers = [];
     this.craftingModalOpen = false;
     this.matchHistory = this.loadMatchHistory();
+
+    this.voiceManager = null;
+    this.voiceState = {
+      isMuted: false,
+      isDeafened: false,
+      pushToTalk: false,
+      isPttPressed: false,
+      isSpeaking: false,
+      volume: 1.0,
+      permissionState: 'prompt',
+      peerCount: 0,
+      connectedPeers: [],
+    };
+    this.playerVoiceStatus = new Map();
 
     this.placementData = {
       visible: false,
@@ -352,10 +386,14 @@ export class GameEngine {
     this.renderer.domElement.addEventListener('pointerdown', this.onCombatClick);
     this.onKeyDownHandler = (event) => {
       if (this.gameState !== 'PLAYING') return;
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
       if (event.code === 'KeyC' || event.code === 'KeyB') {
         this.toggleCraftingModal();
         return;
       }
+      // Weapon Number Keys: 1 to 5
       if (['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(event.code)) {
         const slotIdx = Number(event.code.replace('Digit', '')) - 1;
         if (slotIdx >= 0 && slotIdx < this.weapons.length) {
@@ -363,11 +401,28 @@ export class GameEngine {
           return;
         }
       }
-      const abilities = this.runner.inventory || [];
-      const index = Number(event.key) - 1;
-      if (index >= 0 && index < abilities.length) this.activateAbility(abilities[index]);
+      // Ability Keys: Q, E, R, F, Z, X
+      const abilityKeys = ['KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyZ', 'KeyX'];
+      const abilityIdx = abilityKeys.indexOf(event.code);
+      if (abilityIdx !== -1) {
+        const abilities = this.runner?.inventory || [];
+        if (abilityIdx < abilities.length) {
+          this.activateAbility(abilities[abilityIdx]);
+          return;
+        }
+      }
     };
     window.addEventListener('keydown', this.onKeyDownHandler);
+
+    this.onWheelHandler = (event) => {
+      if (this.gameState !== 'PLAYING' || !this.weapons || this.weapons.length <= 1) return;
+      if (!this.isPointerLocked) return;
+      const curIdx = this.weapons.indexOf(this.equippedWeapon);
+      const delta = event.deltaY > 0 ? 1 : -1;
+      const nextIdx = (curIdx + delta + this.weapons.length) % this.weapons.length;
+      this.equipWeapon(this.weapons[nextIdx]);
+    };
+    window.addEventListener('wheel', this.onWheelHandler, { passive: true });
 
     this.runner.onDamage = () => {
       this.damageFlash = Date.now();
@@ -535,12 +590,16 @@ export class GameEngine {
         }
         if (msg.snapshot) this.applyMatchSnapshot(msg.snapshot);
         if (msg.resumed) this.showToast('Connection restored. You rejoined your match.');
+        if (this.playerId) {
+          this.voiceManager?.init(this.playerId);
+        }
         this.emitState();
       },
 
       onDisconnected: () => {
         this.serverStatus = 'RECONNECTING';
         this.showToast('Connection lost. Reconnecting to your match…');
+        this.voiceManager?.reset();
       },
       onMatchState: (snapshot) => this.applyMatchSnapshot(snapshot),
       onMatchStarted: (message) => {
@@ -643,8 +702,58 @@ export class GameEngine {
         if (this.powerUpManager) {
           this.powerUpManager.handleRemoteCollect(data.id);
         }
-      }
+      },
+
+      onVoiceSignal: (msg) => {
+        this.voiceManager?.handleVoiceSignal(msg.senderId, msg.signal);
+      },
+
+      onVoiceStatus: (msg) => {
+        this.voiceManager?.handleVoiceStatus(msg.playerId, msg.isSpeaking, msg.isMuted, msg.isDeafened);
+      },
+
+      onVoicePeerLeft: (msg) => {
+        this.voiceManager?.removePeer(msg.playerId);
+      },
     }, this.roomCode, this.matchConfig);
+
+    this.voiceManager = new VoiceManager(this.network, {
+      onVoiceStateChange: (state) => {
+        this.voiceState = state;
+        this.emitState();
+      },
+      onLocalSpeaking: (isSpeaking) => {
+        if (this.playerId) {
+          this.playerVoiceStatus.set(this.playerId, {
+            isSpeaking,
+            isMuted: this.voiceState?.isMuted || false,
+          });
+          this.emitState();
+        }
+      },
+      onPeerSpeakingChange: (peerId, isSpeaking, isMuted) => {
+        this.playerVoiceStatus.set(peerId, { isSpeaking, isMuted });
+        const remote = this.remotePlayers.get(peerId);
+        if (remote) {
+          drawPlayerNameplate(
+            remote.labelCanvas,
+            remote.labelCtx,
+            remote.lastDrawnName,
+            remote.lastDrawnHealth,
+            remote.state?.maxHealth || 100,
+            remote.state?.color || '#00f0ff',
+            remote.lastDrawnAlive,
+            remote.state?.isBot,
+            isSpeaking,
+            isMuted
+          );
+          remote.labelTexture.needsUpdate = true;
+          remote.lastDrawnSpeaking = isSpeaking;
+          remote.lastDrawnMuted = isMuted;
+        }
+        this.emitState();
+      },
+    });
   }
 
   applyMatchSnapshot(snapshot) {
@@ -660,21 +769,27 @@ export class GameEngine {
       alive: snapshot.players.filter((player) => player.alive).length,
       max: this.matchConfig?.maxPlayers || 5,
     };
-    this.competitors = snapshot.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      slot: p.slot,
-      color: p.color || '#00f0ff',
-      colorHex: p.colorHex || 0x00f0ff,
-      health: p.health,
-      maxHealth: p.maxHealth || 100,
-      alive: p.alive,
-      isBot: Boolean(p.isBot),
-      isLocal: p.id === this.playerId,
-      stats: p.stats || {},
-      kills: p.stats?.kills || 0,
-      damageDealt: p.stats?.damageDealt || 0,
-    }));
+    this.competitors = snapshot.players.map((p) => {
+      const voice = this.playerVoiceStatus?.get(p.id) || p.voice || {};
+      return {
+        id: p.id,
+        name: p.name,
+        slot: p.slot,
+        color: p.color || '#00f0ff',
+        colorHex: p.colorHex || 0x00f0ff,
+        health: p.health,
+        maxHealth: p.maxHealth || 100,
+        alive: p.alive,
+        isBot: Boolean(p.isBot),
+        isLocal: p.id === this.playerId,
+        stats: p.stats || {},
+        kills: p.stats?.kills || 0,
+        damageDealt: p.stats?.damageDealt || 0,
+        isSpeaking: Boolean(voice.isSpeaking),
+        isMuted: Boolean(voice.isMuted),
+        voice,
+      };
+    });
 
     for (const player of snapshot.players) {
       if (player.id === this.playerId) {
@@ -716,7 +831,10 @@ export class GameEngine {
         labelCanvas.width = 320;
         labelCanvas.height = 76;
         const context = labelCanvas.getContext('2d');
-        drawPlayerNameplate(labelCanvas, context, player.name, player.health, player.maxHealth, player.color, player.alive, player.isBot);
+        const voiceStatus = this.playerVoiceStatus?.get(player.id) || player.voice || {};
+        const isSpeaking = Boolean(voiceStatus.isSpeaking);
+        const isMuted = Boolean(voiceStatus.isMuted);
+        drawPlayerNameplate(labelCanvas, context, player.name, player.health, player.maxHealth, player.color, player.alive, player.isBot, isSpeaking, isMuted);
         const labelTexture = new THREE.CanvasTexture(labelCanvas);
         const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false }));
         label.position.y = 2.65;
@@ -734,6 +852,8 @@ export class GameEngine {
           lastDrawnHealth: player.health,
           lastDrawnAlive: player.alive,
           lastDrawnName: player.name,
+          lastDrawnSpeaking: isSpeaking,
+          lastDrawnMuted: isMuted,
           targetPosition: new THREE.Vector3(player.x, player.y, player.z),
           targetYaw: player.ry || 0,
           targetPitch: player.pitch || 0,
@@ -748,12 +868,17 @@ export class GameEngine {
         };
         this.remotePlayers.set(player.id, remote);
       } else {
-        if (remote.lastDrawnHealth !== player.health || remote.lastDrawnAlive !== player.alive || remote.lastDrawnName !== player.name) {
-          drawPlayerNameplate(remote.labelCanvas, remote.labelCtx, player.name, player.health, player.maxHealth, player.color, player.alive, player.isBot);
+        const voiceStatus = this.playerVoiceStatus?.get(player.id) || player.voice || {};
+        const isSpeaking = Boolean(voiceStatus.isSpeaking);
+        const isMuted = Boolean(voiceStatus.isMuted);
+        if (remote.lastDrawnHealth !== player.health || remote.lastDrawnAlive !== player.alive || remote.lastDrawnName !== player.name || remote.lastDrawnSpeaking !== isSpeaking || remote.lastDrawnMuted !== isMuted) {
+          drawPlayerNameplate(remote.labelCanvas, remote.labelCtx, player.name, player.health, player.maxHealth, player.color, player.alive, player.isBot, isSpeaking, isMuted);
           remote.labelTexture.needsUpdate = true;
           remote.lastDrawnHealth = player.health;
           remote.lastDrawnAlive = player.alive;
           remote.lastDrawnName = player.name;
+          remote.lastDrawnSpeaking = isSpeaking;
+          remote.lastDrawnMuted = isMuted;
         }
         if (remote.groundRing) remote.groundRing.visible = player.alive;
       }
@@ -796,6 +921,9 @@ export class GameEngine {
       remote.groundRing?.geometry?.dispose();
       remote.groundRing?.material?.dispose();
       this.remotePlayers.delete(id);
+    }
+    if (this.voiceManager && Array.isArray(snapshot.players)) {
+      this.voiceManager.syncPeers(snapshot.players);
     }
     if (Array.isArray(snapshot.items)) {
       this.pickups = snapshot.items;
@@ -1964,13 +2092,23 @@ export class GameEngine {
       toastMessage: this.toastMessage,
       aiEnabled: Boolean(this.aiSaboteur && this.aiSaboteur.enabled),
       humanSaboteurAvailable: this.isHumanSaboteurAvailable(),
+      voiceState: this.voiceState,
     };
 
     this.onStateChange(snapshot);
   }
 
+  toggleVoiceMute() { this.voiceManager?.toggleMute(); }
+  setVoiceMuted(muted) { this.voiceManager?.setMuted(muted); }
+  toggleVoiceDeafen() { this.voiceManager?.toggleDeafen(); }
+  setVoiceDeafened(deafened) { this.voiceManager?.setDeafened(deafened); }
+  setVoicePushToTalk(enabled) { this.voiceManager?.setPushToTalk(enabled); }
+  setVoicePttActive(active) { this.voiceManager?.setPushToTalkActive(active); }
+  setVoiceVolume(volume) { this.voiceManager?.setVolume(volume); }
+
   destroy() {
     this.destroyed = true;
+    if (this.voiceManager) this.voiceManager.destroy();
     if (this.gameOverTimeout) clearTimeout(this.gameOverTimeout);
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
@@ -1982,6 +2120,7 @@ export class GameEngine {
       this.renderer.domElement.removeEventListener('pointerdown', this.onCombatClick);
     }
     if (this.onKeyDownHandler) window.removeEventListener('keydown', this.onKeyDownHandler);
+    if (this.onWheelHandler) window.removeEventListener('wheel', this.onWheelHandler);
     this.dragonMixer?.stopAllAction();
     this.clearDragonBreathTelegraph();
     this.scene?.remove(this.dragonMesh, this.dragonBreathBeam, this.dragonTelegraph, this.dragonTelegraphRing);

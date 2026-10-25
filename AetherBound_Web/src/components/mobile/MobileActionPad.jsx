@@ -11,6 +11,9 @@ function activateFromKeyboard(event, action) {
 export function MobileActionPad({
   activeRole = 'runner',
   isPlacing = false,
+  voiceState = {},
+  onToggleVoiceMute,
+  onVoicePttActive,
   onJump,
   onAttack,
   onSlide,
@@ -48,6 +51,30 @@ export function MobileActionPad({
         {/* Runner Actions */}
         {isRunner && (
           <>
+            <div className="mobile-action-aux-row">
+              {voiceState.pushToTalk ? (
+                <button
+                  className={`mobile-aux-btn voice-btn interactive ${voiceState.isPttPressed ? 'active' : ''}`}
+                  onPointerDown={() => onVoicePttActive?.(true)}
+                  onPointerUp={() => onVoicePttActive?.(false)}
+                  onPointerLeave={() => onVoicePttActive?.(false)}
+                  onPointerCancel={() => onVoicePttActive?.(false)}
+                  title="Hold to Talk"
+                >
+                  {voiceState.isSpeaking ? '🎙️ TALKING' : '🎙️ HOLD PTT'}
+                </button>
+              ) : (
+                <button
+                  className={`mobile-aux-btn voice-btn interactive ${voiceState.isMuted ? 'muted' : voiceState.isSpeaking ? 'speaking' : 'active'}`}
+                  onPointerUp={(event) => activateFromPointer(event, onToggleVoiceMute)}
+                  onClick={(event) => activateFromKeyboard(event, onToggleVoiceMute)}
+                  title="Toggle Microphone"
+                >
+                  {voiceState.isMuted ? '🔇 MUTED' : voiceState.isSpeaking ? '🎙️ TALKING' : '🎤 MIC ON'}
+                </button>
+              )}
+            </div>
+
             <div className="mobile-action-main-row">
               <button
                 className="mobile-round-btn interactive"

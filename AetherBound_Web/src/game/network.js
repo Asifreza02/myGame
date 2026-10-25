@@ -226,6 +226,18 @@ export class NetworkClient {
       case 'POWERUP_COLLECTED':
         if (this.callbacks.onPowerupCollected) this.callbacks.onPowerupCollected(msg);
         break;
+
+      case 'VOICE_SIGNAL':
+        if (this.callbacks.onVoiceSignal) this.callbacks.onVoiceSignal(msg);
+        break;
+
+      case 'VOICE_STATUS':
+        if (this.callbacks.onVoiceStatus) this.callbacks.onVoiceStatus(msg);
+        break;
+
+      case 'VOICE_PEER_LEFT':
+        if (this.callbacks.onVoicePeerLeft) this.callbacks.onVoicePeerLeft(msg);
+        break;
     }
   }
 
@@ -248,6 +260,14 @@ export class NetworkClient {
   equipWeapon(weaponId) { this.send({ type: 'EQUIP_WEAPON', weaponId }); }
   fireWeapon(weaponId, origin, direction) {
     this.send({ type: 'WEAPON_FIRE', weaponId, origin, direction, fireId: Date.now() });
+  }
+
+  sendVoiceSignal(targetId, signal) {
+    this.send({ type: 'VOICE_SIGNAL', targetId, signal });
+  }
+
+  sendVoiceStatus(isSpeaking, isMuted, isDeafened = false) {
+    this.send({ type: 'VOICE_STATUS', isSpeaking, isMuted, isDeafened });
   }
 
   sendRunnerMove(state) {

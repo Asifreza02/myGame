@@ -185,6 +185,7 @@ class GameRoom {
       lastSurvivalTickAt: Date.now(),
       nextWorldDamageAt: 0,
       inVolcanicZone: false,
+      voice: { isSpeaking: false, isMuted: false, isDeafened: false },
     };
 
     this.clients.set(ws, id);
@@ -352,6 +353,7 @@ class GameRoom {
       equippedWeapon: equippedWeapon || 'KNIFE',
       ammo: ammo || {},
       stats,
+      voice: player.voice || { isSpeaking: false, isMuted: false, isDeafened: false },
     };
   }
 
@@ -1372,11 +1374,42 @@ class GameRoom {
       this.broadcastState();
       return;
     }
+    if (message.type === 'VOICE_SIGNAL') {
+      const targetId = String(message.targetId || '');
+      if (!targetId || targetId === id) return;
+      for (const [clientWs, clientId] of this.clients.entries()) {
+        if (clientId === targetId) {
+          safeSend(clientWs, {
+            type: 'VOICE_SIGNAL',
+            senderId: id,
+            signal: message.signal,
+          });
+          break;
+        }
+      }
+      return;
+    }
+    if (message.type === 'VOICE_STATUS') {
+      player.voice = {
+        isSpeaking: Boolean(message.isSpeaking),
+        isMuted: Boolean(message.isMuted),
+        isDeafened: Boolean(message.isDeafened),
+      };
+      this.broadcast({
+        type: 'VOICE_STATUS',
+        playerId: id,
+        isSpeaking: player.voice.isSpeaking,
+        isMuted: player.voice.isMuted,
+        isDeafened: player.voice.isDeafened,
+      }, ws);
+      return;
+    }
   }
 
   removeClient(ws) {
     const id = this.clients.get(ws);
     if (!id) return;
+    this.broadcast({ type: 'VOICE_PEER_LEFT', playerId: id }, ws);
     this.clients.delete(ws);
     const player = this.players.get(id);
     if (!player || !player.connected) return;
