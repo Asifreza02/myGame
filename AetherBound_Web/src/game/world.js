@@ -20,6 +20,11 @@ export class WorldManager {
     this.waterLevel = GAME_CONFIG.WORLD.WATER_LEVEL;
     this.buildingGridSize = GAME_CONFIG.WORLD.BUILDING_GRID_SIZE;
 
+    this.boundaryGroup = null;
+    this.barrierMesh = null;
+    this.barrierTexture = null;
+    this.createWorldBoundary();
+
     // Materials
     this.terrainMaterial = new THREE.MeshLambertMaterial({
       vertexColors: true,
@@ -236,6 +241,11 @@ export class WorldManager {
 
   // Update dynamic chunks and distant buildings around active players
   update(focusPositions, time = 0) {
+    if (this.barrierTexture && this.barrierMesh) {
+      this.barrierTexture.offset.y = -(time * 0.04) % 1;
+      this.barrierMesh.material.opacity = 0.28 + Math.sin(time * 2.2) * 0.07;
+    }
+
     const activeChunkKeys = new Set();
     const activeBuildingKeys = new Set();
 
@@ -624,7 +634,7 @@ export class WorldManager {
     // Don't build inside water bodies
     if (wy < this.waterLevel + 0.4) return;
 
-    const archetype = Math.floor(rng() * 3);
+    const archetype = Math.floor(rng() * 6);
     const group = new THREE.Group();
     const rotY = rng() * Math.PI * 2;
     group.rotation.y = rotY;
@@ -724,7 +734,7 @@ export class WorldManager {
         rotationY: rotY,
       };
 
-    } else {
+    } else if (archetype === 2) {
       // Archetype 3: Reinforced Military Depot / Warehouse
       const width = 16, height = 5.5, depth = 12;
       const baseGeo = new THREE.BoxGeometry(width, height, depth);
@@ -761,10 +771,403 @@ export class WorldManager {
         size: { width, height, depth },
         rotationY: rotY,
       };
+
+    } else if (archetype === 3) {
+      // Archetype 4: Colony Habitation House (Cyber-Bungalow)
+      const width = 11, height = 4.8, depth = 9;
+      const houseGeo = new THREE.BoxGeometry(width, height, depth);
+      const houseMat = new THREE.MeshStandardMaterial({
+        color: 0x424b54,
+        roughness: 0.65,
+        metalness: 0.35,
+      });
+      const houseMesh = new THREE.Mesh(houseGeo, houseMat);
+      houseMesh.position.y = height / 2;
+      houseMesh.castShadow = true;
+      houseMesh.receiveShadow = true;
+      group.add(houseMesh);
+
+      // Sloped Peaked Roof
+      const roofGeo = new THREE.BoxGeometry(width + 0.8, 1.4, depth + 0.8);
+      const roofMat = new THREE.MeshStandardMaterial({
+        color: 0x222c36,
+        roughness: 0.5,
+        metalness: 0.6,
+      });
+      const roofMesh = new THREE.Mesh(roofGeo, roofMat);
+      roofMesh.position.y = height + 0.7;
+      roofMesh.castShadow = true;
+      group.add(roofMesh);
+
+      // Front Porch Deck
+      const porchGeo = new THREE.BoxGeometry(9.0, 0.4, 3.2);
+      const porchMat = new THREE.MeshStandardMaterial({ color: 0x5a483a, roughness: 0.85 });
+      const porch = new THREE.Mesh(porchGeo, porchMat);
+      porch.position.set(0, 0.2, depth / 2 + 1.6);
+      porch.receiveShadow = true;
+      group.add(porch);
+
+      // Porch Columns
+      const colGeo = new THREE.BoxGeometry(0.35, 3.8, 0.35);
+      const colMat = new THREE.MeshStandardMaterial({ color: 0x333b44, metalness: 0.7 });
+      for (const cx of [-4.0, 4.0]) {
+        const col = new THREE.Mesh(colGeo, colMat);
+        col.position.set(cx, 1.9, depth / 2 + 3.0);
+        col.castShadow = true;
+        group.add(col);
+      }
+
+      // Porch Awning
+      const awningGeo = new THREE.BoxGeometry(9.4, 0.25, 3.4);
+      const awning = new THREE.Mesh(awningGeo, roofMat);
+      awning.position.set(0, 3.9, depth / 2 + 1.7);
+      awning.castShadow = true;
+      group.add(awning);
+
+      // Front Entrance Door
+      const doorGeo = new THREE.BoxGeometry(2.2, 3.2, 0.35);
+      const doorMat = new THREE.MeshStandardMaterial({ color: 0x1a2634, metalness: 0.8 });
+      const door = new THREE.Mesh(doorGeo, doorMat);
+      door.position.set(0, 1.6, depth / 2 + 0.1);
+      group.add(door);
+
+      // Electronic Keypad
+      const padGeo = new THREE.BoxGeometry(0.3, 0.45, 0.1);
+      const padMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+      const pad = new THREE.Mesh(padGeo, padMat);
+      pad.position.set(1.4, 1.6, depth / 2 + 0.2);
+      group.add(pad);
+
+      // Warm Glowing Windows
+      const winGeo = new THREE.BoxGeometry(2.0, 1.4, 0.35);
+      const winMat = new THREE.MeshBasicMaterial({ color: 0xffaa22 });
+      for (const wx of [-3.2, 3.2]) {
+        const win = new THREE.Mesh(winGeo, winMat);
+        win.position.set(wx, 2.2, depth / 2 + 0.1);
+        group.add(win);
+      }
+      const sideWinGeo = new THREE.BoxGeometry(0.35, 1.4, 2.0);
+      for (const sx of [-width / 2 - 0.1, width / 2 + 0.1]) {
+        const sw = new THREE.Mesh(sideWinGeo, winMat);
+        sw.position.set(sx, 2.2, 0);
+        group.add(sw);
+      }
+
+      // Porch Supply Crate / Loot Stash
+      const crateGeo = new THREE.BoxGeometry(1.6, 1.0, 1.0);
+      const crateMat = new THREE.MeshStandardMaterial({ color: 0x2e4438, metalness: 0.6, roughness: 0.4 });
+      const crate = new THREE.Mesh(crateGeo, crateMat);
+      crate.position.set(-2.8, 0.7, depth / 2 + 2.0);
+      crate.castShadow = true;
+      group.add(crate);
+
+      // Crate Glowing Latch
+      const latchGeo = new THREE.BoxGeometry(0.4, 0.2, 0.15);
+      const latchMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+      const latch = new THREE.Mesh(latchGeo, latchMat);
+      latch.position.set(-2.8, 0.9, depth / 2 + 2.52);
+      group.add(latch);
+
+      // Roof Chimney / Air Filtration Unit
+      const ventGeo = new THREE.BoxGeometry(1.4, 2.2, 1.4);
+      const ventMat = new THREE.MeshStandardMaterial({ color: 0x445566, metalness: 0.8 });
+      const vent = new THREE.Mesh(ventGeo, ventMat);
+      vent.position.set(3.0, height + 1.8, -2.0);
+      vent.castShadow = true;
+      group.add(vent);
+
+      group.position.set(wx, wy, wz);
+      collider = {
+        id: bKey,
+        type: 'BOX',
+        center: { x: wx, y: wy + height / 2, z: wz },
+        size: { width: width + 2, height, depth: depth + 3 },
+        rotationY: rotY,
+      };
+
+    } else if (archetype === 4) {
+      // Archetype 5: Frontier Settlement Twin-Cabin (Duplex)
+      const uAWidth = 8, uAHeight = 4.8, uADepth = 8;
+      const cabinMat = new THREE.MeshStandardMaterial({ color: 0x4f433a, roughness: 0.8 });
+      const unitAGeo = new THREE.BoxGeometry(uAWidth, uAHeight, uADepth);
+      const unitA = new THREE.Mesh(unitAGeo, cabinMat);
+      unitA.position.set(-5, uAHeight / 2, 0);
+      unitA.castShadow = true;
+      unitA.receiveShadow = true;
+      group.add(unitA);
+
+      const uBWidth = 6.5, uBHeight = 4.0, uBDepth = 6.5;
+      const workshopMat = new THREE.MeshStandardMaterial({ color: 0x38414a, roughness: 0.6, metalness: 0.4 });
+      const unitBGeo = new THREE.BoxGeometry(uBWidth, uBHeight, uBDepth);
+      const unitB = new THREE.Mesh(unitBGeo, workshopMat);
+      unitB.position.set(5, uBHeight / 2, 0);
+      unitB.castShadow = true;
+      unitB.receiveShadow = true;
+      group.add(unitB);
+
+      const bridgeGeo = new THREE.BoxGeometry(4.0, 3.4, 3.8);
+      const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x2e353d, metalness: 0.6 });
+      const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
+      bridge.position.set(0, 1.7, 0);
+      bridge.castShadow = true;
+      group.add(bridge);
+
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0x1f2730, metalness: 0.8, roughness: 0.3 });
+      const roofAGeo = new THREE.BoxGeometry(uAWidth + 0.6, 1.2, uADepth + 0.6);
+      const roofA = new THREE.Mesh(roofAGeo, roofMat);
+      roofA.position.set(-5, uAHeight + 0.6, 0);
+      roofA.castShadow = true;
+      group.add(roofA);
+
+      const roofBGeo = new THREE.BoxGeometry(uBWidth + 0.6, 1.2, uBDepth + 0.6);
+      const roofB = new THREE.Mesh(roofBGeo, roofMat);
+      roofB.position.set(5, uBHeight + 0.6, 0);
+      roofB.castShadow = true;
+      group.add(roofB);
+
+      const winMat = new THREE.MeshBasicMaterial({ color: 0xffbb44 });
+      const winA = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.2, 0.3), winMat);
+      winA.position.set(-5, 2.2, uADepth / 2 + 0.1);
+      group.add(winA);
+
+      const winB = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.2, 0.3), winMat);
+      winB.position.set(5, 2.0, uBDepth / 2 + 0.1);
+      group.add(winB);
+
+      const barrelGeo = new THREE.CylinderGeometry(0.65, 0.65, 1.3, 10);
+      const barrelMat = new THREE.MeshStandardMaterial({ color: 0x6e5239, roughness: 0.7 });
+      for (const bx of [-1.5, 1.5]) {
+        const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+        barrel.position.set(bx, 0.65, 2.5);
+        barrel.castShadow = true;
+        group.add(barrel);
+      }
+
+      group.position.set(wx, wy, wz);
+      collider = {
+        id: bKey,
+        type: 'BOX',
+        center: { x: wx, y: wy + uAHeight / 2, z: wz },
+        size: { width: 17, height: uAHeight, depth: 10 },
+        rotationY: rotY,
+      };
+
+    } else {
+      // Archetype 5: Aether Loot Station / Requisition Depot
+      const padRadius = 7.5;
+      const padHeight = 1.2;
+      const padGeo = new THREE.CylinderGeometry(padRadius, padRadius + 0.4, padHeight, 8);
+      const padMat = new THREE.MeshStandardMaterial({
+        color: 0x222a35,
+        roughness: 0.4,
+        metalness: 0.8,
+      });
+      const pad = new THREE.Mesh(padGeo, padMat);
+      pad.position.y = padHeight / 2;
+      pad.receiveShadow = true;
+      group.add(pad);
+
+      const rimGeo = new THREE.TorusGeometry(padRadius, 0.25, 6, 8);
+      rimGeo.rotateX(Math.PI / 2);
+      const rimMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+      const rim = new THREE.Mesh(rimGeo, rimMat);
+      rim.position.y = padHeight + 0.05;
+      group.add(rim);
+
+      const legGeo = new THREE.BoxGeometry(1.2, 4.0, 1.2);
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x181e26, metalness: 0.9 });
+      for (let i = 0; i < 4; i++) {
+        const ang = (i / 4) * Math.PI * 2;
+        const leg = new THREE.Mesh(legGeo, legMat);
+        leg.position.set(Math.cos(ang) * 5.8, -1.0, Math.sin(ang) * 5.8);
+        leg.castShadow = true;
+        group.add(leg);
+      }
+
+      const rampGeo = new THREE.BoxGeometry(3.5, 0.4, 4.5);
+      rampGeo.rotateX(0.22);
+      const ramp = new THREE.Mesh(rampGeo, padMat);
+      ramp.position.set(0, 0.35, padRadius + 1.8);
+      ramp.receiveShadow = true;
+      group.add(ramp);
+
+      const corePedestal = new THREE.CylinderGeometry(1.6, 2.0, 2.2, 8);
+      const coreMat = new THREE.MeshStandardMaterial({ color: 0x152230, metalness: 0.9, roughness: 0.3 });
+      const core = new THREE.Mesh(corePedestal, coreMat);
+      core.position.y = padHeight + 1.1;
+      core.castShadow = true;
+      group.add(core);
+
+      const ringCore = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.2, 8), new THREE.MeshBasicMaterial({ color: 0x00f0ff }));
+      ringCore.position.y = padHeight + 1.9;
+      group.add(ringCore);
+
+      // Rotating Holographic Loot Diamond
+      const holoGeo = new THREE.OctahedronGeometry(1.3, 0);
+      const holoMat = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        wireframe: true,
+      });
+      const holo = new THREE.Mesh(holoGeo, holoMat);
+      holo.position.y = padHeight + 3.2;
+      group.add(holo);
+
+      const innerCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.7, 0), new THREE.MeshBasicMaterial({ color: 0xffd700 }));
+      innerCore.position.y = padHeight + 3.2;
+      group.add(innerCore);
+
+      // Supply Lockers
+      const lockerGeo = new THREE.BoxGeometry(1.8, 2.6, 1.0);
+      const lockerMat = new THREE.MeshStandardMaterial({ color: 0x2d3a4b, metalness: 0.7, roughness: 0.4 });
+      const lockerGlowMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+
+      for (let i = 0; i < 4; i++) {
+        const ang = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const lx = Math.cos(ang) * 4.6;
+        const lz = Math.sin(ang) * 4.6;
+        const locker = new THREE.Mesh(lockerGeo, lockerMat);
+        locker.position.set(lx, padHeight + 1.3, lz);
+        locker.rotation.y = -ang + Math.PI / 2;
+        locker.castShadow = true;
+        group.add(locker);
+
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.1), lockerGlowMat);
+        strip.position.set(0, 0.6, 0.52);
+        locker.add(strip);
+      }
+
+      // Sky Beacon Light Beam (Visible from afar across the 1km world)
+      const beamGeo = new THREE.CylinderGeometry(0.5, 1.4, 100, 12, 1, true);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0.28,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const beam = new THREE.Mesh(beamGeo, beamMat);
+      beam.position.y = padHeight + 52;
+      group.add(beam);
+
+      group.position.set(wx, wy, wz);
+      collider = {
+        id: bKey,
+        type: 'BOX',
+        center: { x: wx, y: wy + padHeight + 1.2, z: wz },
+        size: { width: 14, height: 5, depth: 14 },
+        rotationY: rotY,
+      };
     }
 
     this.scene.add(group);
     this.colliders.push(collider);
     this.buildings.set(bKey, { group, collider, key: bKey });
+  }
+
+  // 1km World Boundary Forcefield Cylinder & Perimeter Monoliths
+  createWorldBoundary() {
+    const boundaryRadius = GAME_CONFIG.WORLD.RADIUS || 1000;
+    const boundaryGroup = new THREE.Group();
+
+    // 1. Cylindrical Energy Shield Wall (1000m radius, 140m height)
+    const barrierGeo = new THREE.CylinderGeometry(boundaryRadius, boundaryRadius, 140, 80, 1, true);
+
+    const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+    let barrierTexture = null;
+    if (canvas) {
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(2, 12, 22, 0.2)';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 2.5;
+      for (let y = 0; y < 512; y += 32) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(512, y);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+      ctx.lineWidth = 1.2;
+      for (let x = 0; x < 512; x += 32) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 512);
+        ctx.stroke();
+      }
+      barrierTexture = new THREE.CanvasTexture(canvas);
+      barrierTexture.wrapS = THREE.RepeatWrapping;
+      barrierTexture.wrapT = THREE.RepeatWrapping;
+      barrierTexture.repeat.set(48, 4);
+    }
+
+    const barrierMat = new THREE.MeshBasicMaterial({
+      map: barrierTexture,
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.32,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const barrierMesh = new THREE.Mesh(barrierGeo, barrierMat);
+    barrierMesh.position.y = 65;
+    boundaryGroup.add(barrierMesh);
+    this.barrierMesh = barrierMesh;
+    this.barrierTexture = barrierTexture;
+
+    // 2. Glowing Ground Perimeter Ring
+    const ringGeo = new THREE.RingGeometry(boundaryRadius - 6, boundaryRadius + 2, 96);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide,
+    });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.position.y = 1.2;
+    boundaryGroup.add(ringMesh);
+
+    // 3. 8 Perimeter Energy Pylons
+    const pylonGeo = new THREE.BoxGeometry(4.5, 36, 4.5);
+    const pylonMat = new THREE.MeshStandardMaterial({ color: 0x1f2732, metalness: 0.85, roughness: 0.3 });
+    const runeGlowMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const px = Math.cos(angle) * (boundaryRadius - 2);
+      const pz = Math.sin(angle) * (boundaryRadius - 2);
+      const py = this.getHeightAt(px, pz);
+
+      const pylon = new THREE.Mesh(pylonGeo, pylonMat);
+      pylon.position.set(px, py + 18, pz);
+      pylon.castShadow = true;
+      boundaryGroup.add(pylon);
+
+      // Glowing rune strip
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(4.7, 28, 0.4), runeGlowMat);
+      strip.position.set(px, py + 18, pz);
+      strip.rotation.y = -angle;
+      boundaryGroup.add(strip);
+
+      // Sky beam from pylon
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.8, 140, 12, 1, true), beamMat);
+      beam.position.set(px, py + 88, pz);
+      boundaryGroup.add(beam);
+    }
+
+    this.scene.add(boundaryGroup);
+    this.boundaryGroup = boundaryGroup;
   }
 }

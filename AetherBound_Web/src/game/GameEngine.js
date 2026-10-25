@@ -251,13 +251,13 @@ export class GameEngine {
   initThree() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xa8bdb4);
-    this.scene.fog = new THREE.FogExp2(0xa8bdb4, 0.0042);
+    this.scene.fog = new THREE.FogExp2(0xa8bdb4, 0.0022);
 
     this.camera = new THREE.PerspectiveCamera(
       65,
       window.innerWidth / window.innerHeight,
       0.1,
-      600
+      1200
     );
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1970,10 +1970,28 @@ export class GameEngine {
         }
 
         for (const item of this.pickups) {
-          if (item.active && !this.pendingPickups?.has(item.id) && Math.hypot(item.x - this.runner.position.x, item.z - this.runner.position.z) < 2.6) {
+          if (!item.active) continue;
+          const distToPlayer = Math.hypot(item.x - this.runner.position.x, item.z - this.runner.position.z);
+          if (distToPlayer < 2.6 && !this.pendingPickups?.has(item.id)) {
             this.pendingPickups ||= new Set();
             this.pendingPickups.add(item.id);
             this.network.collectItem(item.id);
+          } else if (distToPlayer < 80) {
+            const mesh = this.pickupMeshes.get(item.id);
+            if (mesh) {
+              mesh.rotation.y = elapsedTime * 2.0;
+              mesh.position.y = this.worldManager.getHeightAt(item.x, item.z) + 1.15 + Math.sin(elapsedTime * 2.8 + item.x) * 0.18;
+            }
+          }
+        }
+
+        // 1km World Boundary Proximity Warning
+        const playerRadius = Math.hypot(this.runner.position.x, this.runner.position.z);
+        if (playerRadius > 940) {
+          const distRemaining = Math.max(0, Math.round(1000 - playerRadius));
+          if (!this.lastBoundaryWarningAt || Date.now() - this.lastBoundaryWarningAt > 4000) {
+            this.showToast(`⚠ APPROACHING 1KM WORLD BARRIER (${distRemaining}m to boundary)`);
+            this.lastBoundaryWarningAt = Date.now();
           }
         }
       } else {

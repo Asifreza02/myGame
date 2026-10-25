@@ -302,20 +302,58 @@ class GameRoom {
     };
     const items = [];
 
-    // 16 Ability drops in concentric rings
-    for (let index = 0; index < 16; index += 1) {
-      const angle = index * 2.399 + (random() - 0.5) * 0.25;
-      const radius = 24 + (index % 5) * 16 + random() * 6;
-      const x = Math.round(Math.cos(angle) * radius);
-      const z = Math.round(Math.sin(angle) * radius);
-      items.push(createAbilityDrop(index, x, z));
+    // 1. Structural Caches: Dedicated Loot Stations, Houses & Outposts
+    const bGrid = GAME_CONFIG.WORLD.BUILDING_GRID_SIZE || 110;
+    const maxB = Math.floor((WORLD_RADIUS - 35) / bGrid);
+    for (let bx = -maxB; bx <= maxB; bx++) {
+      for (let bz = -maxB; bz <= maxB; bz++) {
+        const originX = bx * bGrid;
+        const originZ = bz * bGrid;
+        const cellDist = Math.hypot(originX, originZ);
+        if (cellDist > WORLD_RADIUS - 35 || cellDist < 35) continue;
+
+        let bSeed = Math.abs(bx * 389271 ^ bz * 728931 ^ this.seed);
+        const rng = () => {
+          bSeed = (bSeed * 16807) % 2147483647;
+          return (bSeed - 1) / 2147483646;
+        };
+
+        const wx = Math.round(originX + (rng() - 0.5) * (bGrid * 0.6));
+        const wz = Math.round(originZ + (rng() - 0.5) * (bGrid * 0.6));
+        const archetype = Math.floor(rng() * 6);
+        const biome = this.getBiomeAt(wx, wz);
+
+        if (archetype === 5) {
+          // Aether Loot Station: Guaranteed High-Tier Cache!
+          items.push(createAbilityDrop(items.length, wx, wz, 'Rare'));
+          items.push(createResourceDrop(items.length, wx + 2, wz + 1, biome, 'ENERGY_CELL'));
+          items.push(createResourceDrop(items.length, wx - 2, wz - 1, biome, 'TITANIUM_SCRAP'));
+        } else if (archetype === 3 || archetype === 4) {
+          // Colony Habitation House / Frontier Duplex: Porch Cache
+          items.push(createAbilityDrop(items.length, wx, wz + 2));
+          items.push(createResourceDrop(items.length, wx - 1, wz + 2, biome));
+        } else if (archetype === 0 || archetype === 2) {
+          // Command Outpost / Military Depot: Combat Supplies
+          items.push(createResourceDrop(items.length, wx + 2, wz, biome, 'TITANIUM_SCRAP'));
+          items.push(createResourceDrop(items.length, wx - 2, wz, biome, 'EMBER_ORE'));
+        }
+      }
     }
 
-    // 48 Resource drops distributed across the map for crafting blasters and weapons
-    const allResourceTypes = Object.keys(RESOURCE_DEFINITIONS);
+    // 2. Wilderness Abilities across the entire 1km radius (48 drops)
     for (let i = 0; i < 48; i += 1) {
-      const angle = i * 1.618 + (random() - 0.5) * 0.28;
-      const radius = 24 + (i % 8) * 18 + random() * 10;
+      const angle = i * 2.399 + (random() - 0.5) * 0.3;
+      const radius = 28 + (i / 48) * (WORLD_RADIUS - 80) + random() * 20;
+      const x = Math.round(Math.cos(angle) * radius);
+      const z = Math.round(Math.sin(angle) * radius);
+      items.push(createAbilityDrop(items.length, x, z));
+    }
+
+    // 3. Wilderness Crafting Resources across the entire 1km radius (128 drops)
+    const allResourceTypes = Object.keys(RESOURCE_DEFINITIONS);
+    for (let i = 0; i < 128; i += 1) {
+      const angle = i * 1.618 + (random() - 0.5) * 0.32;
+      const radius = 24 + (i / 128) * (WORLD_RADIUS - 70) + random() * 24;
       const x = Math.round(Math.cos(angle) * radius);
       const z = Math.round(Math.sin(angle) * radius);
       const biome = this.getBiomeAt(x, z);
@@ -323,10 +361,10 @@ class GameRoom {
       items.push(createResourceDrop(items.length, x, z, biome, forcedType));
     }
 
-    // Dragon territory resource caches
-    for (let index = 0; index < 4; index += 1) {
-      const angle = (index / 4) * Math.PI * 2 + random() * 0.5;
-      const radius = 16 + random() * 12;
+    // 4. Dragon territory resource caches
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (index / 8) * Math.PI * 2 + random() * 0.5;
+      const radius = 16 + (index % 3) * 12 + random() * 8;
       const x = Math.round(this.dragon.x + Math.cos(angle) * radius);
       const z = Math.round(this.dragon.z + Math.sin(angle) * radius);
       items.push(createResourceDrop(items.length, x, z, 'volcanic', 'ENERGY_CELL'));
