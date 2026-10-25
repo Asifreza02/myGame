@@ -160,6 +160,7 @@ export class GameEngine {
     if (preferredRole) {
       this.activeRole = preferredRole;
     }
+    this.localPlayerName = (params.get('name') || (typeof window !== 'undefined' ? localStorage.getItem('aetherbound_player_name') : '') || 'Survivor').trim().slice(0, 20);
 
     this.clock = new THREE.Clock();
     this.lastNetworkSync = 0;
@@ -754,7 +755,7 @@ export class GameEngine {
         }
         this.emitState();
       },
-    });
+    }, this.roomCode, this.matchConfig, this.localPlayerName);
   }
 
   applyMatchSnapshot(snapshot) {
@@ -1371,12 +1372,50 @@ export class GameEngine {
     this.emitState();
   }
 
+  launchGame(role = 'player', room = 'default', matchConfig = null, playerName = '') {
+    this.returningToMenu = false;
+    this.roleSelectMessage = '';
+    const cleanRoom = (room || 'default').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24) || 'DEFAULT';
+    this.roomCode = cleanRoom;
+    if (matchConfig) {
+      this.matchConfig = normalizeMatchConfig(matchConfig);
+    }
+    if (playerName) {
+      this.localPlayerName = playerName.trim().slice(0, 20);
+    } else if (typeof window !== 'undefined') {
+      this.localPlayerName = localStorage.getItem('aetherbound_player_name') || this.localPlayerName || 'Survivor';
+    }
+
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      const query = new URLSearchParams({
+        role: 'player',
+        room: this.roomCode,
+        mode: this.matchConfig?.mode || 'ffa',
+      });
+      if (this.matchConfig?.seed) query.set('seed', String(this.matchConfig.seed));
+      if (this.matchConfig?.fillBots !== undefined) query.set('bots', String(this.matchConfig.fillBots));
+      if (this.localPlayerName) query.set('name', this.localPlayerName);
+      window.history.replaceState({}, '', `?${query.toString()}`);
+    }
+
+    if (this.network) {
+      this.network.destroy();
+      this.network = null;
+    }
+    this.initNetwork('player');
+    this.setRole('player');
+    this.requestPointerLock();
+    this.emitState();
+  }
+
   selectRole(role) {
     if (this.returningToMenu) {
-      this.roleSelectMessage = this.network.requestRole(role)
-        ? ''
-        : 'Still connecting to the game server. Please try again in a moment.';
-      this.emitState();
+      if (this.network && this.network.connected && this.network.requestRole(role)) {
+        this.roleSelectMessage = '';
+        this.emitState();
+        return;
+      }
+      this.launchGame(role, this.roomCode, this.matchConfig, this.localPlayerName);
       return;
     }
     this.setRole(role);
@@ -1387,10 +1426,11 @@ export class GameEngine {
       clearTimeout(this.gameOverTimeout);
       this.gameOverTimeout = null;
     }
-    if (notifyServer && this.network) this.network.destroy();
-    {
-      this.resetRound({ seed: resetData.seed });
+    if (notifyServer && this.network) {
+      this.network.destroy();
+      this.network = null;
     }
+    this.resetRound({ seed: resetData.seed });
     this.serverStatus = 'WAITING';
     this.activeRole = 'lobby';
     this.updateAISaboteurStatus();
@@ -1403,6 +1443,9 @@ export class GameEngine {
     document.body.classList.remove('runner-mode', 'saboteur-placing', 'cursor-locked');
     document.body.classList.add('cursor-unlocked');
     if (document.pointerLockElement) document.exitPointerLock();
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
     this.emitState();
   }
 

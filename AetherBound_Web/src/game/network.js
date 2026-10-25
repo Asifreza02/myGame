@@ -1,11 +1,12 @@
 // WebSocket Network Client for Real-Time Multiplayer Sync
 
 export class NetworkClient {
-  constructor(role = 'player', callbacks = {}, room = 'default', matchConfig = {}) {
+  constructor(role = 'player', callbacks = {}, room = 'default', matchConfig = {}, playerName = '') {
     this.role = role;
     this.callbacks = callbacks;
     this.room = room;
     this.matchConfig = matchConfig;
+    this.playerName = playerName;
     this.ws = null;
     this.connected = false;
     this.clientId = null;
@@ -58,6 +59,8 @@ export class NetworkClient {
     if (this.matchConfig.seed) wsUrl.searchParams.set('seed', String(this.matchConfig.seed));
     if (this.matchConfig.fillBots !== undefined) wsUrl.searchParams.set('bots', String(this.matchConfig.fillBots));
     if (this.reconnectToken) wsUrl.searchParams.set('token', this.reconnectToken);
+    const resolvedName = this.playerName || (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('name') || localStorage.getItem('aetherbound_player_name')) : '');
+    if (resolvedName) wsUrl.searchParams.set('name', resolvedName);
 
     const ws = new WebSocket(wsUrl);
     this.ws = ws;

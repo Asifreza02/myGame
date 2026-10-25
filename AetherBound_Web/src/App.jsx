@@ -92,21 +92,20 @@ export function App() {
   }, []);
 
   const handleSelectRole = useCallback((role, room, matchConfig = engineRef.current?.matchConfig, playerName = '') => {
-    if (!engineRef.current) return;
-    if (room) {
-      const cleanRoom = String(room).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
-      const query = new URLSearchParams({
-        role: 'player',
-        room: cleanRoom,
-        mode: matchConfig?.mode || 'ffa',
-      });
-      if (matchConfig?.seed) query.set('seed', String(matchConfig.seed));
-      if (matchConfig?.fillBots !== undefined) query.set('bots', String(matchConfig.fillBots));
-      if (playerName) query.set('name', playerName.trim().slice(0, 20));
-      window.location.href = `?${query.toString()}`;
+    if (engineRef.current) {
+      engineRef.current.launchGame(role, room, matchConfig, playerName);
       return;
     }
-    engineRef.current.selectRole(role);
+    const cleanRoom = String(room || 'DEFAULT').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
+    const query = new URLSearchParams({
+      role: 'player',
+      room: cleanRoom,
+      mode: matchConfig?.mode || 'ffa',
+    });
+    if (matchConfig?.seed) query.set('seed', String(matchConfig.seed));
+    if (matchConfig?.fillBots !== undefined) query.set('bots', String(matchConfig.fillBots));
+    if (playerName) query.set('name', playerName.trim().slice(0, 20));
+    window.location.href = `?${query.toString()}`;
   }, []);
 
   const handleShareRoom = useCallback(async (customCode = null) => {
@@ -305,7 +304,10 @@ export function App() {
     Boolean(engineState.saboteurStats.selectedType);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+      {/* Three.js Container */}
+      <div id="canvas-container" ref={containerRef} />
+
       {/* Orientation hint for portrait gameplay */}
       {engineState.gameState === 'PLAYING' && !dismissOrientation && (
         <div className="orientation-hint" role="status">
