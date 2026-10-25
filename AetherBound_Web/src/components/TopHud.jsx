@@ -17,7 +17,12 @@ export function TopHud({
   onExitToLobby,
   onShareRoom,
 }) {
-  const [showRoster, setShowRoster] = useState(true);
+  const [showRoster, setShowRoster] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth > 900 && !window.matchMedia('(pointer: coarse)').matches;
+    }
+    return true;
+  });
   const alive = playerCounts.alive ?? playerCounts.total ?? 1;
   const maxPlayers = matchConfig.maxPlayers || playerCounts.max || 5;
   const total = Math.min(maxPlayers, Math.max(playerCounts.total || 1, competitors.length));

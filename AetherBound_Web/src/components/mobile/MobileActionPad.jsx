@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { WEAPON_DEFINITIONS } from '../../game/data/combat.js';
 
 function activateFromPointer(event, action) {
   if (event.button === 0) action?.();
@@ -11,6 +12,9 @@ function activateFromKeyboard(event, action) {
 export function MobileActionPad({
   activeRole = 'runner',
   isPlacing = false,
+  equippedWeapon = 'KNIFE',
+  ammo = {},
+  knifeCooldownMs = 0,
   voiceState = {},
   onToggleVoiceMute,
   onVoicePttActive,
@@ -33,6 +37,12 @@ export function MobileActionPad({
 
   const isRunner = activeRole === 'runner' || activeRole === 'player';
   const isSaboteur = activeRole === 'saboteur';
+
+  const currentWeaponDef = WEAPON_DEFINITIONS[equippedWeapon] || WEAPON_DEFINITIONS.KNIFE;
+  const isMelee = currentWeaponDef.type === 'melee';
+  const currentAmmo = isMelee ? null : (ammo[equippedWeapon] ?? 0);
+  const isKnifeCooling = isMelee && knifeCooldownMs > 0;
+  const hasNoAmmo = !isMelee && currentAmmo === 0;
 
   return (
     <>
@@ -77,11 +87,15 @@ export function MobileActionPad({
 
             <div className="mobile-action-main-row">
               <button
-                className="mobile-round-btn interactive"
+                className={`mobile-round-btn attack-btn interactive ${hasNoAmmo ? 'no-ammo' : ''} ${isKnifeCooling ? 'cooling-down' : ''}`}
                 onPointerUp={(event) => activateFromPointer(event, onAttack)}
                 onClick={(event) => activateFromKeyboard(event, onAttack)}
+                title={isMelee ? 'Knife Attack' : `Fire ${currentWeaponDef.name} (${currentAmmo} ammo)`}
               >
-                🗡️ KNIFE
+                <span className="mobile-btn-icon">{currentWeaponDef.icon || '🗡️'}</span>
+                <span className="mobile-btn-label">
+                  {isMelee ? (isKnifeCooling ? `${(knifeCooldownMs / 1000).toFixed(1)}s` : 'KNIFE') : `${currentAmmo}`}
+                </span>
               </button>
               <button
                 className={`mobile-round-btn sprint-btn interactive ${sprintActive ? 'active' : ''}`}

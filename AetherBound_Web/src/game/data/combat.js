@@ -24,6 +24,21 @@ export const ITEM_DEFINITIONS = {
     kind: 'ability', durationMs: 8000, cooldownMs: 26000, color: 0x39d9ff, icon: '🛡️',
     description: 'Block one hit for 8 seconds.',
   },
+  KINETIC_AMMO: {
+    id: 'KINETIC_AMMO', name: 'Blaster Energy Pack', rarity: 'Common', weight: 15,
+    kind: 'ammo', ammoGranted: 20, color: 0xd49b42, icon: '🔋',
+    description: 'Restores 20 rounds of kinetic blaster ammo.',
+  },
+  ENERGY_AMMO: {
+    id: 'ENERGY_AMMO', name: 'Prismatic Cell Pack', rarity: 'Uncommon', weight: 12,
+    kind: 'ammo', ammoGranted: 12, color: 0x39ffff, icon: '✨',
+    description: 'Restores 12 charges of laser & plasma ammo.',
+  },
+  CHEST: {
+    id: 'CHEST', name: 'Aether Supply Cache', rarity: 'Rare', weight: 8,
+    kind: 'cache', color: 0xffaa22, icon: '📦',
+    description: 'Contains high-value crafting supplies and energy cells.',
+  },
 };
 
 export const KNIFE_RULES = {

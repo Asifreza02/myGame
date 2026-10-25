@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CRAFTING_RECIPES, POWERUPS, RESOURCES } from './config.js';
 import { audio } from './audio.js';
 import { loadGameModel, normalizeModel, setModelShadows, tintModelMaterials } from './modelAssets.js';
+import { loadCollectibleTemplate, COLLECTIBLE_ASSET_CONFIG } from './collectibleModels.js';
 
 function createResourceModels() {
   const material = (color, options = {}) => new THREE.MeshStandardMaterial({
@@ -171,24 +172,14 @@ export class PowerUpManager {
   }
 
   loadResourceModels() {
-    const assets = {
-      AETHER_ESSENCE: { model: 'resource-stone', tint: 0x55eaff, size: 0.56 },
-      EMBER_ORE: { model: 'resource-stone-large', tint: 0xe39b62, size: 0.78 },
-      IRONWOOD: { model: 'resource-wood', tint: 0xb58a54, size: 0.78 },
-      MOON_HERB: { model: 'grass-large', tint: 0x83e879, size: 0.9 },
-      TITANIUM_SCRAP: { model: 'metal-panel-screws', tint: 0x8ea2b8, size: 0.62 },
-      CRYSTAL_LENS: { model: 'resource-stone', tint: 0x00dfff, size: 0.56 },
-      ENERGY_CELL: { model: 'barrel', tint: 0xffd95b, size: 0.62 },
-    };
-
-    Promise.all(Object.entries(assets).map(async ([type, asset]) => {
+    const resourceTypes = Object.keys(RESOURCES);
+    Promise.all(resourceTypes.map(async (type) => {
       try {
-        const model = normalizeModel(await loadGameModel(asset.model));
-        if (asset.tint) tintModelMaterials(model, asset.tint);
-        setModelShadows(model, true, false);
-        return [type, { model, size: asset.size }];
+        const config = COLLECTIBLE_ASSET_CONFIG[type];
+        const template = await loadCollectibleTemplate(type);
+        return [type, { model: template, size: config?.scale || 0.85 }];
       } catch (error) {
-        console.warn(`Could not load resource model "${asset.model}".`, error);
+        console.warn(`Could not load collectible 3D model for resource "${type}".`, error);
         return null;
       }
     })).then((loaded) => {

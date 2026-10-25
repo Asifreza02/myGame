@@ -16,6 +16,7 @@ import { RESOURCE_DEFINITIONS, getWeatherState } from './data/world.js';
 import { normalizeMatchConfig } from './data/matchModes.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VoiceManager } from './voice/VoiceManager.js';
+import { createCollectibleEntity, updateCollectibleEntity, preloadAllCollectibleModels } from './collectibleModels.js';
 
 function disposeThreeObject(root) {
   root?.traverse((object) => {
@@ -479,6 +480,7 @@ export class GameEngine {
         this.emitState();
       }
     );
+    preloadAllCollectibleModels();
 
     this.saboteur.onReconCallback = (origin) => {
       if (this.network) {
@@ -931,11 +933,8 @@ export class GameEngine {
         if (!item.active) this.pendingPickups?.delete(item.id);
         let mesh = this.pickupMeshes.get(item.id);
         if (!mesh) {
-          const definition = ITEM_DEFINITIONS[item.type] || RESOURCE_DEFINITIONS[item.type];
-          const color = definition?.color || 0xffffff;
-          const size = item.rarity === 'Rare' ? 0.82 : item.rarity === 'Uncommon' ? 0.72 : 0.62;
-          mesh = new THREE.Mesh(new THREE.OctahedronGeometry(size, 0), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45 }));
-          mesh.position.set(item.x, this.worldManager.getHeightAt(item.x, item.z) + 1.15, item.z);
+          const terrainY = this.worldManager.getHeightAt(item.x, item.z);
+          mesh = createCollectibleEntity(item, terrainY);
           this.scene.add(mesh);
           this.pickupMeshes.set(item.id, mesh);
         }
@@ -1212,12 +1211,19 @@ export class GameEngine {
       this.showToast(`${event.player?.name || 'A hunter'} rejoined the match.`);
     } else if (event.type === 'ITEM_COLLECTED') {
       const mesh = this.pickupMeshes.get(event.id);
-      if (mesh) mesh.visible = false;
+      if (mesh) {
+        mesh.visible = false;
+        if (this.particles) {
+          const def = ITEM_DEFINITIONS[event.itemType] || RESOURCE_DEFINITIONS[event.itemType];
+          this.particles.emitPowerupBurst(mesh.position, def?.color || 0x55eaff, 18);
+        }
+      }
       this.pendingPickups?.delete(event.id);
       if (event.playerId === this.playerId) {
         this.runner.inventory = event.inventory || this.runner.inventory || [];
         this.runner.health = event.health ?? this.runner.health;
         this.playerResources = event.resources || this.playerResources;
+        if (event.ammo) this.playerAmmo = { ...this.playerAmmo, ...event.ammo };
         if (event.kind === 'resource') this.stats.resourcesCollected += 1;
         const definition = ITEM_DEFINITIONS[event.itemType] || RESOURCE_DEFINITIONS[event.itemType];
         this.showToast(`${definition?.name || event.itemType} collected · ${event.rarity || 'Common'}.`);
@@ -1976,11 +1982,10 @@ export class GameEngine {
             this.pendingPickups ||= new Set();
             this.pendingPickups.add(item.id);
             this.network.collectItem(item.id);
-          } else if (distToPlayer < 80) {
+          } else if (distToPlayer < 120) {
             const mesh = this.pickupMeshes.get(item.id);
             if (mesh) {
-              mesh.rotation.y = elapsedTime * 2.0;
-              mesh.position.y = this.worldManager.getHeightAt(item.x, item.z) + 1.15 + Math.sin(elapsedTime * 2.8 + item.x) * 0.18;
+              updateCollectibleEntity(mesh, dt, elapsedTime);
             }
           }
         }
@@ -2151,6 +2156,11 @@ export class GameEngine {
     if (this.renderer && this.renderer.domElement && this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
     }
+    for (const mesh of this.pickupMeshes.values()) {
+      this.scene?.remove(mesh);
+      disposeThreeObject(mesh);
+    }
+    this.pickupMeshes.clear();
     if (this.network) this.network.destroy();
   }
 }

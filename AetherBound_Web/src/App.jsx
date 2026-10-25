@@ -408,6 +408,9 @@ export function App() {
           <MobileActionPad
             activeRole={engineState.activeRole}
             isPlacing={isPlacingMode}
+            equippedWeapon={engineState.equippedWeapon || 'KNIFE'}
+            ammo={engineState.playerAmmo || {}}
+            knifeCooldownMs={engineState.knifeCooldownMs || 0}
             voiceState={engineState.voiceState || {}}
             onToggleVoiceMute={handleToggleVoiceMute}
             onVoicePttActive={handleVoicePttActive}

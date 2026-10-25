@@ -326,6 +326,16 @@ class GameRoom {
         if (archetype === 5) {
           // Aether Loot Station: Guaranteed High-Tier Cache!
           items.push(createAbilityDrop(items.length, wx, wz, 'Rare'));
+          items.push({
+            id: `loot-${items.length}-${Math.floor(random() * 1_000_000).toString(36)}`,
+            type: 'CHEST',
+            kind: 'cache',
+            biome,
+            rarity: 'Rare',
+            x: wx + 1,
+            z: wz + 1,
+            active: true,
+          });
           items.push(createResourceDrop(items.length, wx + 2, wz + 1, biome, 'ENERGY_CELL'));
           items.push(createResourceDrop(items.length, wx - 2, wz - 1, biome, 'TITANIUM_SCRAP'));
         } else if (archetype === 3 || archetype === 4) {
@@ -334,6 +344,16 @@ class GameRoom {
           items.push(createResourceDrop(items.length, wx - 1, wz + 2, biome));
         } else if (archetype === 0 || archetype === 2) {
           // Command Outpost / Military Depot: Combat Supplies
+          items.push({
+            id: `loot-${items.length}-${Math.floor(random() * 1_000_000).toString(36)}`,
+            type: rng() > 0.5 ? 'KINETIC_AMMO' : 'ENERGY_AMMO',
+            kind: 'ammo',
+            biome,
+            rarity: 'Common',
+            x: wx,
+            z: wz + 2,
+            active: true,
+          });
           items.push(createResourceDrop(items.length, wx + 2, wz, biome, 'TITANIUM_SCRAP'));
           items.push(createResourceDrop(items.length, wx - 2, wz, biome, 'EMBER_ORE'));
         }
@@ -680,6 +700,18 @@ class GameRoom {
       player.resources[item.type] = (player.resources[item.type] || 0) + 1;
     } else if (item.type === 'HEALTH') {
       player.health = Math.min(player.maxHealth, player.health + (definition?.heal || 35));
+    } else if (item.type === 'KINETIC_AMMO') {
+      player.ammo = player.ammo || {};
+      player.ammo.PISTOL = Math.min(16, (player.ammo.PISTOL || 0) + 16);
+      player.ammo.GUN = Math.min(30, (player.ammo.GUN || 0) + 20);
+    } else if (item.type === 'ENERGY_AMMO') {
+      player.ammo = player.ammo || {};
+      player.ammo.LASER_GUN = Math.min(15, (player.ammo.LASER_GUN || 0) + 12);
+      player.ammo.PLASMA_CANNON = Math.min(8, (player.ammo.PLASMA_CANNON || 0) + 6);
+    } else if (item.type === 'CHEST') {
+      player.resources.ENERGY_CELL = (player.resources.ENERGY_CELL || 0) + 2;
+      player.resources.TITANIUM_SCRAP = (player.resources.TITANIUM_SCRAP || 0) + 2;
+      player.resources.AETHER_ESSENCE = (player.resources.AETHER_ESSENCE || 0) + 2;
     } else {
       player.inventory = [...new Set([...player.inventory, item.type])];
     }
@@ -693,6 +725,7 @@ class GameRoom {
       rarity: item.rarity,
       playerId: player.id,
       health: player.health,
+      ammo: player.ammo,
       inventory: player.inventory,
       resources: player.resources,
     });
