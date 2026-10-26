@@ -11,7 +11,17 @@ import { ParticleSystem } from './particles.js';
 import { PowerUpManager } from './powerups.js';
 import { audio } from './audio.js';
 import { requestPointerLock as lockPointer } from './pointerLock.js';
-import { ITEM_DEFINITIONS, KNIFE_RULES, WEAPON_DEFINITIONS, WEAPON_CRAFTING_RECIPES } from './data/combat.js';
+import {
+  ITEM_DEFINITIONS,
+  KNIFE_RULES,
+  WEAPON_DEFINITIONS,
+  WEAPON_CRAFTING_RECIPES,
+  MAGIC_STICKS,
+  MAGIC_POWERS,
+  TRAP_DEFINITIONS,
+  MOB_SYSTEM_CONFIG,
+  ARCANE_CRAFTING_RECIPES,
+} from './data/combat.js';
 import { RESOURCE_DEFINITIONS, getWeatherState } from './data/world.js';
 import { normalizeMatchConfig } from './data/matchModes.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -133,6 +143,61 @@ function drawPlayerNameplate(canvas, ctx, name, health, maxHealth, color = '#00f
   }
 }
 
+function drawMobNameplate(canvas, ctx, name, health, maxHealth, tier) {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const isFire = tier === 2;
+  const borderColor = isFire ? '#ff5511' : '#22aaff';
+
+  ctx.fillStyle = 'rgba(8, 14, 22, 0.9)';
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(4, 4, w - 8, h - 8, 10);
+  ctx.fill();
+  ctx.stroke();
+
+  // Tier Icon Dot
+  ctx.fillStyle = isFire ? '#ff5511' : '#22aaff';
+  ctx.beginPath();
+  ctx.arc(24, 24, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Mob Name Text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, 40, 24);
+
+  // Health Bar
+  const barX = 14;
+  const barY = 44;
+  const barW = w - 28;
+  const barH = 16;
+  ctx.fillStyle = 'rgba(20, 28, 38, 0.95)';
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 4);
+  ctx.fill();
+
+  const pct = Math.max(0, Math.min(1, (health ?? maxHealth) / (maxHealth || 1)));
+  ctx.fillStyle = isFire ? '#ff6622' : '#33ccff';
+  if (pct > 0) {
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * pct, barH, 4);
+    ctx.fill();
+  }
+
+  // HP Text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${Math.ceil(health)} / ${maxHealth}`, barX + barW / 2, barY + barH / 2);
+}
+
 export class GameEngine {
   constructor(containerElement, onStateChange) {
     this.container = containerElement;
@@ -198,12 +263,28 @@ export class GameEngine {
     this.lastWeatherId = null;
     this.matchStats = { kills: 0, survivalTime: 0, itemsCollected: 0, damageDealt: 0, dragonDamage: 0 };
     this.playerResources = {};
-    this.equippedWeapon = 'KNIFE';
-    this.weapons = ['KNIFE'];
+    this.equippedStick = 'APPRENTICE_STICK';
+    this.equippedWeapon = 'APPRENTICE_STICK';
+    this.weapons = ['APPRENTICE_STICK', 'KNIFE'];
+    this.powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null];
+    this.backpack = {
+      sticks: ['APPRENTICE_STICK'],
+      powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+      resources: {},
+    };
+    this.statusEffects = [];
     this.playerAmmo = { PISTOL: 0, GUN: 0, LASER_GUN: 0, PLASMA_CANNON: 0 };
     this.activeTracers = [];
     this.craftingModalOpen = false;
+    this.backpackModalOpen = false;
     this.matchHistory = this.loadMatchHistory();
+
+    // Aim Target & Aim Assist State
+    this.hasTarget = false;
+    this.aimAssistActive = false;
+    this.targetInfo = null;
+    this.targetName = '';
+    this.wasTargetLocked = false;
 
     this.voiceManager = null;
     this.voiceState = {
@@ -380,8 +461,46 @@ export class GameEngine {
     this.scene.add(this.dragonTelegraphRing);
     this.dragonBreathTelegraph = null;
 
-    this.onCombatClick = () => {
+    // Dragon 3s Pre-Landing Warning Decal
+    const landingRingMat = new THREE.MeshBasicMaterial({
+      color: 0xff3300,
+      transparent: true,
+      opacity: 0.88,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.dragonLandingRing = new THREE.Mesh(new THREE.RingGeometry(8.0, 8.5, 48), landingRingMat);
+    this.dragonLandingRing.rotation.x = -Math.PI / 2;
+    this.dragonLandingRing.visible = false;
+    this.scene.add(this.dragonLandingRing);
+
+    const landingDiscMat = new THREE.MeshBasicMaterial({
+      color: 0xff4400,
+      transparent: true,
+      opacity: 0.28,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.dragonLandingDisc = new THREE.Mesh(new THREE.CircleGeometry(8.0, 48), landingDiscMat);
+    this.dragonLandingDisc.rotation.x = -Math.PI / 2;
+    this.dragonLandingDisc.visible = false;
+    this.scene.add(this.dragonLandingDisc);
+
+    this.initTrapSystems();
+    this.initMobSystems();
+
+    this.onCombatClick = (e) => {
       if (this.gameState !== 'PLAYING' || this.activeRole !== 'player') return;
+      if (e && e.button === 2) {
+        if (this.isPlacingTrap) {
+          this.cancelTrapTargeting();
+          return;
+        }
+      }
+      if (this.isPlacingTrap) {
+        this.confirmTrapPlacement();
+        return;
+      }
       this.attack();
     };
     this.renderer.domElement.addEventListener('pointerdown', this.onCombatClick);
@@ -390,27 +509,51 @@ export class GameEngine {
       const activeTag = document.activeElement?.tagName;
       if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
 
-      if (event.code === 'KeyC' || event.code === 'KeyB') {
+      if (event.code === 'Escape') {
+        if (this.isPlacingTrap) {
+          this.cancelTrapTargeting();
+          return;
+        }
+        if (this.craftingModalOpen) {
+          this.setCraftingModalOpen(false);
+          return;
+        }
+        if (this.backpackModalOpen) {
+          this.setBackpackModalOpen(false);
+          return;
+        }
+      }
+      if (event.code === 'KeyC') {
         this.toggleCraftingModal();
         return;
       }
-      // Weapon Number Keys: 1 to 5
-      if (['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(event.code)) {
-        const slotIdx = Number(event.code.replace('Digit', '')) - 1;
-        if (slotIdx >= 0 && slotIdx < this.weapons.length) {
-          this.equipWeapon(this.weapons[slotIdx]);
-          return;
-        }
+      if (event.code === 'KeyB' || event.code === 'KeyI') {
+        this.toggleBackpackModal();
+        return;
       }
-      // Ability Keys: Q, E, R, F, Z, X
-      const abilityKeys = ['KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyZ', 'KeyX'];
-      const abilityIdx = abilityKeys.indexOf(event.code);
-      if (abilityIdx !== -1) {
-        const abilities = this.runner?.inventory || [];
-        if (abilityIdx < abilities.length) {
-          this.activateAbility(abilities[abilityIdx]);
-          return;
+      // Slot 0 (Key 1): Dedicated Magical Stick
+      if (event.code === 'Digit1') {
+        this.equipStick(this.equippedStick || 'APPRENTICE_STICK');
+        return;
+      }
+      // Power Slots 1 to 7 (Number Keys 2 to 8, or letter hotkeys Q, E, R, F, Z, X, V)
+      const digitCodes = ['Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'];
+      const abilityKeys = ['KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyZ', 'KeyX', 'KeyV'];
+
+      let powerSlotIndex = digitCodes.indexOf(event.code);
+      if (powerSlotIndex === -1) {
+        powerSlotIndex = abilityKeys.indexOf(event.code);
+      }
+
+      if (powerSlotIndex !== -1 && powerSlotIndex < 7) {
+        const slots = this.powerSlots || [];
+        const powerId = slots[powerSlotIndex];
+        if (powerId) {
+          this.activateAbility(powerId);
+        } else {
+          this.toggleBackpackModal();
         }
+        return;
       }
     };
     window.addEventListener('keydown', this.onKeyDownHandler);
@@ -803,6 +946,15 @@ export class GameEngine {
         this.runner.maxHealth = player.maxHealth;
         this.runner.inventory = player.inventory || [];
         this.playerResources = player.resources || {};
+        this.equippedStick = player.equippedStick || player.equippedWeapon || 'APPRENTICE_STICK';
+        this.equippedWeapon = this.equippedStick;
+        this.powerSlots = player.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null];
+        this.backpack = player.backpack || {
+          sticks: [this.equippedStick],
+          powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+          resources: this.playerResources,
+        };
+        this.statusEffects = player.statusEffects || [];
         this.matchStats = player.stats || this.matchStats;
         this.abilityCooldowns = player.abilityReadyAt || this.abilityCooldowns;
         this.localPlayerColor = player.color || '#00f0ff';
@@ -947,9 +1099,53 @@ export class GameEngine {
       this.scene.remove(mesh);
       this.hazardMeshes.delete(id);
     }
+    if (this.worldTraps) {
+      const activeTraps = new Set((snapshot.traps || []).map((trap) => trap.id));
+      for (const [id, mesh] of this.worldTraps) {
+        if (activeTraps.has(id)) continue;
+        this.scene.remove(mesh);
+        this.worldTraps.delete(id);
+      }
+      if (Array.isArray(snapshot.traps)) {
+        for (const trap of snapshot.traps) {
+          if (!this.worldTraps.has(trap.id)) {
+            const mesh = this.createWorldTrapMesh(trap);
+            this.worldTraps.set(trap.id, mesh);
+          }
+        }
+      }
+    }
+    if (this.worldMobs && Array.isArray(snapshot.mobs)) {
+      const activeMobIds = new Set(snapshot.mobs.filter((m) => m.alive).map((m) => m.id));
+      for (const [id, group] of this.worldMobs) {
+        if (!activeMobIds.has(id)) {
+          this.scene.remove(group);
+          group.userData?.labelTexture?.dispose();
+          this.worldMobs.delete(id);
+        }
+      }
+      for (const mob of snapshot.mobs) {
+        if (!mob.alive) continue;
+        let mobGroup = this.worldMobs.get(mob.id);
+        if (!mobGroup) {
+          mobGroup = this.createMobMesh(mob);
+          this.worldMobs.set(mob.id, mobGroup);
+        }
+        mobGroup.userData.targetPos.set(mob.x, mob.y, mob.z);
+        mobGroup.userData.targetYaw = mob.ry || 0;
+        if (mobGroup.userData.lastHealth !== mob.health) {
+          mobGroup.userData.lastHealth = mob.health;
+          drawMobNameplate(mobGroup.userData.labelCanvas, mobGroup.userData.labelCtx, mob.name, mob.health, mob.maxHealth, mob.tier);
+          mobGroup.userData.labelTexture.needsUpdate = true;
+        }
+      }
+    }
     if (this.dragonMesh && this.dragonState) {
-      const flightHeight = Number.isFinite(this.dragonState.y) ? this.dragonState.y : 11;
-      this.dragonBaseY = this.worldManager.getHeightAt(this.dragonState.x, this.dragonState.z) + flightHeight;
+      const isGrounded = this.dragonState.flightPhase === 'GROUNDED';
+      const altitude = Number.isFinite(this.dragonState.altitude)
+        ? this.dragonState.altitude
+        : (isGrounded ? 0.6 : 14.0);
+      this.dragonBaseY = this.worldManager.getHeightAt(this.dragonState.x, this.dragonState.z) + altitude;
       this.dragonTargetPosition.set(this.dragonState.x, this.dragonBaseY, this.dragonState.z);
       this.dragonTargetYaw = this.dragonState.ry || 0;
       this.dragonMesh.visible = this.dragonState.alive;
@@ -1044,6 +1240,7 @@ export class GameEngine {
     if (this.lastTelegraphId !== attack.id) {
       this.lastTelegraphId = attack.id;
       this.playDragonAnimation(attack.type === 'FIRE_BREATH' ? 'roar' : 'bite', false);
+      audio.playDragonRoar();
       this.showToast(`DRAGON ATTACK: ${attack.name.toUpperCase()} — DODGE THE MARKED AREA!`);
     }
   }
@@ -1085,30 +1282,213 @@ export class GameEngine {
     this.dragonBreathTelegraph = null;
   }
 
+  showLandingWarningDecal(pos, durationMs = 3000) {
+    if (!this.dragonLandingRing || !this.dragonLandingDisc) return;
+    const y = this.worldManager.getHeightAt(pos.x, pos.z) + 0.18;
+    this.dragonLandingRing.position.set(pos.x, y, pos.z);
+    this.dragonLandingDisc.position.set(pos.x, y - 0.02, pos.z);
+    this.dragonLandingRing.visible = true;
+    this.dragonLandingDisc.visible = true;
+
+    if (this.landingWarningTimeout) clearTimeout(this.landingWarningTimeout);
+    this.landingWarningTimeout = setTimeout(() => {
+      if (this.dragonLandingRing) this.dragonLandingRing.visible = false;
+      if (this.dragonLandingDisc) this.dragonLandingDisc.visible = false;
+    }, durationMs);
+  }
+
+  spawnGroundImpactShockwaveVFX(pos) {
+    if (this.dragonLandingRing) this.dragonLandingRing.visible = false;
+    if (this.dragonLandingDisc) this.dragonLandingDisc.visible = false;
+
+    if (this.particles) {
+      const pY = this.worldManager.getHeightAt(pos.x, pos.z) + 0.2;
+      this.particles.emitExplosion({ x: pos.x, y: pY, z: pos.z });
+      this.particles.emitPowerupBurst({ x: pos.x, y: pY + 0.6, z: pos.z }, 0xff5511, 40);
+    }
+    // Screen / camera shockwave reaction if local player is within blast range
+    const dist = Math.hypot(this.runner.position.x - pos.x, this.runner.position.z - pos.z);
+    if (dist < 40) {
+      this.damageFlash = Math.max(this.damageFlash || 0, Date.now() - 60);
+    }
+  }
+
   handleGameEvent(event) {
     if (event.type === 'WEAPON_CRAFTED') {
       if (event.playerId === this.playerId) {
         this.weapons = event.weapons || this.weapons;
         this.playerAmmo = event.ammo || this.playerAmmo;
         this.playerResources = event.resources || this.playerResources;
-        if (event.equippedWeapon) {
-          this.equippedWeapon = event.equippedWeapon;
-          this.runner?.setEquippedWeapon(event.equippedWeapon);
+        if (event.equippedStick || event.equippedWeapon) {
+          const stick = event.equippedStick || event.equippedWeapon;
+          this.equippedStick = stick;
+          this.equippedWeapon = stick;
+          this.runner?.setEquippedWeapon(stick);
         }
+        if (event.backpack) this.backpack = event.backpack;
+        if (event.powerSlots) this.powerSlots = event.powerSlots;
         audio.playCraftSuccess();
-        const def = WEAPON_DEFINITIONS[event.weaponId];
-        this.showToast(def ? `Forged ${def.name}!` : `Forged ammo pack!`);
+        const def = WEAPON_DEFINITIONS[event.weaponId] || MAGIC_STICKS[event.stickId] || MAGIC_POWERS[event.powerId];
+        this.showToast(def ? `Forged ${def.name}!` : `Crafted successfully!`);
       } else {
         const rival = this.remotePlayers.get(event.playerId)?.state?.name || 'A rival';
-        const def = WEAPON_DEFINITIONS[event.weaponId];
-        if (def) this.showToast(`${rival} forged ${def.name}!`);
+        const def = WEAPON_DEFINITIONS[event.weaponId] || MAGIC_STICKS[event.stickId] || MAGIC_POWERS[event.powerId];
+        if (def) this.showToast(`${rival} crafted ${def.name}!`);
       }
       this.emitState();
+      return;
+    }
+    if (event.type === 'STICK_EQUIPPED') {
+      if (event.playerId === this.playerId) {
+        this.equippedStick = event.stickId;
+        this.equippedWeapon = event.stickId;
+        this.runner?.setEquippedWeapon(event.stickId);
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'POWER_SLOT_CHANGED') {
+      if (event.playerId === this.playerId && event.powerSlots) {
+        this.powerSlots = event.powerSlots;
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'STATUS_EFFECT_APPLIED') {
+      if (event.playerId === this.playerId && event.effect) {
+        this.statusEffects = this.statusEffects || [];
+        const existing = this.statusEffects.find((e) => e.type === event.effect.type);
+        if (existing) {
+          existing.expiresAt = event.effect.expiresAt;
+        } else {
+          this.statusEffects.push(event.effect);
+        }
+        if (event.effect.type === 'BURN') {
+          this.damageFlash = Date.now();
+          this.showToast('🔥 Burning! Taking fire damage over time.');
+        } else if (event.effect.type === 'FREEZE' || event.effect.type === 'FROST_FREEZE') {
+          this.showToast('❄️ Frozen! Rooted in place by frost.');
+        }
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'TRAP_DEPLOYED') {
+      if (event.trap) this.handleTrapDeployed(event.trap);
+      return;
+    }
+    if (event.type === 'TRAP_TRIGGERED') {
+      this.handleTrapTriggered(event);
+      return;
+    }
+    if (event.type === 'SPELL_CAST') {
+      this.spawnSpellTracer(event);
+      return;
+    }
+    if (event.type === 'DRAGON_STUNNED') {
+      this.showToast(`❄️ ${event.reason || 'Dragon is frozen on the ground!'}`);
+      return;
+    }
+    if (event.type === 'DRAGON_LANDING_TELEGRAPH') {
+      const pos = event.position || {
+        x: this.dragonMesh ? this.dragonMesh.position.x : 42,
+        y: this.worldManager.getHeightAt(42, -34),
+        z: this.dragonMesh ? this.dragonMesh.position.z : -34,
+      };
+      this.showLandingWarningDecal(pos, (event.durationSeconds || 3) * 1000);
+      this.showToast('⚠️ WARNING: Dragon crash-landing imminent in 3s! Clear the impact zone!');
+      audio.playExplosion();
+      return;
+    }
+    if (event.type === 'DRAGON_LANDED') {
+      if (this.dragonState) {
+        this.dragonState.flightPhase = 'GROUNDED';
+        this.dragonState.flightPhaseTimer = event.durationSeconds || 25;
+      }
+      this.playDragonAnimation('idle_loop', true);
+      const pos = event.position || {
+        x: this.dragonMesh ? this.dragonMesh.position.x : 42,
+        y: this.worldManager.getHeightAt(42, -34),
+        z: this.dragonMesh ? this.dragonMesh.position.z : -34,
+      };
+      this.spawnGroundImpactShockwaveVFX(pos);
+      audio.playExplosion();
+      this.showToast('🐉 THE DRAGON HAS LANDED! 1.25x Vulnerability & Ground Traps Active for 25s!');
+      this.emitState();
+      return;
+    }
+    if (event.type === 'DRAGON_TAKEOFF') {
+      if (this.dragonState) {
+        this.dragonState.flightPhase = 'AERIAL';
+        this.dragonState.flightPhaseTimer = event.durationSeconds || 60;
+      }
+      this.playDragonAnimation('takeoff', false);
+      setTimeout(() => {
+        if (this.dragonState?.flightPhase === 'AERIAL') {
+          this.playDragonAnimation('fly_loop', true);
+        }
+      }, 1500);
+      audio.playWingsFlap();
+      this.showToast('🦅 The dragon ascends into the skies! Prepare for aerial attacks.');
+      this.emitState();
+      return;
+    }
+    if (event.type === 'MOB_ATTACK') {
+      const origin = event.origin || { x: 0, y: 1.0, z: 0 };
+      const target = event.target || { x: this.runner.position.x, y: this.runner.position.y + 1.0, z: this.runner.position.z };
+      const isFire = event.attackType === 'FIRE_SPIT';
+
+      if (isFire) audio.playPlasma();
+      else audio.playSplash();
+
+      this.spawnMobProjectileTracer(origin, target, isFire);
+
+      if (event.targetId === this.playerId) {
+        this.damageFlash = Date.now();
+        this.showToast(isFire ? `🔥 Struck by Flame Brute! (-${event.damage} DMG)` : `💧 Struck by Aqua Fiend! (-${event.damage} DMG)`);
+      }
+      return;
+    }
+    if (event.type === 'MOB_DAMAGED') {
+      const mobGroup = this.worldMobs?.get(event.mobId);
+      if (mobGroup) {
+        mobGroup.userData.hitFlashTimer = 0.18;
+        if (mobGroup.userData.bodyMesh?.material) {
+          mobGroup.userData.bodyMesh.material.emissiveIntensity = 2.4;
+        }
+        mobGroup.userData.lastHealth = event.health;
+        drawMobNameplate(mobGroup.userData.labelCanvas, mobGroup.userData.labelCtx, mobGroup.userData.mob.name, event.health, event.maxHealth, mobGroup.userData.mob.tier);
+        mobGroup.userData.labelTexture.needsUpdate = true;
+      }
+      return;
+    }
+    if (event.type === 'MOB_DEFEATED') {
+      const mobGroup = this.worldMobs?.get(event.mobId);
+      if (mobGroup) {
+        const pos = mobGroup.position.clone();
+        if (event.tier === 2) {
+          this.spawnFlameEruptionVFX(pos);
+        } else {
+          this.spawnFrostCageVFX(pos);
+        }
+        this.scene.remove(mobGroup);
+        mobGroup.userData?.labelTexture?.dispose();
+        this.worldMobs.delete(event.mobId);
+      }
+      if (event.killerId === this.playerId) {
+        this.showToast(`✨ Defeated ${event.mobType}! Natural resources dropped.`);
+        audio.playCraftSuccess();
+      }
+      return;
+    }
+    if (event.type === 'MOB_ESCALATION') {
+      this.showToast(event.message || '⚠️ Mob escalation active!');
       return;
     }
     if (event.type === 'WEAPON_EQUIPPED') {
       if (event.playerId === this.playerId) {
         this.equippedWeapon = event.weaponId;
+        this.equippedStick = event.weaponId;
         this.runner?.setEquippedWeapon(event.weaponId);
       }
       this.emitState();
@@ -1220,9 +1600,11 @@ export class GameEngine {
       }
       this.pendingPickups?.delete(event.id);
       if (event.playerId === this.playerId) {
+        audio.playPowerupPickup();
         this.runner.inventory = event.inventory || this.runner.inventory || [];
         this.runner.health = event.health ?? this.runner.health;
         this.playerResources = event.resources || this.playerResources;
+        if (event.backpack) this.backpack = event.backpack;
         if (event.ammo) this.playerAmmo = { ...this.playerAmmo, ...event.ammo };
         if (event.kind === 'resource') this.stats.resourcesCollected += 1;
         const definition = ITEM_DEFINITIONS[event.itemType] || RESOURCE_DEFINITIONS[event.itemType];
@@ -1246,7 +1628,8 @@ export class GameEngine {
       this.showToast(event.reason || 'Ability could not be used.');
     } else if (event.type === 'DRAGON_DAMAGED') {
       this.dragonState.health = event.health;
-      this.showToast(`Dragon took ${event.damage || 0} damage · ${event.health} health left.`);
+      const vulnText = event.isVulnerable ? ' (💥 CRITICAL HIT · 1.25x Grounded DMG)' : '';
+      this.showToast(`Dragon took ${event.damage || 0} damage${vulnText} · ${event.health} health left.`);
     } else if (event.type === 'DRAGON_ATTACK_TELEGRAPH') {
       this.dragonState.attack = event.attack;
       this.updateDragonTelegraph(event.attack);
@@ -1254,9 +1637,18 @@ export class GameEngine {
       const resolvedAttack = this.dragonState.attack;
       this.dragonState.attack = null;
       this.updateDragonTelegraph(null);
-      if (resolvedAttack?.type === 'FIRE_BREATH' && resolvedAttack.target && this.particles) {
-        const { x, z } = resolvedAttack.target;
-        this.particles.emitExplosion({ x, y: this.worldManager.getHeightAt(x, z) + 0.1, z });
+      if (resolvedAttack && this.particles) {
+        if (resolvedAttack.type === 'FIRE_BREATH' && resolvedAttack.target) {
+          const { x, z } = resolvedAttack.target;
+          this.particles.emitExplosion({ x, y: this.worldManager.getHeightAt(x, z) + 0.1, z });
+        } else if (resolvedAttack.type === 'GROUND_SLAM') {
+          const origin = resolvedAttack.target || resolvedAttack.origin || this.dragonMesh.position;
+          this.particles.emitExplosion({ x: origin.x, y: this.worldManager.getHeightAt(origin.x, origin.z) + 0.2, z: origin.z });
+          this.particles.emitPowerupBurst({ x: origin.x, y: this.worldManager.getHeightAt(origin.x, origin.z) + 0.5, z: origin.z }, 0xffaa22, 35);
+        } else if (resolvedAttack.type === 'TAIL_SWEEP') {
+          const origin = this.dragonMesh.position;
+          this.particles.emitPowerupBurst({ x: origin.x, y: this.worldManager.getHeightAt(origin.x, origin.z) + 0.5, z: origin.z }, 0xff6622, 25);
+        }
       }
       const localHit = event.impacted?.find((entry) => entry.playerId === this.playerId);
       if (localHit?.damage === 0) this.showToast('Aegis Ward absorbed the dragon attack.');
@@ -1516,31 +1908,542 @@ export class GameEngine {
   }
 
   activateAbility(ability) {
-    if (this.activeRole !== 'player' || !this.runner.inventory?.includes(ability)) return;
+    if (this.activeRole !== 'player') return;
+    if (TRAP_DEFINITIONS[ability]) {
+      this.startTrapTargeting(ability);
+      return;
+    }
+    if (MAGIC_POWERS[ability]) {
+      const def = MAGIC_POWERS[ability];
+      if (def.category === 'defense') {
+        this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
+        if (audio.playShield) audio.playShield();
+      } else {
+        const origin = new THREE.Vector3(this.runner.position.x, this.runner.position.y + 1.2, this.runner.position.z);
+        const camDir = new THREE.Vector3();
+        this.camera.getWorldDirection(camDir);
+        this.network?.castSpell(ability, origin, camDir);
+        if (def.color === 0xff4411) audio.playPlasma();
+        else audio.playSpark();
+      }
+      return;
+    }
     this.network?.useAbility(ability);
+  }
+
+  initTrapSystems() {
+    this.worldTraps = new Map();
+    this.isPlacingTrap = false;
+    this.activeTargetingTrap = null;
+
+    this.trapTargetingGroup = new THREE.Group();
+    const outerRingGeo = new THREE.RingGeometry(2.4, 2.7, 36);
+    const outerRingMat = new THREE.MeshBasicMaterial({
+      color: 0x33ccff,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.trapTargetingOuter = new THREE.Mesh(outerRingGeo, outerRingMat);
+    this.trapTargetingOuter.rotation.x = -Math.PI / 2;
+    this.trapTargetingGroup.add(this.trapTargetingOuter);
+
+    const innerRingGeo = new THREE.RingGeometry(0.75, 0.95, 24);
+    const innerRingMat = new THREE.MeshBasicMaterial({
+      color: 0x33ccff,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.trapTargetingInner = new THREE.Mesh(innerRingGeo, innerRingMat);
+    this.trapTargetingInner.rotation.x = -Math.PI / 2;
+    this.trapTargetingGroup.add(this.trapTargetingInner);
+
+    this.trapTargetingLight = new THREE.PointLight(0x33ccff, 2.2, 9);
+    this.trapTargetingLight.position.y = 0.5;
+    this.trapTargetingGroup.add(this.trapTargetingLight);
+
+    this.trapTargetingGroup.visible = false;
+    this.scene.add(this.trapTargetingGroup);
+  }
+
+  startTrapTargeting(trapType) {
+    const def = TRAP_DEFINITIONS[trapType] || MAGIC_POWERS[trapType];
+    if (!def) return;
+    this.isPlacingTrap = true;
+    this.activeTargetingTrap = trapType;
+    const color = def.color || 0x33ccff;
+    if (this.trapTargetingOuter) this.trapTargetingOuter.material.color.setHex(color);
+    if (this.trapTargetingInner) this.trapTargetingInner.material.color.setHex(color);
+    if (this.trapTargetingLight) this.trapTargetingLight.color.setHex(color);
+    this.trapTargetingGroup.visible = true;
+    this.showToast(`[LMB / TAP] Place ${def.name} · [RMB / ESC] Cancel`);
+    this.emitState();
+  }
+
+  cancelTrapTargeting() {
+    this.isPlacingTrap = false;
+    this.activeTargetingTrap = null;
+    if (this.trapTargetingGroup) this.trapTargetingGroup.visible = false;
+    this.emitState();
+  }
+
+  confirmTrapPlacement() {
+    if (!this.isPlacingTrap || !this.activeTargetingTrap) return;
+    const trapPos = this.trapTargetingGroup.position.clone();
+    this.network?.deployTrap(this.activeTargetingTrap, trapPos);
+    audio.playTrapArm();
+    this.cancelTrapTargeting();
+  }
+
+  updateTrapTargeting(dt) {
+    if (!this.isPlacingTrap || !this.trapTargetingGroup.visible) return;
+    if (this.trapTargetingOuter) this.trapTargetingOuter.rotation.z += 1.2 * dt;
+    if (this.trapTargetingInner) this.trapTargetingInner.rotation.z -= 1.8 * dt;
+
+    const camDir = new THREE.Vector3();
+    this.camera.getWorldDirection(camDir);
+
+    const targetDist = 12.0;
+    const groundX = this.runner.position.x + camDir.x * targetDist;
+    const groundZ = this.runner.position.z + camDir.z * targetDist;
+    const groundY = this.worldManager.getHeightAt(groundX, groundZ) + 0.12;
+
+    this.trapTargetingGroup.position.set(groundX, groundY, groundZ);
+  }
+
+  createWorldTrapMesh(trap) {
+    const def = TRAP_DEFINITIONS[trap.trapType] || MAGIC_POWERS[trap.trapType] || {};
+    const color = trap.color || def.color || 0x33ccff;
+
+    const group = new THREE.Group();
+    group.position.set(trap.x, trap.y + 0.08, trap.z);
+
+    const discGeo = new THREE.RingGeometry(0.2, trap.radius || 2.8, 28);
+    const discMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const discMesh = new THREE.Mesh(discGeo, discMat);
+    discMesh.rotation.x = -Math.PI / 2;
+    group.add(discMesh);
+
+    const coreGeo = new THREE.CylinderGeometry(0.35, 0.45, 0.15, 8);
+    const coreMat = new THREE.MeshStandardMaterial({
+      color: 0x222233,
+      emissive: color,
+      emissiveIntensity: 0.8,
+      roughness: 0.4,
+    });
+    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+    coreMesh.position.y = 0.08;
+    group.add(coreMesh);
+
+    const runeLight = new THREE.PointLight(color, 1.5, 6);
+    runeLight.position.y = 0.4;
+    group.add(runeLight);
+
+    group.userData = {
+      trap,
+      discMesh,
+      runeLight,
+      color,
+      spawnedAt: Date.now(),
+    };
+    this.scene.add(group);
+    return group;
+  }
+
+  handleTrapDeployed(trap) {
+    if (this.worldTraps.has(trap.id)) return;
+    const mesh = this.createWorldTrapMesh(trap);
+    this.worldTraps.set(trap.id, mesh);
+    if (trap.ownerId === this.playerId) {
+      this.showToast(`Placed ${trap.name || 'Magical Trap'}! Arms in 1s.`);
+    }
+  }
+
+  handleTrapTriggered(event) {
+    const trapMesh = this.worldTraps.get(event.trapId);
+    if (trapMesh) {
+      this.scene.remove(trapMesh);
+      this.worldTraps.delete(event.trapId);
+    }
+
+    const pos = new THREE.Vector3(event.x, event.y || this.worldManager.getHeightAt(event.x, event.z), event.z);
+
+    if (event.trapType === 'FROST_TRAP') {
+      audio.playFrostFreeze();
+      this.spawnFrostCageVFX(pos);
+    } else if (event.trapType === 'FLAME_SIGIL') {
+      audio.playFlameExplosion();
+      this.spawnFlameEruptionVFX(pos);
+    } else if (event.trapType === 'GRAVITY_SNARE') {
+      audio.playGravityVortex();
+      this.spawnGravityVortexVFX(pos);
+    }
+
+    if (event.victimId === this.playerId) {
+      this.showToast(`⚠️ You stepped into a ${event.trapType}!`);
+      this.damageFlash = Date.now();
+    } else if (event.attackerId === this.playerId) {
+      this.showToast(`💥 Your ${event.trapType} triggered! (+${event.damage} DMG)`);
+    } else if (event.victimId === 'dragon') {
+      this.showToast(`🐉 Dragon struck by ${event.trapType}!`);
+    }
+    this.emitState();
+  }
+
+  spawnFrostCageVFX(pos) {
+    const cageGroup = new THREE.Group();
+    cageGroup.position.copy(pos);
+    const iceGeo = new THREE.ConeGeometry(0.25, 2.8, 5);
+    const iceMat = new THREE.MeshStandardMaterial({
+      color: 0x88eeff,
+      emissive: 0x33ccff,
+      emissiveIntensity: 0.9,
+      transparent: true,
+      opacity: 0.82,
+      roughness: 0.1,
+    });
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      const spike = new THREE.Mesh(iceGeo, iceMat);
+      spike.position.set(Math.cos(angle) * 1.5, 1.4, Math.sin(angle) * 1.5);
+      spike.rotation.x = (Math.random() - 0.5) * 0.2;
+      spike.rotation.z = (Math.random() - 0.5) * 0.2;
+      cageGroup.add(spike);
+    }
+    this.scene.add(cageGroup);
+    this.activeTracers.push({
+      mesh: cageGroup,
+      life: 2.2,
+      maxLife: 2.2,
+      onUpdate: (progress) => {
+        cageGroup.scale.setScalar(Math.min(1.0, (1 - progress) * 4));
+      },
+    });
+  }
+
+  spawnFlameEruptionVFX(pos) {
+    const fireGeo = new THREE.SphereGeometry(2.5, 12, 10);
+    const fireMat = new THREE.MeshBasicMaterial({
+      color: 0xff4400,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+    });
+    const fireSphere = new THREE.Mesh(fireGeo, fireMat);
+    fireSphere.position.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
+    this.scene.add(fireSphere);
+    this.activeTracers.push({
+      mesh: fireSphere,
+      life: 0.55,
+      maxLife: 0.55,
+      onUpdate: (progress) => {
+        fireSphere.scale.setScalar(1.0 + (1 - progress) * 2.5);
+        fireMat.opacity = progress * 0.85;
+      },
+    });
+  }
+
+  spawnGravityVortexVFX(pos) {
+    const vortexGeo = new THREE.RingGeometry(0.2, 3.2, 24);
+    const vortexMat = new THREE.MeshBasicMaterial({
+      color: 0xaa22ff,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    const vortexMesh = new THREE.Mesh(vortexGeo, vortexMat);
+    vortexMesh.position.copy(pos).add(new THREE.Vector3(0, 0.2, 0));
+    vortexMesh.rotation.x = -Math.PI / 2;
+    this.scene.add(vortexMesh);
+    this.activeTracers.push({
+      mesh: vortexMesh,
+      life: 1.8,
+      maxLife: 1.8,
+      onUpdate: (progress, dt) => {
+        vortexMesh.rotation.z += 8 * dt;
+        vortexMat.opacity = progress * 0.8;
+      },
+    });
+  }
+
+  spawnSpellTracer(event) {
+    const origin = event.origin || { x: 0, y: 1.2, z: 0 };
+    const hitPoint = event.hitPoint || { x: origin.x, y: origin.y, z: origin.z + 20 };
+    const powerId = event.powerId || 'FIREBALL';
+    const def = MAGIC_POWERS[powerId] || {};
+    const color = event.color || def.color || 0xff5511;
+
+    const start = new THREE.Vector3(origin.x, origin.y, origin.z);
+    const end = new THREE.Vector3(hitPoint.x, hitPoint.y, hitPoint.z);
+    const dist = Math.max(0.1, start.distanceTo(end));
+
+    if (powerId === 'LIGHTNING_BOLT') {
+      audio.playLaser();
+      const beamGeo = new THREE.CylinderGeometry(0.12, 0.12, dist, 8);
+      beamGeo.rotateX(Math.PI / 2);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0xffea44,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+      });
+      const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+      beamMesh.position.copy(start).lerp(end, 0.5);
+      beamMesh.lookAt(end);
+      this.scene.add(beamMesh);
+      this.activeTracers.push({ mesh: beamMesh, life: 0.15, maxLife: 0.15 });
+    } else {
+      if (powerId === 'FIREBALL') audio.playPlasma();
+      else audio.playSpark();
+
+      const orbGeo = new THREE.SphereGeometry(powerId === 'FIREBALL' ? 0.38 : 0.28, 10, 8);
+      const orbMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+      });
+      const orbMesh = new THREE.Mesh(orbGeo, orbMat);
+      orbMesh.position.copy(start);
+      this.scene.add(orbMesh);
+
+      const dir = end.clone().sub(start).normalize();
+      const speed = 45;
+      const life = Math.min(dist / speed, 0.6);
+      this.activeTracers.push({
+        mesh: orbMesh,
+        life,
+        maxLife: life,
+        isPlasma: true,
+        velocity: dir.multiplyScalar(speed),
+      });
+    }
+  }
+
+  initMobSystems() {
+    this.worldMobs = new Map();
+  }
+
+  createMobMesh(mob) {
+    const isFire = mob.tier === 2;
+    const group = new THREE.Group();
+    group.position.set(mob.x, mob.y, mob.z);
+    group.rotation.y = mob.ry || 0;
+
+    let bodyMesh;
+    const emissiveParts = [];
+    const orbitingParts = [];
+
+    if (isFire) {
+      // Tier 2: Flame Brute (Faceted obsidian volcanic golem)
+      const bodyGeo = new THREE.DodecahedronGeometry(1.3, 1);
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0x1f1410,
+        roughness: 0.85,
+        metalness: 0.25,
+        emissive: 0xff3300,
+        emissiveIntensity: 0.85,
+      });
+      bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+      bodyMesh.scale.set(1.1, 1.25, 1.3);
+      bodyMesh.position.y = 1.3;
+      bodyMesh.castShadow = true;
+      group.add(bodyMesh);
+
+      // Basalt magma spikes and fiery horns
+      const spikeGeo = new THREE.ConeGeometry(0.35, 1.0, 5);
+      const spikeMat = new THREE.MeshStandardMaterial({
+        color: 0x24120a,
+        emissive: 0xff4400,
+        emissiveIntensity: 1.1,
+        roughness: 0.6,
+      });
+      for (const side of [-1, 1]) {
+        const spike = new THREE.Mesh(spikeGeo, spikeMat);
+        spike.position.set(side * 1.1, 2.0, 0.2);
+        spike.rotation.z = side * -0.55;
+        group.add(spike);
+
+        const horn = new THREE.Mesh(spikeGeo, spikeMat);
+        horn.position.set(side * 0.5, 2.3, -0.6);
+        horn.rotation.x = 0.4;
+        horn.rotation.z = side * -0.3;
+        horn.scale.setScalar(0.7);
+        group.add(horn);
+      }
+
+      const coreLight = new THREE.PointLight(0xff4400, 2.2, 8);
+      coreLight.position.set(0, 1.4, 0);
+      group.add(coreLight);
+      emissiveParts.push(coreLight);
+    } else {
+      // Tier 1: Aqua Fiend (Fluid Translucent Water Elemental)
+      const waterGeo = new THREE.IcosahedronGeometry(1.1, 2);
+      const waterMat = new THREE.MeshStandardMaterial({
+        color: 0x1199ee,
+        roughness: 0.1,
+        metalness: 0.15,
+        transparent: true,
+        opacity: 0.82,
+        emissive: 0x0066cc,
+        emissiveIntensity: 0.65,
+      });
+      bodyMesh = new THREE.Mesh(waterGeo, waterMat);
+      bodyMesh.position.y = 1.2;
+      bodyMesh.castShadow = true;
+      group.add(bodyMesh);
+
+      const dropletGeo = new THREE.SphereGeometry(0.25, 8, 8);
+      const dropletMat = new THREE.MeshStandardMaterial({
+        color: 0x55ccff,
+        transparent: true,
+        opacity: 0.9,
+        emissive: 0x00aaff,
+        emissiveIntensity: 0.8,
+        roughness: 0.1,
+      });
+      for (let i = 0; i < 4; i++) {
+        const drop = new THREE.Mesh(dropletGeo, dropletMat);
+        group.add(drop);
+        orbitingParts.push(drop);
+      }
+
+      const waterLight = new THREE.PointLight(0x22aaff, 1.6, 7);
+      waterLight.position.set(0, 1.3, 0);
+      group.add(waterLight);
+      emissiveParts.push(waterLight);
+    }
+
+    // Overhead 3D Canvas Nameplate / Healthbar
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 240;
+    labelCanvas.height = 70;
+    const labelCtx = labelCanvas.getContext('2d');
+    drawMobNameplate(labelCanvas, labelCtx, mob.name, mob.health, mob.maxHealth, mob.tier);
+    const labelTexture = new THREE.CanvasTexture(labelCanvas);
+    const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false }));
+    labelSprite.position.y = isFire ? 3.1 : 2.7;
+    labelSprite.scale.set(2.4, 0.7, 1);
+    group.add(labelSprite);
+
+    group.userData = {
+      mob,
+      bodyMesh,
+      labelCanvas,
+      labelCtx,
+      labelTexture,
+      orbitingParts,
+      emissiveParts,
+      lastHealth: mob.health,
+      targetPos: new THREE.Vector3(mob.x, mob.y, mob.z),
+      targetYaw: mob.ry || 0,
+      hitFlashTimer: 0,
+    };
+    this.scene.add(group);
+    return group;
+  }
+
+  updateMobsVisuals(dt, elapsedTime) {
+    if (!this.worldMobs) return;
+    for (const mobGroup of this.worldMobs.values()) {
+      const data = mobGroup.userData;
+      if (!data) continue;
+
+      if (data.targetPos) {
+        mobGroup.position.lerp(data.targetPos, Math.min(1.0, 8 * dt));
+      }
+      if (data.targetYaw !== undefined) {
+        const yawDelta = Math.atan2(Math.sin(data.targetYaw - mobGroup.rotation.y), Math.cos(data.targetYaw - mobGroup.rotation.y));
+        mobGroup.rotation.y += yawDelta * Math.min(1.0, 10 * dt);
+      }
+
+      if (data.orbitingParts && data.orbitingParts.length) {
+        data.orbitingParts.forEach((drop, idx) => {
+          const angle = elapsedTime * 2.5 + (idx * Math.PI / 2);
+          const orbitRadius = 1.6 + Math.sin(elapsedTime * 3 + idx) * 0.2;
+          drop.position.set(
+            Math.cos(angle) * orbitRadius,
+            1.2 + Math.sin(elapsedTime * 2 + idx) * 0.35,
+            Math.sin(angle) * orbitRadius
+          );
+        });
+      }
+
+      if (data.mob?.tier === 2 && data.emissiveParts && data.emissiveParts[0]) {
+        data.emissiveParts[0].intensity = 2.0 + Math.sin(elapsedTime * 5) * 0.7;
+      }
+
+      if (data.hitFlashTimer > 0) {
+        data.hitFlashTimer -= dt;
+        if (data.hitFlashTimer <= 0 && data.bodyMesh?.material) {
+          data.bodyMesh.material.emissiveIntensity = data.mob?.tier === 2 ? 0.85 : 0.65;
+        }
+      }
+    }
+  }
+
+  spawnMobProjectileTracer(origin, target, isFire) {
+    const start = new THREE.Vector3(origin.x, origin.y, origin.z);
+    const end = new THREE.Vector3(target.x, target.y, target.z);
+    const dist = Math.max(0.1, start.distanceTo(end));
+    const dir = end.clone().sub(start).normalize();
+
+    const color = isFire ? 0xff5511 : 0x22aaff;
+    const geo = new THREE.SphereGeometry(isFire ? 0.32 : 0.24, 8, 8);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(start);
+    this.scene.add(mesh);
+
+    const speed = isFire ? 30 : 24;
+    const life = Math.min(dist / speed, 1.2);
+    this.activeTracers.push({
+      mesh,
+      life,
+      maxLife: life,
+      isPlasma: true,
+      velocity: dir.multiplyScalar(speed),
+    });
   }
 
   spawnWeaponTracer(event) {
     const origin = event.origin || { x: 0, y: 1.2, z: 0 };
     const hitPoint = event.hitPoint || { x: origin.x, y: origin.y, z: origin.z + 20 };
-    const weaponId = event.weaponId || 'PISTOL';
-    const def = WEAPON_DEFINITIONS[weaponId] || WEAPON_DEFINITIONS.PISTOL;
+    const weaponId = event.weaponId || 'APPRENTICE_STICK';
+    const def = WEAPON_DEFINITIONS[weaponId] || MAGIC_STICKS[weaponId] || WEAPON_DEFINITIONS.APPRENTICE_STICK;
 
-    if (def.sound === 'pistol') audio.playPistol();
-    else if (def.sound === 'rifle') audio.playRifle();
-    else if (def.sound === 'laser') audio.playLaser();
-    else if (def.sound === 'plasma') audio.playPlasma();
+    if (def.sound === 'laser') audio.playLaser();
+    else if (def.sound === 'plasma' || def.sound === 'fire_blast') audio.playPlasma();
+    else if (def.sound === 'pistol' || def.sound === 'spark') audio.playPistol();
+    else if (def.sound === 'rifle' || def.sound === 'nature_bolt') audio.playRifle();
 
     const start = new THREE.Vector3(origin.x, origin.y, origin.z);
     const end = new THREE.Vector3(hitPoint.x, hitPoint.y, hitPoint.z);
     const dist = Math.max(0.1, start.distanceTo(end));
     const dir = end.clone().sub(start).normalize();
 
-    if (weaponId === 'LASER_GUN') {
-      const beamGeo = new THREE.CylinderGeometry(0.08, 0.08, dist, 8);
+    if (weaponId === 'CELESTIAL_SCEPTER' || weaponId === 'LASER_GUN') {
+      const beamGeo = new THREE.CylinderGeometry(0.09, 0.09, dist, 8);
       beamGeo.rotateX(Math.PI / 2);
       const beamMat = new THREE.MeshBasicMaterial({
-        color: 0x00f0ff,
+        color: 0xcc66ff,
         transparent: true,
         opacity: 0.95,
         blending: THREE.AdditiveBlending,
@@ -1550,39 +2453,263 @@ export class GameEngine {
       beamMesh.lookAt(end);
       this.scene.add(beamMesh);
       this.activeTracers.push({ mesh: beamMesh, life: 0.18, maxLife: 0.18 });
-    } else if (weaponId === 'PLASMA_CANNON') {
-      const plasmaGeo = new THREE.SphereGeometry(0.38, 10, 8);
+    } else if (weaponId === 'PYRE_STAFF' || weaponId === 'PLASMA_CANNON' || weaponId === 'FIREBALL') {
+      const plasmaGeo = new THREE.SphereGeometry(0.32, 10, 8);
       const plasmaMat = new THREE.MeshBasicMaterial({
-        color: 0xff3366,
+        color: 0xff5511,
         transparent: true,
         opacity: 0.95,
       });
       const plasmaMesh = new THREE.Mesh(plasmaGeo, plasmaMat);
       plasmaMesh.position.copy(start);
       this.scene.add(plasmaMesh);
-      const velocity = dir.clone().multiplyScalar(45);
-      this.activeTracers.push({ mesh: plasmaMesh, life: dist / 45, maxLife: dist / 45, isPlasma: true, velocity });
-    } else {
-      const boltLen = Math.min(2.5, dist);
-      const boltGeo = new THREE.CylinderGeometry(0.045, 0.045, boltLen, 6);
+      const projSpeed = def.projectileSpeed || 55;
+      const velocity = dir.clone().multiplyScalar(projSpeed);
+      this.activeTracers.push({ mesh: plasmaMesh, life: dist / projSpeed, maxLife: dist / projSpeed, isPlasma: true, velocity });
+    } else if (weaponId === 'ELDER_STAFF') {
+      const boltLen = Math.min(2.6, dist);
+      const boltGeo = new THREE.CylinderGeometry(0.05, 0.02, boltLen, 8);
       boltGeo.rotateX(Math.PI / 2);
-      const boltColor = weaponId === 'PISTOL' ? 0x00f0ff : 0xffaa00;
       const boltMat = new THREE.MeshBasicMaterial({
-        color: boltColor,
+        color: 0x83e879,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
       });
       const boltMesh = new THREE.Mesh(boltGeo, boltMat);
       boltMesh.position.copy(start).lerp(end, 0.5);
       boltMesh.lookAt(end);
       this.scene.add(boltMesh);
-      this.activeTracers.push({ mesh: boltMesh, life: 0.12, maxLife: 0.12 });
+      this.activeTracers.push({ mesh: boltMesh, life: 0.14, maxLife: 0.14 });
+    } else {
+      // APPRENTICE_STICK / Basic Arcane Spark (comet head + trail)
+      const sparkGroup = new THREE.Group();
+      const sparkGeo = new THREE.SphereGeometry(0.14, 8, 8);
+      const sparkMat = new THREE.MeshBasicMaterial({
+        color: 0x55eaff,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+      });
+      const sparkMesh = new THREE.Mesh(sparkGeo, sparkMat);
+      sparkGroup.add(sparkMesh);
+
+      const tailLen = Math.min(1.4, dist);
+      const tailGeo = new THREE.CylinderGeometry(0.04, 0.01, tailLen, 6);
+      tailGeo.rotateX(Math.PI / 2);
+      const tailMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0.75,
+        blending: THREE.AdditiveBlending,
+      });
+      const tailMesh = new THREE.Mesh(tailGeo, tailMat);
+      tailMesh.position.z = -tailLen * 0.5;
+      sparkGroup.add(tailMesh);
+
+      sparkGroup.position.copy(start);
+      sparkGroup.lookAt(end);
+      this.scene.add(sparkGroup);
+      const projSpeed = def.projectileSpeed || 70;
+      const velocity = dir.clone().multiplyScalar(projSpeed);
+      this.activeTracers.push({ mesh: sparkGroup, life: dist / projSpeed, maxLife: dist / projSpeed, isPlasma: true, velocity });
     }
 
     if (event.hit && this.particles) {
       setTimeout(() => {
-        this.particles.emitDust(end, weaponId === 'PLASMA_CANNON' ? 24 : 8);
-      }, (dist / (def.projectileSpeed || 100)) * 1000);
+        this.particles.emitDust(end, 12);
+      }, (dist / (def.projectileSpeed || 70)) * 1000);
+    }
+  }
+
+  updateTargetingAndAimAssist(dt) {
+    if (this.gameState !== 'PLAYING' || this.activeRole !== 'player' || this.runner?.health <= 0) {
+      if (this.hasTarget || this.aimAssistActive) {
+        this.hasTarget = false;
+        this.aimAssistActive = false;
+        this.targetInfo = null;
+        this.targetName = '';
+        this.wasTargetLocked = false;
+        if (typeof document !== 'undefined') {
+          const reticle = document.getElementById('aim-reticle');
+          if (reticle) {
+            reticle.classList.remove('target-locked', 'aim-assist-active');
+          }
+        }
+      }
+      return;
+    }
+
+    const camPos = this.camera.position;
+    const camDir = new THREE.Vector3();
+    this.camera.getWorldDirection(camDir);
+
+    const currentWeapon = this.equippedWeapon || 'APPRENTICE_STICK';
+    const def = WEAPON_DEFINITIONS[currentWeapon] || MAGIC_STICKS[currentWeapon] || WEAPON_DEFINITIONS.APPRENTICE_STICK;
+    const isMelee = def.type === 'melee';
+    const maxRange = isMelee ? 5.5 : (def.range || 80);
+
+    const candidates = [];
+
+    // 1. Dragon Boss Target
+    if (this.dragonMesh && this.dragonMesh.visible && this.dragonState?.alive) {
+      const dragonPos = this.dragonMesh.position.clone();
+      dragonPos.y += 2.0;
+      const toDragon = dragonPos.clone().sub(camPos);
+      const distAlong = toDragon.dot(camDir);
+
+      if (distAlong > 0 && distAlong <= maxRange + 12) {
+        const proj = camPos.clone().addScaledVector(camDir, distAlong);
+        const perpDist = proj.distanceTo(dragonPos);
+        const hitRadius = 5.5; // Dragon hit radius
+        const assistRadius = hitRadius * 1.5; // 8.25m assist radius
+
+        if (perpDist <= assistRadius) {
+          candidates.push({
+            type: 'dragon',
+            name: 'THE DRAGON',
+            center: dragonPos,
+            distAlong,
+            perpDist,
+            hitRadius,
+            assistRadius,
+            isHit: perpDist <= hitRadius,
+            score: perpDist / hitRadius,
+          });
+        }
+      }
+    }
+
+    // 2. Remote Competitors
+    for (const remote of this.remotePlayers.values()) {
+      if (!remote.state?.alive || !remote.group?.visible) continue;
+      const pPos = remote.group.position.clone();
+      pPos.y += 1.0;
+      const toPlayer = pPos.clone().sub(camPos);
+      const distAlong = toPlayer.dot(camDir);
+
+      if (distAlong > 0 && distAlong <= maxRange) {
+        const proj = camPos.clone().addScaledVector(camDir, distAlong);
+        const perpDist = proj.distanceTo(pPos);
+        const hitRadius = 1.6; // Player capsule hit radius
+        const assistRadius = 3.2; // Generous aim assist window
+
+        if (perpDist <= assistRadius) {
+          candidates.push({
+            type: 'player',
+            name: remote.name || 'ENEMY RUNNER',
+            center: pPos,
+            distAlong,
+            perpDist,
+            hitRadius,
+            assistRadius,
+            isHit: perpDist <= hitRadius,
+            score: perpDist / hitRadius,
+          });
+        }
+      }
+    }
+
+    // 3. Living World Mobs
+    if (this.worldMobs) {
+      for (const mobGroup of this.worldMobs.values()) {
+        const mob = mobGroup.userData?.mob;
+        if (!mob || mob.health <= 0) continue;
+        const mPos = mobGroup.position.clone();
+        mPos.y += 1.2;
+        const toMob = mPos.clone().sub(camPos);
+        const distAlong = toMob.dot(camDir);
+
+        if (distAlong > 0 && distAlong <= maxRange + 5) {
+          const proj = camPos.clone().addScaledVector(camDir, distAlong);
+          const perpDist = proj.distanceTo(mPos);
+          const hitRadius = 2.0;
+          const assistRadius = 3.6;
+
+          if (perpDist <= assistRadius) {
+            candidates.push({
+              type: 'mob',
+              name: mob.name || 'WILD MOB',
+              center: mPos,
+              distAlong,
+              perpDist,
+              hitRadius,
+              assistRadius,
+              isHit: perpDist <= hitRadius,
+              score: perpDist / hitRadius,
+            });
+          }
+        }
+      }
+    }
+
+    candidates.sort((a, b) => a.score - b.score);
+    const best = candidates[0];
+
+    const hasTarget = Boolean(best && best.isHit);
+    const aimAssistActive = Boolean(best && (best.isHit || best.perpDist <= best.assistRadius));
+
+    // Audio cue on new target acquisition
+    if (hasTarget && !this.wasTargetLocked) {
+      this.wasTargetLocked = true;
+      audio.playTargetLock();
+    } else if (!hasTarget) {
+      this.wasTargetLocked = false;
+    }
+
+    this.hasTarget = hasTarget;
+    this.aimAssistActive = aimAssistActive;
+    this.targetInfo = best || null;
+    this.targetName = best ? best.name : '';
+
+    // Direct DOM fast-path for zero-latency 60fps class toggling
+    if (typeof document !== 'undefined') {
+      const reticle = document.getElementById('aim-reticle');
+      if (reticle) {
+        reticle.classList.toggle('target-locked', hasTarget);
+        reticle.classList.toggle('aim-assist-active', aimAssistActive);
+
+        const tagEl = reticle.querySelector('.aim-target-tag');
+        if (tagEl && best) {
+          tagEl.textContent = `🎯 ${best.name} [LOCKED]`;
+        }
+      }
+    }
+
+    // Aim Friction: Slows crosshair sensitivity over/near targets
+    if (this.runner) {
+      if (hasTarget) {
+        this.runner.aimFriction = 0.58; // 42% slowdown for precise tracking on target
+      } else if (aimAssistActive) {
+        this.runner.aimFriction = 0.78; // 22% slowdown when entering assist cone
+      } else {
+        this.runner.aimFriction = 1.0;
+      }
+    }
+
+    // Aim Assist Magnetism: Gentle rotational guidance towards target center
+    if (aimAssistActive && best && this.runner) {
+      const toCenter = best.center.clone().sub(camPos).normalize();
+      const targetYaw = Math.atan2(-toCenter.x, -toCenter.z);
+      const targetPitch = Math.asin(THREE.MathUtils.clamp(toCenter.y, -0.99, 0.99));
+
+      let diffYaw = Math.atan2(
+        Math.sin(targetYaw - this.runner.cameraYaw),
+        Math.cos(targetYaw - this.runner.cameraYaw)
+      );
+      let diffPitch = targetPitch - this.runner.cameraPitch;
+
+      // Soft pull within angular cone (~8 degrees = ~0.14 rad)
+      if (Math.abs(diffYaw) < 0.16 && Math.abs(diffPitch) < 0.16) {
+        const pullSpeed = hasTarget ? 2.2 : 3.5;
+        const pullFactor = THREE.MathUtils.clamp(pullSpeed * dt, 0, 0.12);
+
+        const nudgeYaw = THREE.MathUtils.clamp(diffYaw * pullFactor, -0.045, 0.045);
+        const nudgePitch = THREE.MathUtils.clamp(diffPitch * pullFactor, -0.035, 0.035);
+
+        this.runner.cameraYaw += nudgeYaw;
+        this.runner.cameraPitch = Math.max(-0.75, Math.min(1.15, this.runner.cameraPitch + nudgePitch));
+      }
     }
   }
 
@@ -1593,37 +2720,47 @@ export class GameEngine {
       return;
     }
 
-    const currentWeapon = this.equippedWeapon || 'KNIFE';
-    const def = WEAPON_DEFINITIONS[currentWeapon] || WEAPON_DEFINITIONS.KNIFE;
+    const currentWeapon = this.equippedWeapon || 'APPRENTICE_STICK';
+    const def = WEAPON_DEFINITIONS[currentWeapon] || MAGIC_STICKS[currentWeapon] || WEAPON_DEFINITIONS.APPRENTICE_STICK;
 
     if (def.type === 'melee') {
       const remaining = this.attackCooldownUntil - Date.now();
       if (remaining > 0) {
-        this.showToast(`Knife ready in ${(remaining / 1000).toFixed(1)}s.`);
+        this.showToast(`Strike ready in ${(remaining / 1000).toFixed(1)}s.`);
         return;
       }
-      this.attackCooldownUntil = Date.now() + KNIFE_RULES.cooldownMs;
+      this.attackCooldownUntil = Date.now() + (def.cooldownMs || KNIFE_RULES.cooldownMs);
+
+      // Aim assist facing snap for melee strike
+      if (this.targetInfo && this.targetInfo.distAlong <= 4.2) {
+        const toT = this.targetInfo.center.clone().sub(this.runner.position);
+        this.runner.rotationY = Math.atan2(toT.x, toT.z);
+      }
+
       this.network?.attack();
       this.runner.playKnifeSwing();
     } else {
-      const currentAmmo = this.playerAmmo[currentWeapon] || 0;
-      if (currentAmmo <= 0) {
-        audio.playEmptyAmmo();
-        this.showToast(`No ammo! Open Forge [C] to craft more.`);
-        return;
+      if (def.ammo !== Infinity) {
+        const currentAmmo = this.playerAmmo[currentWeapon] || 0;
+        if (currentAmmo <= 0) {
+          audio.playEmptyAmmo();
+          this.showToast(`No charges! Collect natural resources to recharge.`);
+          return;
+        }
+        this.playerAmmo[currentWeapon] = currentAmmo - 1;
+        this.emitState();
       }
 
       const remaining = this.attackCooldownUntil - Date.now();
       if (remaining > 0) return;
-      this.attackCooldownUntil = Date.now() + (def.cooldownMs || 300);
+      this.attackCooldownUntil = Date.now() + (def.cooldownMs || 350);
 
-      this.playerAmmo[currentWeapon] = currentAmmo - 1;
-      this.emitState();
-
-      if (def.sound === 'pistol') audio.playPistol();
-      else if (def.sound === 'rifle') audio.playRifle();
+      if (def.sound === 'spark' || def.id === 'APPRENTICE_STICK') audio.playArcaneSpark();
+      else if (def.sound === 'pistol') audio.playPistol();
+      else if (def.sound === 'rifle' || def.sound === 'nature_bolt') audio.playRifle();
       else if (def.sound === 'laser') audio.playLaser();
-      else if (def.sound === 'plasma') audio.playPlasma();
+      else if (def.sound === 'plasma' || def.sound === 'fire_blast') audio.playPlasma();
+      else audio.playArcaneSpark();
 
       const camDir = new THREE.Vector3();
       this.camera.getWorldDirection(camDir);
@@ -1636,21 +2773,23 @@ export class GameEngine {
       let closestHitDist = maxRayDist;
       const camPos = this.camera.position;
 
-      // 1. Dragon target convergence
+      // 1. Dragon target convergence with aim assist
       if (this.dragonMesh && this.dragonMesh.visible && this.dragonState?.alive) {
-        const dragonPos = this.dragonMesh.position;
+        const dragonPos = this.dragonMesh.position.clone();
+        dragonPos.y += 2.0;
         const toDragon = dragonPos.clone().sub(camPos);
         const distAlong = toDragon.dot(camDir);
         if (distAlong > 0 && distAlong < closestHitDist) {
           const proj = camPos.clone().addScaledVector(camDir, distAlong);
-          if (proj.distanceTo(dragonPos) <= 5.5) {
+          const pDist = proj.distanceTo(dragonPos);
+          if (pDist <= 7.5) {
             closestHitDist = distAlong;
-            targetPoint = proj;
+            targetPoint = pDist <= 5.5 ? proj : proj.clone().lerp(dragonPos, 0.72);
           }
         }
       }
 
-      // 2. Remote competitor contenders convergence
+      // 2. Remote competitor contenders convergence with aim assist
       for (const remote of this.remotePlayers.values()) {
         if (!remote.state?.alive || !remote.group.visible) continue;
         const pPos = remote.group.position.clone();
@@ -1659,9 +2798,10 @@ export class GameEngine {
         const distAlong = toPlayer.dot(camDir);
         if (distAlong > 0 && distAlong < closestHitDist) {
           const proj = camPos.clone().addScaledVector(camDir, distAlong);
-          if (proj.distanceTo(pPos) <= 1.6) {
+          const pDist = proj.distanceTo(pPos);
+          if (pDist <= 2.8) {
             closestHitDist = distAlong;
-            targetPoint = proj;
+            targetPoint = pDist <= 1.6 ? proj : proj.clone().lerp(pPos, 0.75);
           }
         }
       }
@@ -1671,7 +2811,7 @@ export class GameEngine {
       const finalDir = fireDir.dot(camDir) > 0.2 ? fireDir : camDir;
 
       this.network?.fireWeapon(currentWeapon, origin, finalDir);
-      this.runner.knifeSwingTimer = 0.12;
+      this.runner.playKnifeSwing();
     }
   }
 
@@ -1683,18 +2823,57 @@ export class GameEngine {
   equipWeapon(weaponId) {
     if (weaponId === this.equippedWeapon) return;
     this.equippedWeapon = weaponId;
+    this.equippedStick = weaponId;
     this.network?.equipWeapon(weaponId);
     this.runner?.setEquippedWeapon(weaponId);
     this.emitState();
   }
 
+  equipStick(stickId) {
+    if (stickId === this.equippedStick) return;
+    this.equippedStick = stickId;
+    this.equippedWeapon = stickId;
+    this.network?.equipStick(stickId);
+    this.runner?.setEquippedWeapon(stickId);
+    this.emitState();
+  }
+
+  setPowerSlot(slotIndex, powerId) {
+    if (this.powerSlots) {
+      this.powerSlots[slotIndex] = powerId;
+    }
+    this.network?.setPowerSlot(slotIndex, powerId);
+    this.emitState();
+  }
+
+  usePowerSlot(slotIndex) {
+    if (slotIndex < 0 || slotIndex >= 7) return;
+    const powerId = this.powerSlots?.[slotIndex];
+    if (!powerId) return;
+    this.activateAbility(powerId);
+  }
+
   toggleCraftingModal() {
     this.craftingModalOpen = !this.craftingModalOpen;
+    if (this.craftingModalOpen && document.pointerLockElement) document.exitPointerLock?.();
     this.emitState();
   }
 
   setCraftingModalOpen(open) {
     this.craftingModalOpen = Boolean(open);
+    if (this.craftingModalOpen && document.pointerLockElement) document.exitPointerLock?.();
+    this.emitState();
+  }
+
+  toggleBackpackModal() {
+    this.backpackModalOpen = !this.backpackModalOpen;
+    if (this.backpackModalOpen && document.pointerLockElement) document.exitPointerLock?.();
+    this.emitState();
+  }
+
+  setBackpackModalOpen(open) {
+    this.backpackModalOpen = Boolean(open);
+    if (this.backpackModalOpen && document.pointerLockElement) document.exitPointerLock?.();
     this.emitState();
   }
 
@@ -1929,10 +3108,15 @@ export class GameEngine {
     const elapsedTime = this.clock.getElapsedTime();
     this.dragonMixer?.update(dt);
     if (this.dragonMesh?.visible && Number.isFinite(this.dragonBaseY)) {
-      const dragonLerp = 1 - Math.exp(-dt * 8);
+      const isGrounded = this.dragonState?.flightPhase === 'GROUNDED';
+      const dragonLerp = 1 - Math.exp(-dt * (isGrounded ? 5 : 8));
       this.dragonRenderPosition.lerp(this.dragonTargetPosition, dragonLerp);
       this.dragonMesh.position.copy(this.dragonRenderPosition);
-      this.dragonMesh.position.y += Math.sin(elapsedTime * 2.2) * 0.38;
+      if (!isGrounded) {
+        this.dragonMesh.position.y += Math.sin(elapsedTime * 2.2) * 0.38;
+      } else {
+        this.dragonMesh.position.y += Math.sin(elapsedTime * 1.4) * 0.05;
+      }
       const yawDelta = Math.atan2(
         Math.sin(this.dragonTargetYaw - this.dragonMesh.rotation.y),
         Math.cos(this.dragonTargetYaw - this.dragonMesh.rotation.y),
@@ -1974,6 +3158,19 @@ export class GameEngine {
 
       this.obstacleManager.update(dt);
 
+      if (this.worldTraps) {
+        for (const trapGroup of this.worldTraps.values()) {
+          const disc = trapGroup.userData?.discMesh;
+          if (disc) disc.rotation.z += 0.8 * dt;
+          const light = trapGroup.userData?.runeLight;
+          if (light) {
+            light.intensity = 1.2 + Math.sin(elapsedTime * 4) * 0.5;
+          }
+        }
+      }
+
+      this.updateMobsVisuals(dt, elapsedTime);
+
       if (this.particles) {
         this.particles.update(dt);
       }
@@ -1999,6 +3196,10 @@ export class GameEngine {
         this.runner.weatherSpeedMultiplier = this.weatherState.movementMultiplier;
         this.runner.update(dt);
         this.physics.updateCharacterPhysics(this.runner, dt);
+
+        // Update aim targeting and aim assist
+        this.updateTargetingAndAimAssist(dt);
+        this.updateTrapTargeting(dt);
 
         if (this.lastRunnerPosForDist) {
           const dx = this.runner.position.x - this.lastRunnerPosForDist.x;
@@ -2042,6 +3243,7 @@ export class GameEngine {
           }
         }
       } else {
+        this.updateTargetingAndAimAssist(dt);
         if (this.runner.health > 0) this.physics.updateCharacterPhysics(this.runner, dt);
         this.runner.group.position.copy(this.runner.position);
         this.runner.group.rotation.y = this.runner.rotationY;
@@ -2110,10 +3312,21 @@ export class GameEngine {
       matchStats: this.matchStats,
       matchHistory: this.matchHistory,
       playerResources: this.playerResources,
-      weapons: this.weapons || ['KNIFE'],
-      equippedWeapon: this.equippedWeapon || 'KNIFE',
+      weapons: this.weapons || ['APPRENTICE_STICK', 'KNIFE'],
+      equippedWeapon: this.equippedWeapon || 'APPRENTICE_STICK',
+      equippedStick: this.equippedStick || 'APPRENTICE_STICK',
+      powerSlots: this.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+      backpack: this.backpack || {
+        sticks: ['APPRENTICE_STICK'],
+        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        resources: this.playerResources || {},
+      },
+      statusEffects: this.statusEffects || [],
       playerAmmo: this.playerAmmo || {},
       craftingModalOpen: Boolean(this.craftingModalOpen),
+      backpackModalOpen: Boolean(this.backpackModalOpen),
+      isPlacingTrap: Boolean(this.isPlacingTrap),
+      activeTargetingTrap: this.activeTargetingTrap || null,
       abilityCooldowns: this.abilityCooldowns,
       knifeCooldownMs: Math.max(0, this.attackCooldownUntil - Date.now()),
       dragon: this.dragonState,
@@ -2133,6 +3346,10 @@ export class GameEngine {
         knifeCooldownMs: Math.max(0, this.attackCooldownUntil - Date.now()),
         weapons: this.weapons || ['KNIFE'],
         equippedWeapon: this.equippedWeapon || 'KNIFE',
+        equippedStick: this.equippedStick || 'APPRENTICE_STICK',
+        powerSlots: this.powerSlots || [],
+        backpack: this.backpack || {},
+        statusEffects: this.statusEffects || [],
         ammo: this.playerAmmo || {},
         craftingInventory: this.powerUpManager.getInventory(),
       },
@@ -2154,6 +3371,9 @@ export class GameEngine {
       gameOverData: this.gameOverData,
       isPointerLocked: this.isPointerLocked,
       damageFlash: this.damageFlash,
+      hasTarget: Boolean(this.hasTarget),
+      aimAssistActive: Boolean(this.aimAssistActive),
+      targetName: this.targetName || '',
       toastMessage: this.toastMessage,
       aiEnabled: Boolean(this.aiSaboteur && this.aiSaboteur.enabled),
       humanSaboteurAvailable: this.isHumanSaboteurAvailable(),
@@ -2188,13 +3408,18 @@ export class GameEngine {
     if (this.onWheelHandler) window.removeEventListener('wheel', this.onWheelHandler);
     this.dragonMixer?.stopAllAction();
     this.clearDragonBreathTelegraph();
-    this.scene?.remove(this.dragonMesh, this.dragonBreathBeam, this.dragonTelegraph, this.dragonTelegraphRing);
+    if (this.landingWarningTimeout) clearTimeout(this.landingWarningTimeout);
+    this.scene?.remove(this.dragonMesh, this.dragonBreathBeam, this.dragonTelegraph, this.dragonTelegraphRing, this.dragonLandingRing, this.dragonLandingDisc);
     disposeThreeObject(this.dragonMesh);
     disposeThreeObject(this.dragonBreathBeam);
     this.dragonTelegraph?.geometry.dispose();
     this.dragonTelegraph?.material.dispose();
     this.dragonTelegraphRing?.geometry.dispose();
     this.dragonTelegraphRing?.material.dispose();
+    this.dragonLandingRing?.geometry.dispose();
+    this.dragonLandingRing?.material.dispose();
+    this.dragonLandingDisc?.geometry.dispose();
+    this.dragonLandingDisc?.material.dispose();
     if (this.renderer && this.renderer.domElement && this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
     }

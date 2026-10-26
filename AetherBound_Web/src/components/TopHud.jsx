@@ -84,6 +84,13 @@ export function TopHud({
           <div className="dragon-status-heading">DRAGON · {dragon.alive === false ? 'DEFEATED' : (dragon.phase || 'PASSIVE')}</div>
           <div className="dragon-health-track"><div className="dragon-health-fill" style={{ width: `${dragonHealthPct}%` }} /></div>
           <span className="dragon-health-value">{dragonHealth} / {dragonMaxHealth}</span>
+          {dragon.alive !== false && (
+            <div className={`dragon-flight-badge ${dragon.flightPhase === 'GROUNDED' ? 'grounded' : 'aerial'}`}>
+              {dragon.flightPhase === 'GROUNDED'
+                ? `🐉 GROUNDED (${dragon.flightPhaseTimer ?? 25}s) · 1.25x DMG + TRAPS`
+                : `🦅 AIRBORNE (${dragon.flightPhaseTimer ?? 60}s)`}
+            </div>
+          )}
           {dragon.attack && <strong className="dragon-telegraph-copy">⚠ {dragon.attack.name} · DODGE THE MARKED AREA</strong>}
         </div>
 

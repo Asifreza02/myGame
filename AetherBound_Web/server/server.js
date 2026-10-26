@@ -2,7 +2,19 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { DRAGON_ATTACKS, getDragonPhase, ITEM_DEFINITIONS, KNIFE_RULES, WEAPON_DEFINITIONS, WEAPON_CRAFTING_RECIPES } from '../src/game/data/combat.js';
+import {
+  DRAGON_ATTACKS,
+  getDragonPhase,
+  ITEM_DEFINITIONS,
+  KNIFE_RULES,
+  WEAPON_DEFINITIONS,
+  WEAPON_CRAFTING_RECIPES,
+  MAGIC_STICKS,
+  MAGIC_POWERS,
+  TRAP_DEFINITIONS,
+  MOB_SYSTEM_CONFIG,
+  ARCANE_CRAFTING_RECIPES,
+} from '../src/game/data/combat.js';
 import { BIOME_RESOURCES, RESOURCE_DEFINITIONS, getWeatherState } from '../src/game/data/world.js';
 import { MATCH_MODES, normalizeMatchConfig, PLAYER_SLOT_THEMES, MAX_MATCH_PLAYERS } from '../src/game/data/matchModes.js';
 import { SimplexNoise, getBiomeWeights } from '../src/game/noise.js';
@@ -52,9 +64,29 @@ class GameRoom {
     this.players = new Map();
     this.state = 'LOBBY';
     this.worldNoise = new SimplexNoise(this.seed);
-    this.dragon = { x: 42, y: 11, z: -34, health: 420, maxHealth: 420, alive: true, phase: 'PASSIVE', attack: null, nextAttackAt: 0, roamTarget: null, nextRoamTargetAt: 0 };
+    this.dragon = {
+      x: 42,
+      y: 16,
+      z: -34,
+      health: MOB_SYSTEM_CONFIG.TIER_3_DRAGON.health,
+      maxHealth: MOB_SYSTEM_CONFIG.TIER_3_DRAGON.maxHealth,
+      alive: true,
+      phase: 'PASSIVE',
+      flightPhase: 'AERIAL',
+      flightPhaseTimer: 60,
+      altitude: 14.0,
+      landingTelegraphed: false,
+      stunnedUntil: 0,
+      nextPhaseSwitchAt: 0,
+      attack: null,
+      nextAttackAt: 0,
+      roamTarget: null,
+      nextRoamTargetAt: 0,
+    };
+    this.mobs = [];
     this.items = this.createItems();
     this.hazards = [];
+    this.traps = [];
     this.interval = null;
     this.matchStartedAt = null;
     this.lastBroadcast = 0;
@@ -177,8 +209,24 @@ class GameRoom {
       reconnectExpiresAt: 0,
       reconnectTimer: null,
       resources: {},
-      weapons: ['KNIFE'],
-      equippedWeapon: 'KNIFE',
+      weapons: ['APPRENTICE_STICK', 'KNIFE'],
+      equippedWeapon: 'APPRENTICE_STICK',
+      equippedStick: 'APPRENTICE_STICK',
+      powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+      backpack: {
+        sticks: ['APPRENTICE_STICK'],
+        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        resources: {
+          ELDER_WOOD: 0,
+          ARCANE_QUARTZ: 0,
+          EMBER_ORE: 0,
+          MOON_HERB: 0,
+          AETHER_ESSENCE: 0,
+          RIVER_DEW: 0,
+          BLAZING_CINDER: 0,
+        },
+      },
+      statusEffects: [],
       ammo: { PISTOL: 0, GUN: 0, LASER_GUN: 0, PLASMA_CANNON: 0 },
       lastWeaponFireAt: 0,
       stats: { kills: 0, survivalTime: 0, itemsCollected: 0, damageDealt: 0, dragonDamage: 0 },
@@ -247,8 +295,24 @@ class GameRoom {
       reconnectExpiresAt: 0,
       reconnectTimer: null,
       resources: {},
-      weapons: ['KNIFE'],
-      equippedWeapon: 'KNIFE',
+      weapons: ['APPRENTICE_STICK', 'KNIFE'],
+      equippedWeapon: 'APPRENTICE_STICK',
+      equippedStick: 'APPRENTICE_STICK',
+      powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+      backpack: {
+        sticks: ['APPRENTICE_STICK'],
+        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        resources: {
+          ELDER_WOOD: 0,
+          ARCANE_QUARTZ: 0,
+          EMBER_ORE: 0,
+          MOON_HERB: 0,
+          AETHER_ESSENCE: 0,
+          RIVER_DEW: 0,
+          BLAZING_CINDER: 0,
+        },
+      },
+      statusEffects: [],
       ammo: { PISTOL: 0, GUN: 0, LASER_GUN: 0, PLASMA_CANNON: 0 },
       lastWeaponFireAt: 0,
       stats: { kills: 0, survivalTime: 0, itemsCollected: 0, damageDealt: 0, dragonDamage: 0 },
@@ -336,31 +400,31 @@ class GameRoom {
             z: wz + 1,
             active: true,
           });
-          items.push(createResourceDrop(items.length, wx + 2, wz + 1, biome, 'ENERGY_CELL'));
-          items.push(createResourceDrop(items.length, wx - 2, wz - 1, biome, 'TITANIUM_SCRAP'));
+          items.push(createResourceDrop(items.length, wx + 2, wz + 1, biome, 'BLAZING_CINDER'));
+          items.push(createResourceDrop(items.length, wx - 2, wz - 1, biome, 'RIVER_DEW'));
         } else if (archetype === 3 || archetype === 4) {
-          // Colony Habitation House / Frontier Duplex: Porch Cache
+          // Ancient Shrine / Wilderness Shelter: Natural Cache
           items.push(createAbilityDrop(items.length, wx, wz + 2));
-          items.push(createResourceDrop(items.length, wx - 1, wz + 2, biome));
+          items.push(createResourceDrop(items.length, wx - 1, wz + 2, biome, 'ELDER_WOOD'));
         } else if (archetype === 0 || archetype === 2) {
-          // Command Outpost / Military Depot: Combat Supplies
+          // Arcane Outpost / Runic Circle: Mystic Supplies
           items.push({
             id: `loot-${items.length}-${Math.floor(random() * 1_000_000).toString(36)}`,
-            type: rng() > 0.5 ? 'KINETIC_AMMO' : 'ENERGY_AMMO',
-            kind: 'ammo',
+            type: rng() > 0.5 ? 'HEALTH' : 'AETHER_ESSENCE',
+            kind: rng() > 0.5 ? 'consumable' : 'resource',
             biome,
             rarity: 'Common',
             x: wx,
             z: wz + 2,
             active: true,
           });
-          items.push(createResourceDrop(items.length, wx + 2, wz, biome, 'TITANIUM_SCRAP'));
+          items.push(createResourceDrop(items.length, wx + 2, wz, biome, 'ARCANE_QUARTZ'));
           items.push(createResourceDrop(items.length, wx - 2, wz, biome, 'EMBER_ORE'));
         }
       }
     }
 
-    // 2. Wilderness Abilities across the entire 1km radius (48 drops)
+    // 2. Wilderness Abilities & Runes across the entire 1km radius (48 drops)
     for (let i = 0; i < 48; i += 1) {
       const angle = i * 2.399 + (random() - 0.5) * 0.3;
       const radius = 28 + (i / 48) * (WORLD_RADIUS - 80) + random() * 20;
@@ -370,14 +434,17 @@ class GameRoom {
     }
 
     // 3. Wilderness Crafting Resources across the entire 1km radius (128 drops)
-    const allResourceTypes = Object.keys(RESOURCE_DEFINITIONS);
+    const naturalResourceTypes = [
+      'ELDER_WOOD', 'ARCANE_QUARTZ', 'EMBER_ORE', 'MOON_HERB',
+      'AETHER_ESSENCE', 'RIVER_DEW', 'BLAZING_CINDER'
+    ];
     for (let i = 0; i < 128; i += 1) {
       const angle = i * 1.618 + (random() - 0.5) * 0.32;
       const radius = 24 + (i / 128) * (WORLD_RADIUS - 70) + random() * 24;
       const x = Math.round(Math.cos(angle) * radius);
       const z = Math.round(Math.sin(angle) * radius);
       const biome = this.getBiomeAt(x, z);
-      const forcedType = allResourceTypes[i % allResourceTypes.length];
+      const forcedType = naturalResourceTypes[i % naturalResourceTypes.length];
       items.push(createResourceDrop(items.length, x, z, biome, forcedType));
     }
 
@@ -387,7 +454,7 @@ class GameRoom {
       const radius = 16 + (index % 3) * 12 + random() * 8;
       const x = Math.round(this.dragon.x + Math.cos(angle) * radius);
       const z = Math.round(this.dragon.z + Math.sin(angle) * radius);
-      items.push(createResourceDrop(items.length, x, z, 'volcanic', 'ENERGY_CELL'));
+      items.push(createResourceDrop(items.length, x, z, 'volcanic', 'BLAZING_CINDER'));
     }
 
     return items;
@@ -399,16 +466,30 @@ class GameRoom {
   }
 
   publicPlayer(player) {
-    const { id, name, slot, color, colorHex, isBot, x, y, z, ry, pitch, health, maxHealth, alive, connected, inventory, abilityReadyAt, activeAbilities, resources, weapons, equippedWeapon, ammo } = player;
+    const {
+      id, name, slot, color, colorHex, isBot, x, y, z, ry, pitch,
+      health, maxHealth, alive, connected, inventory, abilityReadyAt,
+      activeAbilities, resources, weapons, equippedWeapon, ammo,
+      equippedStick, powerSlots, backpack, statusEffects,
+    } = player;
     const stats = {
       ...player.stats,
       survivalTime: Math.floor(player.stats.survivalTime),
     };
     return {
-      id, name, slot, color, colorHex, isBot: Boolean(isBot), x, y, z, ry, pitch: pitch || 0, health, maxHealth, alive, connected,
+      id, name, slot, color, colorHex, isBot: Boolean(isBot), x, y, z, ry, pitch: pitch || 0,
+      health, maxHealth, alive, connected,
       inventory, abilityReadyAt, activeAbilities, resources,
-      weapons: weapons || ['KNIFE'],
-      equippedWeapon: equippedWeapon || 'KNIFE',
+      weapons: weapons || ['APPRENTICE_STICK', 'KNIFE'],
+      equippedWeapon: equippedWeapon || 'APPRENTICE_STICK',
+      equippedStick: equippedStick || 'APPRENTICE_STICK',
+      powerSlots: powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+      backpack: backpack || {
+        sticks: ['APPRENTICE_STICK'],
+        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        resources: resources || {},
+      },
+      statusEffects: statusEffects || [],
       ammo: ammo || {},
       stats,
       voice: player.voice || { isSpeaking: false, isMuted: false, isDeafened: false },
@@ -423,16 +504,83 @@ class GameRoom {
       players: [...this.players.values()].map((player) => this.publicPlayer(player)),
       items: this.items.map((item) => ({ ...item })),
       hazards: this.hazards.map((hazard) => ({ ...hazard })),
+      traps: this.traps ? this.traps.map((trap) => ({ ...trap, armed: Date.now() >= trap.armedAt })) : [],
+      mobs: this.mobs ? this.mobs.map((mob) => ({ ...mob })) : [],
       dragon: { ...this.dragon },
       dragonRewardPolicy: this.dragonRewardPolicy,
       weather: getWeatherState(this.matchStartedAt ? (Date.now() - this.matchStartedAt) / 1000 : 0),
     };
   }
 
+  applyStatusEffect(player, effect) {
+    if (!player || !player.alive) return;
+    const now = Date.now();
+    player.statusEffects = player.statusEffects || [];
+    const durationMs = effect.durationMs || (effect.durationSeconds ? effect.durationSeconds * 1000 : 3000);
+    const existing = player.statusEffects.find((e) => e.type === effect.type);
+    if (existing) {
+      existing.expiresAt = Math.max(existing.expiresAt, now + durationMs);
+      existing.damagePerTick = Math.max(existing.damagePerTick || 0, effect.damagePerTick || 0);
+      existing.attackerId = effect.attackerId || existing.attackerId;
+    } else {
+      player.statusEffects.push({
+        type: effect.type,
+        expiresAt: now + durationMs,
+        tickIntervalMs: effect.tickIntervalMs || 1000,
+        nextTickAt: now + (effect.tickIntervalMs || 1000),
+        damagePerTick: effect.damagePerTick || 6,
+        slowPercent: effect.slowPercent || 0,
+        attackerId: effect.attackerId || 'mob',
+      });
+    }
+    this.broadcast({
+      type: 'STATUS_EFFECT_APPLIED',
+      playerId: player.id,
+      effect: { ...effect, expiresAt: now + durationMs },
+      health: player.health,
+    });
+  }
+
+  updateStatusEffects(now) {
+    for (const player of this.players.values()) {
+      if (!player.alive || !player.statusEffects || player.statusEffects.length === 0) continue;
+      for (const effect of player.statusEffects) {
+        if (effect.type === 'BURN' && now >= effect.nextTickAt && now <= effect.expiresAt) {
+          effect.nextTickAt = now + (effect.tickIntervalMs || 1000);
+          const absorbed = player.shieldUntil > now;
+          if (absorbed) player.shieldUntil = 0;
+          const dmg = absorbed ? 0 : Math.min(effect.damagePerTick || 6, player.health);
+          if (!absorbed && dmg > 0) {
+            player.health = Math.max(0, player.health - dmg);
+            const attacker = this.players.get(effect.attackerId);
+            if (attacker) attacker.stats.damageDealt += dmg;
+            this.broadcast({
+              type: 'PLAYER_DAMAGED',
+              playerId: player.id,
+              attackerId: effect.attackerId,
+              health: player.health,
+              damage: dmg,
+              source: 'burn',
+            });
+            if (player.health <= 0) {
+              if (attacker) attacker.stats.kills += 1;
+              this.eliminate(player, 'Incinerated by blazing fire burn.', effect.attackerId);
+              break;
+            }
+          }
+        }
+      }
+      player.statusEffects = player.statusEffects.filter((e) => e.expiresAt > now);
+    }
+  }
+
   start() {
     this.state = 'ACTIVE';
     this.matchStartedAt = Date.now();
     this.dragon.nextAttackAt = this.matchStartedAt + 18_000;
+    this.dragon.nextPhaseSwitchAt = this.matchStartedAt + 60_000;
+    this.dragon.flightPhase = 'AERIAL';
+    this.dragon.flightPhaseTimer = 60;
     this.dragon.roamTarget = this.pickDragonRoamTarget();
     this.dragon.nextRoamTargetAt = this.matchStartedAt + 30_000;
 
@@ -444,11 +592,17 @@ class GameRoom {
       }
     }
 
+    // Spawn initial Tier 1 Aqua Fiends immediately at 0:00
+    this.spawnInitialMobs();
+
     this.interval = setInterval(() => {
       if (this.state !== 'ACTIVE') return;
       const now = Date.now();
       this.updateSurvivalTime(now);
       this.updateBots(now, SERVER_TICK_MS / 1000);
+      this.updateStatusEffects(now);
+      this.updateTraps(now);
+      this.updateMobs(now, SERVER_TICK_MS / 1000);
       this.updateDragon(now, SERVER_TICK_MS / 1000);
       this.hazards = this.hazards.filter((hazard) => !hazard.triggered && hazard.expiresAt > now);
       this.broadcastState();
@@ -698,6 +852,9 @@ class GameRoom {
     const definition = ITEM_DEFINITIONS[item.type];
     if (item.kind === 'resource') {
       player.resources[item.type] = (player.resources[item.type] || 0) + 1;
+      player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
+      player.backpack.resources = player.backpack.resources || {};
+      player.backpack.resources[item.type] = (player.backpack.resources[item.type] || 0) + 1;
     } else if (item.type === 'HEALTH') {
       player.health = Math.min(player.maxHealth, player.health + (definition?.heal || 35));
     } else if (item.type === 'KINETIC_AMMO') {
@@ -712,6 +869,11 @@ class GameRoom {
       player.resources.ENERGY_CELL = (player.resources.ENERGY_CELL || 0) + 2;
       player.resources.TITANIUM_SCRAP = (player.resources.TITANIUM_SCRAP || 0) + 2;
       player.resources.AETHER_ESSENCE = (player.resources.AETHER_ESSENCE || 0) + 2;
+      player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
+      player.backpack.resources = player.backpack.resources || {};
+      player.backpack.resources.ENERGY_CELL = (player.backpack.resources.ENERGY_CELL || 0) + 2;
+      player.backpack.resources.TITANIUM_SCRAP = (player.backpack.resources.TITANIUM_SCRAP || 0) + 2;
+      player.backpack.resources.AETHER_ESSENCE = (player.backpack.resources.AETHER_ESSENCE || 0) + 2;
     } else {
       player.inventory = [...new Set([...player.inventory, item.type])];
     }
@@ -728,6 +890,7 @@ class GameRoom {
       ammo: player.ammo,
       inventory: player.inventory,
       resources: player.resources,
+      backpack: player.backpack,
     });
 
     if (player.isBot) {
@@ -782,6 +945,287 @@ class GameRoom {
     this.broadcast({ type: 'MATCH_RESULTS', winnerId, reason, kind, dragonRewardPolicy: this.dragonRewardPolicy, snapshot: this.snapshot() });
   }
 
+  spawnInitialMobs() {
+    this.mobs = [];
+    const t1Config = MOB_SYSTEM_CONFIG.TIER_1_WATER_MOB;
+    for (let i = 0; i < 4; i++) {
+      const angle = (i / 4) * Math.PI * 2 + (this.seed % 7) * 0.2;
+      const radius = 32 + (i % 2) * 25 + Math.random() * 15;
+      const x = Math.round(Math.cos(angle) * radius);
+      const z = Math.round(Math.sin(angle) * radius);
+      const y = this.getTerrainHeight(x, z) + 1.0;
+      this.mobs.push({
+        id: `mob-t1-${i}-${Math.random().toString(36).slice(2, 6)}`,
+        type: t1Config.id,
+        name: t1Config.name,
+        tier: 1,
+        x,
+        y,
+        z,
+        ry: Math.random() * Math.PI * 2,
+        health: t1Config.health,
+        maxHealth: t1Config.maxHealth,
+        speed: t1Config.speed,
+        aggroRadius: t1Config.aggroRadius,
+        attackDamage: t1Config.attack.damage,
+        attackRange: t1Config.attack.range,
+        attackCooldownMs: t1Config.attack.cooldownMs,
+        nextAttackAt: 0,
+        alive: true,
+        respawnAt: 0,
+        spawnPos: { x, z },
+        color: t1Config.attack.color,
+      });
+    }
+  }
+
+  updateMobs(now, dt) {
+    if (this.state !== 'ACTIVE') return;
+    const elapsedSeconds = this.matchStartedAt ? (now - this.matchStartedAt) / 1000 : 0;
+    const livingPlayers = [...this.players.values()].filter((p) => p.alive && p.connected);
+
+    // 1. Tier 2 Flame Brute Spawn Check (spawns at 90s)
+    const t2Config = MOB_SYSTEM_CONFIG.TIER_2_FIRE_MOB;
+    if (elapsedSeconds >= t2Config.spawnTimeSeconds) {
+      if (!this.tier2Announced) {
+        this.tier2Announced = true;
+        this.broadcast({
+          type: 'MOB_ESCALATION',
+          tier: 2,
+          name: t2Config.name,
+          message: '🔥 Warning! Tier 2 Flame Brutes have emerged with incinerating attacks!',
+        });
+      }
+      const activeT2Count = this.mobs.filter((m) => m.tier === 2 && m.alive).length;
+      if (activeT2Count < 2) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 45 + Math.random() * 55;
+        const x = Math.round(Math.cos(angle) * radius);
+        const z = Math.round(Math.sin(angle) * radius);
+        const y = this.getTerrainHeight(x, z) + 1.0;
+        const mob = {
+          id: `mob-t2-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          type: t2Config.id,
+          name: t2Config.name,
+          tier: 2,
+          x,
+          y,
+          z,
+          ry: Math.random() * Math.PI * 2,
+          health: t2Config.health,
+          maxHealth: t2Config.maxHealth,
+          speed: t2Config.speed,
+          aggroRadius: t2Config.aggroRadius,
+          attackDamage: t2Config.attack.damage,
+          attackRange: t2Config.attack.range,
+          attackCooldownMs: t2Config.attack.cooldownMs,
+          burnDoT: t2Config.attack.burnDoT,
+          nextAttackAt: 0,
+          alive: true,
+          respawnAt: 0,
+          spawnPos: { x, z },
+          color: t2Config.attack.color,
+        };
+        this.mobs.push(mob);
+        this.broadcast({ type: 'MOB_SPAWNED', mob });
+      }
+    }
+
+    // 2. Respawn defeated mobs
+    for (const mob of this.mobs) {
+      if (!mob.alive && mob.respawnAt && now >= mob.respawnAt) {
+        mob.alive = true;
+        mob.health = mob.maxHealth;
+        mob.x = mob.spawnPos.x + (Math.random() - 0.5) * 8;
+        mob.z = mob.spawnPos.z + (Math.random() - 0.5) * 8;
+        mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
+        mob.respawnAt = 0;
+        this.broadcast({ type: 'MOB_SPAWNED', mob });
+      }
+    }
+
+    // 3. AI Update: aggro, chase & attacks
+    for (const mob of this.mobs) {
+      if (!mob.alive) continue;
+      if (mob.stunnedUntil && now < mob.stunnedUntil) continue;
+
+      let closestTarget = null;
+      let closestDist = Infinity;
+      for (const target of livingPlayers) {
+        const d = Math.hypot(target.x - mob.x, target.z - mob.z);
+        if (d < closestDist && d <= mob.aggroRadius) {
+          closestDist = d;
+          closestTarget = target;
+        }
+      }
+
+      if (closestTarget) {
+        const dx = closestTarget.x - mob.x;
+        const dz = closestTarget.z - mob.z;
+        mob.ry = Math.atan2(dx, dz);
+
+        // Move closer if further than attack range
+        if (closestDist > mob.attackRange * 0.6) {
+          const moveStep = mob.speed * dt;
+          mob.x += (dx / closestDist) * moveStep;
+          mob.z += (dz / closestDist) * moveStep;
+          mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
+        }
+
+        // Attack when in range and cooldown expired
+        if (closestDist <= mob.attackRange && now >= (mob.nextAttackAt || 0)) {
+          mob.nextAttackAt = now + (mob.attackCooldownMs || 3000);
+          const isFire = mob.tier === 2;
+
+          this.broadcast({
+            type: 'MOB_ATTACK',
+            mobId: mob.id,
+            mobType: mob.type,
+            targetId: closestTarget.id,
+            origin: { x: mob.x, y: mob.y + 0.8, z: mob.z },
+            target: { x: closestTarget.x, y: closestTarget.y + 1.0, z: closestTarget.z },
+            attackType: isFire ? 'FIRE_SPIT' : 'WATER_SPIT',
+            damage: mob.attackDamage,
+            color: mob.color,
+          });
+
+          const absorbed = closestTarget.shieldUntil > now;
+          if (absorbed) closestTarget.shieldUntil = 0;
+          const appliedDmg = absorbed ? 0 : Math.min(mob.attackDamage, closestTarget.health);
+          if (!absorbed && appliedDmg > 0) {
+            closestTarget.health = Math.max(0, closestTarget.health - appliedDmg);
+            this.broadcast({
+              type: 'PLAYER_DAMAGED',
+              playerId: closestTarget.id,
+              attackerId: mob.id,
+              health: closestTarget.health,
+              damage: appliedDmg,
+              source: mob.type,
+            });
+
+            // If Tier 2, apply authoritative 3-second Burn DoT!
+            if (isFire) {
+              this.applyStatusEffect(closestTarget, {
+                type: 'BURN',
+                name: 'Ignited',
+                durationMs: 3000,
+                tickIntervalMs: 1000,
+                damagePerTick: 6,
+                attackerId: mob.id,
+              });
+            }
+
+            if (closestTarget.health <= 0) {
+              closestTarget.alive = false;
+              this.eliminate(closestTarget, `Slain by a vicious ${mob.name}.`, mob.id);
+            }
+          }
+        }
+      } else {
+        // Passive gentle wander
+        mob.wanderAngle = (mob.wanderAngle || Math.random() * Math.PI * 2) + (Math.random() - 0.5) * 0.4;
+        const wanderStep = (mob.speed * 0.35) * dt;
+        mob.x += Math.cos(mob.wanderAngle) * wanderStep;
+        mob.z += Math.sin(mob.wanderAngle) * wanderStep;
+        mob.ry = mob.wanderAngle;
+        mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
+      }
+    }
+  }
+
+  damageMob(mobId, damage, attackerId) {
+    const mob = (this.mobs || []).find((m) => m.id === mobId && m.alive);
+    if (!mob) return;
+    const appliedDamage = Math.min(damage, mob.health);
+    mob.health = Math.max(0, mob.health - appliedDamage);
+
+    const attacker = this.players.get(attackerId);
+    if (attacker) {
+      attacker.stats.damageDealt += appliedDamage;
+    }
+
+    this.broadcast({
+      type: 'MOB_DAMAGED',
+      mobId: mob.id,
+      mobType: mob.type,
+      damage: appliedDamage,
+      health: mob.health,
+      maxHealth: mob.maxHealth,
+      attackerId,
+    });
+
+    if (mob.health <= 0) {
+      if (attacker) attacker.stats.kills += 1;
+      this.defeatMob(mob, attackerId);
+    }
+  }
+
+  defeatMob(mob, killerId) {
+    mob.alive = false;
+    mob.health = 0;
+    mob.respawnAt = Date.now() + 35_000;
+
+    const drops = mob.tier === 2
+      ? ['BLAZING_CINDER', 'EMBER_ORE', 'ARCANE_QUARTZ']
+      : ['RIVER_DEW', 'ELDER_WOOD', 'AETHER_ESSENCE'];
+
+    const spawnedDrops = [];
+    drops.forEach((resType, idx) => {
+      const offsetX = (idx - 1) * 1.5;
+      const offsetZ = ((idx % 2) - 0.5) * 1.5;
+      const dropItem = {
+        id: `loot-mob-${mob.id}-${idx}-${Date.now().toString(36)}`,
+        type: resType,
+        kind: 'resource',
+        biome: mob.tier === 2 ? 'volcanic' : 'lush',
+        rarity: mob.tier === 2 ? 'Rare' : 'Common',
+        x: Math.round(mob.x + offsetX),
+        z: Math.round(mob.z + offsetZ),
+        active: true,
+      };
+      this.items.push(dropItem);
+      spawnedDrops.push(dropItem);
+      this.broadcast({ type: 'ITEM_SPAWNED', item: dropItem });
+    });
+
+    this.broadcast({
+      type: 'MOB_DEFEATED',
+      mobId: mob.id,
+      mobType: mob.type,
+      tier: mob.tier,
+      killerId,
+      drops: spawnedDrops.map((d) => d.type),
+      position: { x: mob.x, y: mob.y, z: mob.z },
+    });
+  }
+
+  triggerTrapOnMob(trap, mob) {
+    trap.triggered = true;
+    const now = Date.now();
+    let appliedDamage = 0;
+    if (trap.trapType === 'FROST_TRAP') {
+      appliedDamage = 25;
+      mob.stunnedUntil = now + 2500;
+    } else if (trap.trapType === 'FLAME_SIGIL') {
+      appliedDamage = 45;
+    } else if (trap.trapType === 'GRAVITY_SNARE') {
+      appliedDamage = 20;
+      mob.stunnedUntil = now + 2000;
+    }
+    this.damageMob(mob.id, appliedDamage, trap.ownerId);
+    this.broadcast({
+      type: 'TRAP_TRIGGERED',
+      trapId: trap.id,
+      trapType: trap.trapType,
+      x: trap.x,
+      y: trap.y,
+      z: trap.z,
+      victimId: mob.id,
+      damage: appliedDamage,
+      attackerId: trap.ownerId,
+    });
+  }
+
   updateDragon(now, tickSeconds) {
     if (!this.dragon.alive) return;
     const elapsedSeconds = (now - this.matchStartedAt) / 1000;
@@ -790,6 +1234,97 @@ class GameRoom {
       this.dragon.phase = profile.id;
       this.broadcast({ type: 'DRAGON_PHASE_CHANGED', phase: profile.id });
     }
+
+    // 1-minute aerial / 25-second ground landing cycle
+    if (!this.dragon.flightPhase) {
+      this.dragon.flightPhase = 'AERIAL';
+      this.dragon.nextPhaseSwitchAt = now + 60_000;
+      this.dragon.landingTelegraphed = false;
+    }
+
+    // 3-second landing warning telegraph prior to touchdown
+    if (this.dragon.flightPhase === 'AERIAL' && now >= this.dragon.nextPhaseSwitchAt - 3000 && !this.dragon.landingTelegraphed) {
+      this.dragon.landingTelegraphed = true;
+      this.broadcast({
+        type: 'DRAGON_LANDING_TELEGRAPH',
+        durationSeconds: 3,
+        landingAt: this.dragon.nextPhaseSwitchAt,
+        position: { x: this.dragon.x, y: this.getTerrainHeight(this.dragon.x, this.dragon.z), z: this.dragon.z },
+      });
+    }
+
+    if (now >= this.dragon.nextPhaseSwitchAt) {
+      if (this.dragon.flightPhase === 'AERIAL') {
+        this.dragon.flightPhase = 'GROUNDED';
+        this.dragon.nextPhaseSwitchAt = now + 25_000;
+        this.dragon.landingTelegraphed = false;
+        const landingPos = { x: this.dragon.x, y: this.getTerrainHeight(this.dragon.x, this.dragon.z), z: this.dragon.z };
+        this.broadcast({
+          type: 'DRAGON_LANDED',
+          durationSeconds: 25,
+          position: landingPos,
+        });
+
+        // Devastating Landing Impact Shockwave (Crushes anyone within 8.5m for 20 dmg)
+        const shockwaveRadius = 8.5;
+        const landingDmg = 20;
+        for (const p of this.players.values()) {
+          if (!p.alive || !p.connected) continue;
+          const dist = Math.hypot(p.x - landingPos.x, p.z - landingPos.z);
+          if (dist <= shockwaveRadius) {
+            const absorbed = p.shieldUntil > now;
+            if (absorbed) p.shieldUntil = 0;
+            const applied = absorbed ? 0 : Math.min(landingDmg, p.health);
+            if (!absorbed && applied > 0) {
+              p.health = Math.max(0, p.health - applied);
+              this.broadcast({
+                type: 'PLAYER_DAMAGED',
+                playerId: p.id,
+                attackerId: 'dragon',
+                health: p.health,
+                damage: applied,
+                source: 'DRAGON_LANDING_IMPACT',
+              });
+              if (p.health <= 0 && p.alive) {
+                p.alive = false;
+                this.broadcast({
+                  type: 'PLAYER_ELIMINATED',
+                  playerId: p.id,
+                  attackerId: 'dragon',
+                  reason: 'Crushed beneath the dragon\'s devastating landing impact.',
+                  player: this.publicPlayer(p),
+                });
+              }
+            }
+          }
+        }
+        this.checkLastPlayer();
+      } else {
+        this.dragon.flightPhase = 'AERIAL';
+        this.dragon.nextPhaseSwitchAt = now + 60_000;
+        this.dragon.landingTelegraphed = false;
+        this.broadcast({
+          type: 'DRAGON_TAKEOFF',
+          durationSeconds: 60,
+          position: { x: this.dragon.x, y: this.getTerrainHeight(this.dragon.x, this.dragon.z) + 14.0, z: this.dragon.z },
+        });
+      }
+    }
+    this.dragon.flightPhaseTimer = Math.max(0, Math.ceil((this.dragon.nextPhaseSwitchAt - now) / 1000));
+    this.dragon.altitude = this.dragon.flightPhase === 'GROUNDED' ? 0.6 : 14.0;
+
+    // If stunned by a Frost Rune Trap or Singularity, halt movement and attack countdown
+    if (this.dragon.stunnedUntil && now < this.dragon.stunnedUntil) {
+      return;
+    }
+
+    // Dynamic vertical position based on flightPhase
+    const groundY = this.getTerrainHeight(this.dragon.x, this.dragon.z);
+    const targetY = this.dragon.flightPhase === 'GROUNDED' ? (groundY + 0.6) : (groundY + 14.0);
+    this.dragon.y += (targetY - this.dragon.y) * Math.min(1.0, 3.5 * tickSeconds);
+
+    const speedMultiplier = this.dragon.flightPhase === 'GROUNDED' ? 0.45 : 1.0;
+    const moveSpeed = profile.speed * speedMultiplier;
 
     const alivePlayers = [...this.players.values()].filter((player) => player.alive && player.connected);
     let target = alivePlayers.sort((a, b) => distance(a, this.dragon) - distance(b, this.dragon))[0];
@@ -808,7 +1343,7 @@ class GameRoom {
       const moveZ = orbitZ - this.dragon.z;
       const moveDistance = Math.hypot(moveX, moveZ);
       if (moveDistance > 0.5) {
-        const step = Math.min(moveDistance, profile.speed * tickSeconds);
+        const step = Math.min(moveDistance, moveSpeed * tickSeconds);
         this.dragon.x += (moveX / moveDistance) * step;
         this.dragon.z += (moveZ / moveDistance) * step;
       }
@@ -823,7 +1358,7 @@ class GameRoom {
       const dz = this.dragon.roamTarget.z - this.dragon.z;
       const roamDistance = Math.hypot(dx, dz);
       if (roamDistance > 0.5) {
-        const step = Math.min(roamDistance, profile.speed * tickSeconds);
+        const step = Math.min(roamDistance, moveSpeed * tickSeconds);
         this.dragon.x += (dx / roamDistance) * step;
         this.dragon.z += (dz / roamDistance) * step;
         this.dragon.ry = Math.atan2(dx, dz);
@@ -867,7 +1402,15 @@ class GameRoom {
   }
 
   nextDragonAttack(profile) {
-    const options = Object.values(DRAGON_ATTACKS);
+    let options = Object.values(DRAGON_ATTACKS);
+    if (this.dragon.flightPhase === 'GROUNDED') {
+      // Grounded dragon exclusively performs TAIL_SWEEP or GROUND_SLAM
+      options = options.filter((atk) => atk.id === 'TAIL_SWEEP' || atk.id === 'GROUND_SLAM');
+    } else {
+      // Aerial dragon performs FIRE_BREATH cone attack
+      options = options.filter((atk) => atk.id === 'FIRE_BREATH');
+    }
+    if (!options.length) options = Object.values(DRAGON_ATTACKS);
     const next = options.find((attack) => attack.id !== this.lastDragonAttackType) || options[0];
     this.lastDragonAttackType = next.id;
     return {
@@ -876,7 +1419,7 @@ class GameRoom {
       cooldownMs: Math.max(1_200, next.cooldownMs * profile.cooldownMultiplier),
       damage: Math.max(1, Math.round(next.damage * profile.damageMultiplier)),
       range: next.range * profile.rangeMultiplier,
-      radius: next.radius ? next.radius * profile.rangeMultiplier : undefined,
+      radius: (next.radius || next.range) ? (next.radius || next.range) * profile.rangeMultiplier : undefined,
     };
   }
 
@@ -895,6 +1438,9 @@ class GameRoom {
           ? (attack.direction.x * dx + attack.direction.z * dz) / range
           : -1;
         if (range > attack.range || facing < attack.facingDotMin) continue;
+      } else if (attack.type === 'TAIL_SWEEP') {
+        const sweepRange = attack.range || attack.radius || 8;
+        if (distance(player, this.dragon) > sweepRange) continue;
       } else if (distance(player, attack.target) > attack.radius) {
         continue;
       }
@@ -994,6 +1540,7 @@ class GameRoom {
       .filter((target) => this.mode.playerCombat && target.id !== attacker.id && target.alive && target.connected)
       .map((target) => ({ target, type: 'player' }))
       .concat(this.dragon.alive ? [{ target: this.dragon, type: 'dragon' }] : [])
+      .concat(this.mobs ? this.mobs.filter((m) => m.alive).map((target) => ({ target, type: 'mob' })) : [])
       .map((entry) => {
         const dx = entry.target.x - attacker.x;
         const dz = entry.target.z - attacker.z;
@@ -1010,7 +1557,7 @@ class GameRoom {
     }
 
     this.pendingKnifeAttacks.push({
-      ws, attackerId: attacker.id, attackId, targetId: selected.type === 'player' ? selected.target.id : null,
+      ws, attackerId: attacker.id, attackId, targetId: selected.target?.id || null,
       targetType: selected.type, createdAt: now,
     });
     if (!this.knifeFlushTimer) {
@@ -1035,6 +1582,17 @@ class GameRoom {
         results.push({ ...attack, hit: true, damage: KNIFE_RULES.damage });
         continue;
       }
+      if (attack.targetType === 'mob') {
+        const mob = (this.mobs || []).find((m) => m.id === attack.targetId && m.alive);
+        if (mob) {
+          const appliedDamage = Math.min(KNIFE_RULES.damage, mob.health);
+          this.damageMob(mob.id, appliedDamage, attack.attackerId);
+          results.push({ ...attack, hit: true, damage: appliedDamage });
+        } else {
+          results.push({ ...attack, hit: false, reason: 'target-unavailable', damage: 0 });
+        }
+        continue;
+      }
       const target = this.players.get(attack.targetId);
       if (!target || !target.alive || !target.connected || !this.mode.playerCombat) {
         results.push({ ...attack, hit: false, reason: 'target-unavailable', damage: 0 });
@@ -1054,7 +1612,10 @@ class GameRoom {
 
     for (const attack of results) {
       if (attack.targetType !== 'dragon' || !attack.hit) continue;
-      const appliedDamage = Math.min(KNIFE_RULES.damage, this.dragon.health);
+      const isGrounded = this.dragon.flightPhase === 'GROUNDED';
+      const groundMultiplier = isGrounded ? 1.25 : 1.0;
+      const calculatedDamage = Math.round(KNIFE_RULES.damage * groundMultiplier);
+      const appliedDamage = Math.min(calculatedDamage, this.dragon.health);
       attack.damage = appliedDamage;
       this.dragon.health -= appliedDamage;
       if (appliedDamage > 0) dragonKillerId = attack.attackerId;
@@ -1110,7 +1671,7 @@ class GameRoom {
 
   craftWeapon(player, recipeIndex) {
     if (this.state !== 'ACTIVE' || !player.alive) return { success: false, reason: 'Player cannot craft now' };
-    const recipe = WEAPON_CRAFTING_RECIPES[recipeIndex];
+    const recipe = ARCANE_CRAFTING_RECIPES[recipeIndex] || WEAPON_CRAFTING_RECIPES[recipeIndex];
     if (!recipe) return { success: false, reason: 'Invalid crafting recipe' };
 
     for (const [ingredient, count] of Object.entries(recipe.ingredients)) {
@@ -1121,34 +1682,58 @@ class GameRoom {
 
     for (const [ingredient, count] of Object.entries(recipe.ingredients)) {
       player.resources[ingredient] -= count;
+      if (player.backpack && player.backpack.resources) {
+        player.backpack.resources[ingredient] = Math.max(0, (player.backpack.resources[ingredient] || 0) - count);
+      }
     }
 
-    if (recipe.weaponId) {
+    if (recipe.type === 'stick' || recipe.stickId) {
+      const stickId = recipe.stickId || recipe.weaponId;
+      player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
+      if (!player.backpack.sticks.includes(stickId)) {
+        player.backpack.sticks.push(stickId);
+      }
+      player.equippedStick = stickId;
+      player.equippedWeapon = stickId;
+      if (!player.weapons.includes(stickId)) player.weapons.push(stickId);
+    } else if (recipe.type === 'power' || recipe.powerId) {
+      const powerId = recipe.powerId;
+      player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
+      if (!player.backpack.powers.includes(powerId)) {
+        player.backpack.powers.push(powerId);
+      }
+      if (!player.inventory.includes(powerId)) player.inventory.push(powerId);
+      player.powerSlots = player.powerSlots || [null, null, null, null, null, null, null];
+      const openSlotIndex = player.powerSlots.findIndex((s) => s === null);
+      if (openSlotIndex !== -1 && !player.powerSlots.includes(powerId)) {
+        player.powerSlots[openSlotIndex] = powerId;
+      }
+    } else if (recipe.weaponId) {
       if (!player.weapons.includes(recipe.weaponId)) {
         player.weapons.push(recipe.weaponId);
       }
       player.equippedWeapon = recipe.weaponId;
       player.ammo[recipe.weaponId] = (player.ammo[recipe.weaponId] || 0) + (recipe.ammoGranted || 0);
-    } else if (recipe.ammoType === 'KINETIC_AMMO') {
-      player.ammo.PISTOL = (player.ammo.PISTOL || 0) + 16;
-      player.ammo.GUN = (player.ammo.GUN || 0) + 20;
-    } else if (recipe.ammoType === 'ENERGY_AMMO') {
-      player.ammo.LASER_GUN = (player.ammo.LASER_GUN || 0) + 12;
-      player.ammo.PLASMA_CANNON = (player.ammo.PLASMA_CANNON || 0) + 6;
     }
 
     this.broadcast({
       type: 'WEAPON_CRAFTED',
       playerId: player.id,
-      weaponId: recipe.weaponId,
+      weaponId: recipe.stickId || recipe.weaponId,
+      stickId: recipe.stickId,
+      powerId: recipe.powerId,
+      recipeType: recipe.type,
       ammoType: recipe.ammoType,
       ammo: player.ammo,
       weapons: player.weapons,
       resources: player.resources,
+      backpack: player.backpack,
+      equippedStick: player.equippedStick,
+      powerSlots: player.powerSlots,
       equippedWeapon: player.equippedWeapon,
     });
     this.broadcastState();
-    return { success: true, weaponId: recipe.weaponId, ammoType: recipe.ammoType };
+    return { success: true, stickId: recipe.stickId, powerId: recipe.powerId, weaponId: recipe.weaponId, ammoType: recipe.ammoType };
   }
 
   fireWeapon(ws, player, message) {
@@ -1234,6 +1819,30 @@ class GameRoom {
       }
     }
 
+    if (this.mobs && this.mobs.length) {
+      for (const mob of this.mobs) {
+        if (!mob.alive) continue;
+        const toMobX = mob.x - origin.x;
+        const toMobY = (mob.y + 0.8) - origin.y;
+        const toMobZ = mob.z - origin.z;
+        const distAlongRay = toMobX * dirX + toMobY * dirY + toMobZ * dirZ;
+        if (distAlongRay > 0 && distAlongRay <= def.range) {
+          const projX = origin.x + dirX * distAlongRay;
+          const projY = origin.y + dirY * distAlongRay;
+          const projZ = origin.z + dirZ * distAlongRay;
+          const perpDist = Math.hypot(mob.x - projX, (mob.y + 0.8) - projY, mob.z - projZ);
+          if (perpDist <= 2.2) {
+            candidates.push({
+              type: 'mob',
+              target: mob,
+              distance: distAlongRay,
+              point: { x: projX, y: projY, z: projZ },
+            });
+          }
+        }
+      }
+    }
+
     candidates.sort((a, b) => a.distance - b.distance);
     const hitEntry = candidates[0];
     const hitPoint = hitEntry ? hitEntry.point : {
@@ -1266,14 +1875,29 @@ class GameRoom {
         }
       } else if (hitEntry.type === 'dragon') {
         hitTargetId = 'dragon';
-        appliedDamage = Math.min(def.damage, this.dragon.health);
+        const isGrounded = this.dragon.flightPhase === 'GROUNDED';
+        const groundMultiplier = isGrounded ? 1.25 : 1.0;
+        const calculatedDamage = Math.round(def.damage * groundMultiplier);
+        appliedDamage = Math.min(calculatedDamage, this.dragon.health);
         this.dragon.health = Math.max(0, this.dragon.health - appliedDamage);
         player.stats.damageDealt += appliedDamage;
         player.stats.dragonDamage += appliedDamage;
-        this.broadcast({ type: 'DRAGON_DAMAGED', attackerId: player.id, health: this.dragon.health, maxHealth: this.dragon.maxHealth, damage: appliedDamage, source: def.id });
+        this.broadcast({
+          type: 'DRAGON_DAMAGED',
+          attackerId: player.id,
+          health: this.dragon.health,
+          maxHealth: this.dragon.maxHealth,
+          damage: appliedDamage,
+          source: def.id,
+          isVulnerable: isGrounded,
+        });
         if (this.dragon.health <= 0) {
           this.defeatDragon(player.id);
         }
+      } else if (hitEntry.type === 'mob') {
+        hitTargetId = hitEntry.target.id;
+        appliedDamage = Math.min(def.damage, hitEntry.target.health);
+        this.damageMob(hitEntry.target.id, appliedDamage, player.id);
       }
     }
 
@@ -1325,6 +1949,413 @@ class GameRoom {
     this.broadcastState();
   }
 
+  deployTrap(player, message) {
+    if (this.state !== 'ACTIVE' || !player.alive) return;
+    const trapType = String(message.trapType || 'FROST_TRAP');
+    const trapDef = TRAP_DEFINITIONS[trapType] || MAGIC_POWERS[trapType];
+    if (!trapDef) return;
+
+    const now = Date.now();
+    player.powerCooldowns = player.powerCooldowns || {};
+    if ((player.powerCooldowns[trapType] || 0) > now) return;
+
+    const cooldownMs = trapDef.cooldownMs || 12000;
+    player.powerCooldowns[trapType] = now + cooldownMs;
+
+    const pos = message.position || { x: player.x, y: player.y, z: player.z };
+    const x = Number(pos.x) || player.x;
+    const z = Number(pos.z) || player.z;
+    const y = Number(pos.y) || this.getTerrainHeight(x, z);
+
+    const trap = {
+      id: `trap-${player.id}-${now}-${Math.floor(Math.random() * 1000)}`,
+      ownerId: player.id,
+      trapType,
+      name: trapDef.name,
+      x,
+      y,
+      z,
+      radius: trapDef.triggerRadius || 3.0,
+      armedAt: now + (trapDef.armDelayMs || 1000),
+      expiresAt: now + 120_000,
+      triggered: false,
+      color: trapDef.color,
+    };
+
+    this.traps = this.traps || [];
+    this.traps.push(trap);
+
+    this.broadcast({
+      type: 'TRAP_DEPLOYED',
+      trap,
+      cooldownMs,
+      readyAt: player.powerCooldowns[trapType],
+    });
+    this.broadcastState();
+  }
+
+  updateTraps(now) {
+    if (!this.traps || !this.traps.length) return;
+    for (const trap of this.traps) {
+      if (trap.triggered || now < trap.armedAt || trap.expiresAt < now) continue;
+
+      // 1. Check players and bots
+      for (const target of this.players.values()) {
+        if (!target.alive || target.id === trap.ownerId) continue;
+        const dist = Math.hypot(target.x - trap.x, target.z - trap.z);
+        if (dist <= trap.radius) {
+          this.triggerTrap(trap, target);
+          break;
+        }
+      }
+      if (trap.triggered) continue;
+
+      // 2. Check mobs
+      if (this.mobs && this.mobs.length) {
+        for (const mob of this.mobs) {
+          if (!mob.alive) continue;
+          const dist = Math.hypot(mob.x - trap.x, mob.z - trap.z);
+          if (dist <= trap.radius + 0.8) {
+            this.triggerTrapOnMob(trap, mob);
+            break;
+          }
+        }
+      }
+      if (trap.triggered) continue;
+
+      // 3. Check Dragon (especially when grounded!)
+      if (this.dragon && this.dragon.alive) {
+        const isGrounded = this.dragon.flightPhase === 'GROUNDED' || this.dragon.y <= this.getTerrainHeight(this.dragon.x, this.dragon.z) + 3.0;
+        if (isGrounded) {
+          const distToDragon = Math.hypot(this.dragon.x - trap.x, this.dragon.z - trap.z);
+          if (distToDragon <= trap.radius + 4.5) {
+            this.triggerTrapOnDragon(trap);
+          }
+        }
+      }
+    }
+
+    this.traps = this.traps.filter((t) => !t.triggered && t.expiresAt > now);
+  }
+
+  triggerTrap(trap, victim) {
+    trap.triggered = true;
+    const trapDef = TRAP_DEFINITIONS[trap.trapType] || MAGIC_POWERS[trap.trapType];
+    const owner = this.players.get(trap.ownerId);
+    const now = Date.now();
+
+    let appliedDamage = 0;
+    const absorbed = victim.shieldUntil > now;
+    if (absorbed) victim.shieldUntil = 0;
+
+    if (trap.trapType === 'FROST_TRAP') {
+      const baseDmg = trapDef?.damage || 15;
+      appliedDamage = absorbed ? 0 : Math.min(baseDmg, victim.health);
+      if (!absorbed) victim.health = Math.max(0, victim.health - appliedDamage);
+      const freezeDuration = trapDef?.freezeDurationMs || 2500;
+      victim.freezeUntil = now + freezeDuration;
+      this.applyStatusEffect(victim, {
+        type: 'FROST_FREEZE',
+        name: 'Frozen',
+        durationMs: freezeDuration,
+        attackerId: trap.ownerId,
+      });
+    } else if (trap.trapType === 'FLAME_SIGIL') {
+      const burstDmg = trapDef?.burstDamage || 32;
+      appliedDamage = absorbed ? 0 : Math.min(burstDmg, victim.health);
+      if (!absorbed) victim.health = Math.max(0, victim.health - appliedDamage);
+      this.applyStatusEffect(victim, {
+        type: 'BURN',
+        name: 'Ignited',
+        durationMs: 3000,
+        tickIntervalMs: 1000,
+        damagePerTick: 6,
+        attackerId: trap.ownerId,
+      });
+    } else if (trap.trapType === 'GRAVITY_SNARE') {
+      const baseDmg = 12;
+      appliedDamage = absorbed ? 0 : Math.min(baseDmg, victim.health);
+      if (!absorbed) victim.health = Math.max(0, victim.health - appliedDamage);
+      victim.x = victim.x * 0.35 + trap.x * 0.65;
+      victim.z = victim.z * 0.35 + trap.z * 0.65;
+      this.applyStatusEffect(victim, {
+        type: 'GRAVITY_PULL',
+        name: 'Gravity Snare',
+        durationMs: 3500,
+        slowPercent: 0.5,
+        attackerId: trap.ownerId,
+      });
+    } else {
+      appliedDamage = absorbed ? 0 : Math.min(25, victim.health);
+      if (!absorbed) victim.health = Math.max(0, victim.health - appliedDamage);
+    }
+
+    if (owner && appliedDamage > 0) {
+      owner.stats.damageDealt += appliedDamage;
+    }
+
+    this.broadcast({
+      type: 'TRAP_TRIGGERED',
+      trapId: trap.id,
+      trapType: trap.trapType,
+      x: trap.x,
+      y: trap.y,
+      z: trap.z,
+      victimId: victim.id,
+      damage: appliedDamage,
+      health: victim.health,
+      attackerId: trap.ownerId,
+    });
+
+    if (appliedDamage > 0) {
+      this.broadcast({
+        type: 'PLAYER_DAMAGED',
+        playerId: victim.id,
+        attackerId: trap.ownerId,
+        health: victim.health,
+        damage: appliedDamage,
+        source: trap.trapType,
+      });
+    }
+
+    if (victim.health <= 0) {
+      if (owner && !absorbed) owner.stats.kills += 1;
+      this.eliminate(victim, `Triggered a lethal ${trapDef?.name || 'Magical Trap'}.`, trap.ownerId);
+    }
+  }
+
+  triggerTrapOnDragon(trap) {
+    trap.triggered = true;
+    const trapDef = TRAP_DEFINITIONS[trap.trapType] || MAGIC_POWERS[trap.trapType];
+    const owner = this.players.get(trap.ownerId);
+    const now = Date.now();
+
+    let appliedDamage = 0;
+    if (trap.trapType === 'FROST_TRAP') {
+      appliedDamage = Math.min(30, this.dragon.health);
+      this.dragon.health = Math.max(0, this.dragon.health - appliedDamage);
+      this.dragon.stunnedUntil = now + 3000;
+      this.broadcast({
+        type: 'DRAGON_STUNNED',
+        durationMs: 3000,
+        reason: 'Frozen by Frost Rune Trap!',
+      });
+    } else if (trap.trapType === 'FLAME_SIGIL') {
+      appliedDamage = Math.min(50, this.dragon.health);
+      this.dragon.health = Math.max(0, this.dragon.health - appliedDamage);
+    } else if (trap.trapType === 'GRAVITY_SNARE') {
+      appliedDamage = Math.min(35, this.dragon.health);
+      this.dragon.health = Math.max(0, this.dragon.health - appliedDamage);
+      this.dragon.stunnedUntil = now + 2000;
+    }
+
+    if (owner && appliedDamage > 0) {
+      owner.stats.damageDealt += appliedDamage;
+      owner.stats.dragonDamage += appliedDamage;
+    }
+
+    this.broadcast({
+      type: 'TRAP_TRIGGERED',
+      trapId: trap.id,
+      trapType: trap.trapType,
+      x: trap.x,
+      y: trap.y,
+      z: trap.z,
+      victimId: 'dragon',
+      damage: appliedDamage,
+      health: this.dragon.health,
+      attackerId: trap.ownerId,
+    });
+
+    this.broadcast({
+      type: 'DRAGON_DAMAGED',
+      attackerId: trap.ownerId,
+      health: this.dragon.health,
+      maxHealth: this.dragon.maxHealth,
+      damage: appliedDamage,
+      source: trap.trapType,
+    });
+
+    if (this.dragon.health <= 0) {
+      this.defeatDragon(trap.ownerId);
+    }
+  }
+
+  castSpell(ws, player, message) {
+    if (this.state !== 'ACTIVE' || !player.alive) return;
+    const now = Date.now();
+    const powerId = String(message.powerId || 'FIREBALL');
+    const def = MAGIC_POWERS[powerId];
+    if (!def) return;
+
+    player.powerCooldowns = player.powerCooldowns || {};
+    if ((player.powerCooldowns[powerId] || 0) > now) {
+      if (ws) safeSend(ws, { type: 'POWER_COOLDOWN', powerId, readyAt: player.powerCooldowns[powerId] });
+      return;
+    }
+    const cooldownMs = def.cooldownMs || 5000;
+    player.powerCooldowns[powerId] = now + cooldownMs;
+
+    if (def.category === 'defense' || powerId === 'AEGIS_WARD') {
+      player.shieldUntil = now + (def.durationMs || 8000);
+      this.broadcast({
+        type: 'ABILITY_USED',
+        playerId: player.id,
+        ability: powerId,
+        duration: def.durationMs || 8000,
+        cooldownMs,
+        readyAt: player.powerCooldowns[powerId],
+      });
+      return;
+    }
+
+    const origin = {
+      x: Number(message.origin?.x) || player.x,
+      y: Number(message.origin?.y) || (player.y + 1.2),
+      z: Number(message.origin?.z) || player.z,
+    };
+    let dirX = Number(message.direction?.x) || Math.sin(player.ry);
+    let dirY = Number(message.direction?.y) || 0;
+    let dirZ = Number(message.direction?.z) || Math.cos(player.ry);
+    const dirLen = Math.hypot(dirX, dirY, dirZ) || 1;
+    dirX /= dirLen; dirY /= dirLen; dirZ /= dirLen;
+
+    const range = def.range || 50;
+    const candidates = [];
+
+    if (this.mode.playerCombat) {
+      for (const target of this.players.values()) {
+        if (target.id === player.id || !target.alive || !target.connected) continue;
+        const toTargetX = target.x - origin.x;
+        const toTargetY = (target.y + 1.0) - origin.y;
+        const toTargetZ = target.z - origin.z;
+        const distAlongRay = toTargetX * dirX + toTargetY * dirY + toTargetZ * dirZ;
+        if (distAlongRay <= 0 || distAlongRay > range) continue;
+        const projX = origin.x + dirX * distAlongRay;
+        const projY = origin.y + dirY * distAlongRay;
+        const projZ = origin.z + dirZ * distAlongRay;
+        const perpDist = Math.hypot(target.x - projX, (target.y + 1.0) - projY, target.z - projZ);
+        if (perpDist <= 2.0) {
+          candidates.push({ type: 'player', target, distance: distAlongRay, point: { x: projX, y: projY, z: projZ } });
+        }
+      }
+    }
+
+    if (this.dragon.alive) {
+      const toDragonX = this.dragon.x - origin.x;
+      const toDragonY = (this.dragon.y + 2.0) - origin.y;
+      const toDragonZ = this.dragon.z - origin.z;
+      const distAlongRay = toDragonX * dirX + toDragonY * dirY + toDragonZ * dirZ;
+      if (distAlongRay > 0 && distAlongRay <= range) {
+        const projX = origin.x + dirX * distAlongRay;
+        const projY = origin.y + dirY * distAlongRay;
+        const projZ = origin.z + dirZ * distAlongRay;
+        const perpDist = Math.hypot(this.dragon.x - projX, (this.dragon.y + 2.0) - projY, this.dragon.z - projZ);
+        if (perpDist <= 6.0) {
+          candidates.push({ type: 'dragon', target: this.dragon, distance: distAlongRay, point: { x: projX, y: projY, z: projZ } });
+        }
+      }
+    }
+
+    if (this.mobs && this.mobs.length) {
+      for (const mob of this.mobs) {
+        if (!mob.alive) continue;
+        const toMobX = mob.x - origin.x;
+        const toMobY = (mob.y + 0.8) - origin.y;
+        const toMobZ = mob.z - origin.z;
+        const distAlongRay = toMobX * dirX + toMobY * dirY + toMobZ * dirZ;
+        if (distAlongRay > 0 && distAlongRay <= range) {
+          const projX = origin.x + dirX * distAlongRay;
+          const projY = origin.y + dirY * distAlongRay;
+          const projZ = origin.z + dirZ * distAlongRay;
+          const perpDist = Math.hypot(mob.x - projX, (mob.y + 0.8) - projY, mob.z - projZ);
+          if (perpDist <= 2.4) {
+            candidates.push({ type: 'mob', target: mob, distance: distAlongRay, point: { x: projX, y: projY, z: projZ } });
+          }
+        }
+      }
+    }
+
+    candidates.sort((a, b) => a.distance - b.distance);
+    const hitEntry = candidates[0];
+    const hitPoint = hitEntry ? hitEntry.point : { x: origin.x + dirX * range, y: origin.y + dirY * range, z: origin.z + dirZ * range };
+
+    let appliedDamage = 0;
+    let hitTargetId = null;
+
+    if (hitEntry) {
+      if (hitEntry.type === 'player') {
+        const target = hitEntry.target;
+        hitTargetId = target.id;
+        const absorbed = target.shieldUntil > now;
+        if (absorbed) {
+          target.shieldUntil = 0;
+          this.broadcast({ type: 'PLAYER_DAMAGED', playerId: target.id, attackerId: player.id, health: target.health, damage: 0, source: powerId, blocked: true });
+        } else {
+          appliedDamage = Math.min(def.damage || 30, target.health);
+          target.health = Math.max(0, target.health - appliedDamage);
+          player.stats.damageDealt += appliedDamage;
+
+          if (powerId === 'FIREBALL') {
+            this.applyStatusEffect(target, { type: 'BURN', name: 'Ignited', durationMs: 3000, tickIntervalMs: 1000, damagePerTick: 6, attackerId: player.id });
+          } else if (powerId === 'FROST_LANCE') {
+            this.applyStatusEffect(target, { type: 'FROST_SLOW', name: 'Chilled', durationMs: 3000, slowPercent: 0.5, attackerId: player.id });
+          }
+
+          this.broadcast({ type: 'PLAYER_DAMAGED', playerId: target.id, attackerId: player.id, health: target.health, damage: appliedDamage, source: powerId });
+          if (target.health <= 0) {
+            target.alive = false;
+            player.stats.kills += 1;
+            this.eliminate(target, `Eliminated with ${def.name}.`, player.id);
+            this.checkLastPlayer();
+          }
+        }
+      } else if (hitEntry.type === 'dragon') {
+        hitTargetId = 'dragon';
+        const isGrounded = this.dragon.flightPhase === 'GROUNDED';
+        const groundMultiplier = isGrounded ? 1.25 : 1.0;
+        const baseDmg = def.damage || 30;
+        const calculatedDamage = Math.round(baseDmg * groundMultiplier);
+        appliedDamage = Math.min(calculatedDamage, this.dragon.health);
+        this.dragon.health = Math.max(0, this.dragon.health - appliedDamage);
+        player.stats.damageDealt += appliedDamage;
+        player.stats.dragonDamage += appliedDamage;
+        this.broadcast({
+          type: 'DRAGON_DAMAGED',
+          attackerId: player.id,
+          health: this.dragon.health,
+          maxHealth: this.dragon.maxHealth,
+          damage: appliedDamage,
+          source: powerId,
+          isVulnerable: isGrounded,
+        });
+        if (this.dragon.health <= 0) {
+          this.defeatDragon(player.id);
+        }
+      } else if (hitEntry.type === 'mob') {
+        hitTargetId = hitEntry.target.id;
+        appliedDamage = Math.min(def.damage, hitEntry.target.health);
+        this.damageMob(hitEntry.target.id, appliedDamage, player.id);
+      }
+    }
+
+    this.broadcast({
+      type: 'SPELL_CAST',
+      playerId: player.id,
+      powerId,
+      origin,
+      direction: { x: dirX, y: dirY, z: dirZ },
+      hit: Boolean(hitEntry),
+      hitPoint,
+      targetId: hitTargetId,
+      damage: appliedDamage,
+      color: def.color,
+      cooldownMs,
+      readyAt: player.powerCooldowns[powerId],
+    });
+    this.broadcastState();
+  }
+
   handle(ws, message) {
     const id = this.clients.get(ws);
     const player = this.players.get(id);
@@ -1332,6 +2363,12 @@ class GameRoom {
     if (message.type === 'PLAYER_MOVE' && this.state === 'ACTIVE' && player.alive) {
       const state = message.state || {};
       const now = Date.now();
+      if (player.freezeUntil && now < player.freezeUntil) {
+        player.lastMoveAt = now;
+        if (Number.isFinite(state.ry)) player.ry = Math.atan2(Math.sin(state.ry), Math.cos(state.ry));
+        player.pitch = Number.isFinite(state.pitch) ? clamp(state.pitch, -1.5, 1.5) : (player.pitch || 0);
+        return;
+      }
       const dt = clamp((now - player.lastMoveAt) / 1000, 0.01, 0.2);
       const requestedPosition = clampToWorld(clamp(state.x, -WORLD_RADIUS, WORLD_RADIUS), clamp(state.z, -WORLD_RADIUS, WORLD_RADIUS));
       const nx = requestedPosition.x, nz = requestedPosition.z;
@@ -1403,12 +2440,56 @@ class GameRoom {
       if (ws) safeSend(ws, { type: 'CRAFT_RESULT', ...result });
       return;
     }
+    if (message.type === 'EQUIP_STICK' && player.alive) {
+      const stickId = String(message.stickId || 'APPRENTICE_STICK');
+      if (MAGIC_STICKS[stickId] || stickId === 'KNIFE' || (player.backpack?.sticks && player.backpack.sticks.includes(stickId))) {
+        player.equippedStick = stickId;
+        player.equippedWeapon = stickId;
+        this.broadcast({ type: 'STICK_EQUIPPED', playerId: id, stickId });
+        this.broadcastState();
+      }
+      return;
+    }
+    if (message.type === 'SET_POWER_SLOT' && player.alive) {
+      const slotIndex = Number(message.slotIndex);
+      const powerId = message.powerId ? String(message.powerId) : null;
+      if (Number.isInteger(slotIndex) && slotIndex >= 0 && slotIndex < 7) {
+        player.powerSlots = player.powerSlots || [null, null, null, null, null, null, null];
+        if (powerId === null || (player.backpack?.powers && player.backpack.powers.includes(powerId)) || MAGIC_POWERS[powerId]) {
+          player.powerSlots[slotIndex] = powerId;
+          this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: id, slotIndex, powerId, powerSlots: player.powerSlots });
+          this.broadcastState();
+        }
+      }
+      return;
+    }
     if (message.type === 'EQUIP_WEAPON' && player.alive) {
-      const weaponId = String(message.weaponId || 'KNIFE');
-      if (weaponId === 'KNIFE' || (player.weapons && player.weapons.includes(weaponId))) {
+      const weaponId = String(message.weaponId || 'APPRENTICE_STICK');
+      if (weaponId === 'KNIFE' || weaponId === 'APPRENTICE_STICK' || (player.weapons && player.weapons.includes(weaponId))) {
         player.equippedWeapon = weaponId;
+        player.equippedStick = weaponId;
         this.broadcast({ type: 'WEAPON_EQUIPPED', playerId: id, weaponId });
         this.broadcastState();
+      }
+      return;
+    }
+    if (message.type === 'DEPLOY_TRAP' && this.state === 'ACTIVE' && player.alive) {
+      this.deployTrap(player, message);
+      return;
+    }
+    if (message.type === 'CAST_SPELL' && this.state === 'ACTIVE' && player.alive) {
+      this.castSpell(ws, player, message);
+      return;
+    }
+    if (message.type === 'USE_POWER_SLOT' && this.state === 'ACTIVE' && player.alive) {
+      const slotIndex = Number(message.slotIndex);
+      const powerId = player.powerSlots?.[slotIndex];
+      if (powerId) {
+        if (TRAP_DEFINITIONS[powerId]) {
+          this.deployTrap(player, { trapType: powerId, position: message.position });
+        } else if (MAGIC_POWERS[powerId]) {
+          this.castSpell(ws, player, { powerId, origin: message.origin, direction: message.direction });
+        }
       }
       return;
     }
@@ -1418,6 +2499,14 @@ class GameRoom {
     }
     if (message.type === 'USE_ABILITY' && this.state === 'ACTIVE' && player.alive) {
       const ability = String(message.ability || '');
+      if (TRAP_DEFINITIONS[ability]) {
+        this.deployTrap(player, { trapType: ability, position: message.position });
+        return;
+      }
+      if (MAGIC_POWERS[ability]) {
+        this.castSpell(ws, player, { powerId: ability, origin: message.origin, direction: message.direction });
+        return;
+      }
       const definition = ITEM_DEFINITIONS[ability];
       const now = Date.now();
       const readyAt = player.abilityReadyAt[ability] || 0;

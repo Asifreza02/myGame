@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { WEAPON_DEFINITIONS } from '../../game/data/combat.js';
+import { WEAPON_DEFINITIONS, MAGIC_STICKS } from '../../game/data/combat.js';
 
 function activateFromPointer(event, action) {
   if (event.button === 0) action?.();
@@ -12,7 +12,9 @@ function activateFromKeyboard(event, action) {
 export function MobileActionPad({
   activeRole = 'runner',
   isPlacing = false,
-  equippedWeapon = 'KNIFE',
+  isPlacingTrap = false,
+  equippedWeapon = 'APPRENTICE_STICK',
+  equippedStick = 'APPRENTICE_STICK',
   ammo = {},
   knifeCooldownMs = 0,
   voiceState = {},
@@ -20,12 +22,16 @@ export function MobileActionPad({
   onVoicePttActive,
   onJump,
   onAttack,
+  onConfirmTrap,
+  onCancelTrap,
   onSlide,
   onSprintToggle,
   onDeploy,
   onRotate,
   onRecon,
   onToggleFullscreen,
+  onOpenBackpack,
+  onOpenCrafting,
 }) {
   const [sprintActive, setSprintActive] = useState(false);
 
@@ -38,11 +44,13 @@ export function MobileActionPad({
   const isRunner = activeRole === 'runner' || activeRole === 'player';
   const isSaboteur = activeRole === 'saboteur';
 
-  const currentWeaponDef = WEAPON_DEFINITIONS[equippedWeapon] || WEAPON_DEFINITIONS.KNIFE;
+  const currentWeaponDef = MAGIC_STICKS[equippedStick] || WEAPON_DEFINITIONS[equippedWeapon] || MAGIC_STICKS.APPRENTICE_STICK;
+  const isStickType = Boolean(MAGIC_STICKS[equippedStick] || currentWeaponDef.element || currentWeaponDef.type === 'wand' || currentWeaponDef.type === 'staff');
   const isMelee = currentWeaponDef.type === 'melee';
-  const currentAmmo = isMelee ? null : (ammo[equippedWeapon] ?? 0);
-  const isKnifeCooling = isMelee && knifeCooldownMs > 0;
-  const hasNoAmmo = !isMelee && currentAmmo === 0;
+  const isUnlimited = isStickType || currentWeaponDef.ammo === Infinity;
+  const currentAmmo = isUnlimited ? '∞' : (ammo[equippedWeapon] ?? 0);
+  const isAttackCooling = knifeCooldownMs > 0;
+  const hasNoAmmo = !isUnlimited && currentAmmo === 0;
 
   return (
     <>
@@ -62,6 +70,24 @@ export function MobileActionPad({
         {isRunner && (
           <>
             <div className="mobile-action-aux-row">
+              <button
+                className="mobile-aux-btn interactive"
+                onPointerUp={(event) => activateFromPointer(event, onOpenBackpack)}
+                onClick={(event) => activateFromKeyboard(event, onOpenBackpack)}
+                title="Open Arcane Backpack"
+              >
+                🎒 BAG
+              </button>
+
+              <button
+                className="mobile-aux-btn interactive"
+                onPointerUp={(event) => activateFromPointer(event, onOpenCrafting)}
+                onClick={(event) => activateFromKeyboard(event, onOpenCrafting)}
+                title="Open Arcane Altar & Crafting"
+              >
+                ✨ ALTAR
+              </button>
+
               {voiceState.pushToTalk ? (
                 <button
                   className={`mobile-aux-btn voice-btn interactive ${voiceState.isPttPressed ? 'active' : ''}`}
@@ -110,17 +136,41 @@ export function MobileActionPad({
                 ⛷️ SLIDE
               </button>
 
-              <button
-                className={`mobile-round-btn attack-btn primary-action interactive ${hasNoAmmo ? 'no-ammo' : ''} ${isKnifeCooling ? 'cooling-down' : ''}`}
-                onPointerUp={(event) => activateFromPointer(event, onAttack)}
-                onClick={(event) => activateFromKeyboard(event, onAttack)}
-                title={isMelee ? 'Knife Attack' : `Fire ${currentWeaponDef.name} (${currentAmmo} ammo)`}
-              >
-                <span className="mobile-btn-icon">{currentWeaponDef.icon || '🗡️'}</span>
-                <span className="mobile-btn-label">
-                  {isMelee ? (isKnifeCooling ? `${(knifeCooldownMs / 1000).toFixed(1)}s` : 'ATTACK') : `${currentAmmo}`}
-                </span>
-              </button>
+              {isPlacingTrap ? (
+                <>
+                  <button
+                    className="mobile-round-btn trap-cancel-btn interactive"
+                    onPointerUp={(event) => activateFromPointer(event, onCancelTrap)}
+                    onClick={(event) => activateFromKeyboard(event, onCancelTrap)}
+                    title="Cancel Trap Placement"
+                    style={{ background: 'rgba(230, 40, 40, 0.45)', borderColor: '#ff4444' }}
+                  >
+                    ❌ CANCEL
+                  </button>
+
+                  <button
+                    className="mobile-round-btn trap-confirm-btn primary-action interactive"
+                    onPointerUp={(event) => activateFromPointer(event, onConfirmTrap || onAttack)}
+                    onClick={(event) => activateFromKeyboard(event, onConfirmTrap || onAttack)}
+                    title="Confirm Trap Placement"
+                    style={{ background: 'rgba(0, 240, 255, 0.45)', borderColor: '#00f0ff' }}
+                  >
+                    💥 PLACE
+                  </button>
+                </>
+              ) : (
+                <button
+                  className={`mobile-round-btn attack-btn primary-action interactive ${hasNoAmmo ? 'no-ammo' : ''} ${isAttackCooling ? 'cooling-down' : ''}`}
+                  onPointerUp={(event) => activateFromPointer(event, onAttack)}
+                  onClick={(event) => activateFromKeyboard(event, onAttack)}
+                  title={`Cast ${currentWeaponDef.name}`}
+                >
+                  <span className="mobile-btn-icon">{currentWeaponDef.icon || '🪄'}</span>
+                  <span className="mobile-btn-label">
+                    {isAttackCooling ? `${(knifeCooldownMs / 1000).toFixed(1)}s` : isStickType ? 'SPARK' : isMelee ? 'STRIKE' : 'FIRE'}
+                  </span>
+                </button>
+              )}
             </div>
           </>
         )}

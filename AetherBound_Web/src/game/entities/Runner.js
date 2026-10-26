@@ -26,33 +26,148 @@ const loadOnlineHumanTexture = () => {
   return onlineHumanTexturePromise;
 };
 
-const createRunnerKnife = () => {
-  const knife = new THREE.Group();
-  knife.name = 'anim-weapon';
-  const blade = new THREE.Mesh(
-    new THREE.BoxGeometry(0.06, 0.34, 0.035),
-    new THREE.MeshStandardMaterial({ color: 0xc4e2e7, metalness: 0.78, roughness: 0.24 }),
-  );
-  blade.position.y = 0.235;
-  blade.rotation.z = -0.08;
-  const guard = new THREE.Mesh(
-    new THREE.BoxGeometry(0.16, 0.035, 0.055),
-    new THREE.MeshStandardMaterial({ color: 0x8aa2a6, metalness: 0.72, roughness: 0.32 }),
-  );
-  guard.position.y = 0.075;
-  const grip = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.03, 0.034, 0.17, 8),
-    new THREE.MeshStandardMaterial({ color: 0x543a2e, roughness: 0.82 }),
-  );
-  grip.position.y = -0.02;
-  const pommel = new THREE.Mesh(
-    new THREE.SphereGeometry(0.035, 8, 6),
-    new THREE.MeshStandardMaterial({ color: 0x8aa2a6, metalness: 0.65, roughness: 0.35 }),
-  );
-  pommel.position.y = -0.11;
-  knife.add(blade, guard, grip, pommel);
-  return knife;
+export const createMagicStick = (stickId = 'APPRENTICE_STICK') => {
+  const stick = new THREE.Group();
+  stick.name = 'anim-weapon';
+
+  if (stickId === 'ELDER_STAFF') {
+    // Elder Runed Staff: Tall living elder wood with emerald nature crystal
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.032, 0.96, 10),
+      new THREE.MeshStandardMaterial({ color: 0x422a14, roughness: 0.85, metalness: 0.05 }),
+    );
+    shaft.position.y = 0.35;
+    shaft.castShadow = true;
+
+    const vine = new THREE.Mesh(
+      new THREE.TorusGeometry(0.035, 0.007, 8, 16),
+      new THREE.MeshStandardMaterial({ color: 0x2e5c1e, roughness: 0.7 }),
+    );
+    vine.position.y = 0.45;
+    vine.rotation.x = Math.PI / 4;
+
+    const head = new THREE.Mesh(
+      new THREE.ConeGeometry(0.045, 0.08, 6),
+      new THREE.MeshStandardMaterial({ color: 0x5a3d24, roughness: 0.8 }),
+    );
+    head.position.y = 0.82;
+
+    const crystal = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.065, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0x83e879,
+        emissive: 0x33cc44,
+        emissiveIntensity: 2.2,
+        roughness: 0.15,
+        metalness: 0.2,
+      }),
+    );
+    crystal.position.y = 0.88;
+
+    const light = new THREE.PointLight(0x83e879, 1.2, 3.5);
+    light.position.y = 0.88;
+
+    stick.add(shaft, vine, head, crystal, light);
+  } else if (stickId === 'PYRE_STAFF') {
+    // Pyre Flame Staff: Basalt & Burning Magma Core
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.024, 0.036, 0.92, 10),
+      new THREE.MeshStandardMaterial({ color: 0x1c1716, roughness: 0.9, metalness: 0.2 }),
+    );
+    shaft.position.y = 0.34;
+    shaft.castShadow = true;
+
+    const emberCore = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.068, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0xff5511,
+        emissive: 0xff3300,
+        emissiveIntensity: 2.8,
+        roughness: 0.2,
+      }),
+    );
+    emberCore.position.y = 0.84;
+
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.085, 0.008, 8, 20),
+      new THREE.MeshStandardMaterial({ color: 0x3a2c26, roughness: 0.6 }),
+    );
+    ring.position.y = 0.84;
+    ring.rotation.x = Math.PI / 2;
+
+    const light = new THREE.PointLight(0xff5511, 1.8, 4.0);
+    light.position.y = 0.84;
+
+    stick.add(shaft, emberCore, ring, light);
+  } else if (stickId === 'CELESTIAL_SCEPTER') {
+    // Celestial Archmage Scepter: Silver & Violet Prismatic Core
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.026, 0.88, 12),
+      new THREE.MeshStandardMaterial({ color: 0xd8e8f8, metalness: 0.85, roughness: 0.15 }),
+    );
+    shaft.position.y = 0.32;
+    shaft.castShadow = true;
+
+    const crystal = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.07, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0xcc66ff,
+        emissive: 0x9911ff,
+        emissiveIntensity: 3.2,
+        roughness: 0.1,
+      }),
+    );
+    crystal.position.y = 0.80;
+
+    const light = new THREE.PointLight(0xcc66ff, 2.0, 4.5);
+    light.position.y = 0.80;
+
+    stick.add(shaft, crystal, light);
+  } else {
+    // APPRENTICE_STICK (Default Wand)
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.016, 0.026, 0.66, 12),
+      new THREE.MeshStandardMaterial({ color: 0x543a2e, roughness: 0.78, metalness: 0.08 }),
+    );
+    shaft.position.y = 0.24;
+    shaft.castShadow = true;
+
+    const ferrule = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.027, 0.027, 0.045, 12),
+      new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.75, roughness: 0.25 }),
+    );
+    ferrule.position.y = 0.44;
+
+    const socket = new THREE.Mesh(
+      new THREE.ConeGeometry(0.03, 0.05, 6),
+      new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.7, roughness: 0.3 }),
+    );
+    socket.position.y = 0.57;
+
+    const gem = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.048, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0x55eaff,
+        emissive: 0x00e5ff,
+        emissiveIntensity: 2.2,
+        roughness: 0.1,
+        metalness: 0.1,
+      }),
+    );
+    gem.position.y = 0.61;
+
+    const glow = new THREE.PointLight(0x55eaff, 1.2, 2.8);
+    glow.position.y = 0.61;
+
+    stick.add(shaft, ferrule, socket, gem, glow);
+  }
+
+  stick.rotation.x = 0.18;
+  stick.rotation.z = -0.06;
+  return stick;
 };
+
+const createRunnerKnife = () => createMagicStick('APPRENTICE_STICK');
 
 export class RunnerController {
   constructor(scene, camera, domElement) {
@@ -101,6 +216,7 @@ export class RunnerController {
     this.cameraPitch = 0.05;   // Pitch angle in radians (down < 0, up > 0)
     this.cameraYaw = 0;
     this.isPointerLocked = false;
+    this.aimFriction = 1.0; // Dynamic aim assist friction multiplier
 
     // Advanced Traversal: Slide & Vaulting
     this.isSliding = false;
@@ -453,12 +569,25 @@ export class RunnerController {
     const hand = this.rightHand;
     if (!hand) return;
 
-    if (this.knife) this.knife.visible = (weaponId === 'KNIFE');
+    const isBasicStick = (weaponId === 'KNIFE' || weaponId === 'APPRENTICE_STICK');
+    if (this.knife) this.knife.visible = isBasicStick;
     for (const [id, mesh] of this.weaponMeshes.entries()) {
       mesh.visible = (id === weaponId);
     }
 
-    if (weaponId === 'KNIFE' || this.weaponMeshes.has(weaponId)) return;
+    if (isBasicStick || this.weaponMeshes.has(weaponId)) return;
+
+    if (['ELDER_STAFF', 'PYRE_STAFF', 'CELESTIAL_SCEPTER'].includes(weaponId)) {
+      const staffGroup = createMagicStick(weaponId);
+      const handScale = Math.max(hand.getWorldScale(new THREE.Vector3()).x, 0.001);
+      const modelUnits = 1 / handScale;
+      staffGroup.scale.setScalar(modelUnits);
+      hand.add(staffGroup);
+      this.weaponMeshes.set(weaponId, staffGroup);
+      staffGroup.visible = (this.equippedWeaponId === weaponId);
+      if (this.knife) this.knife.visible = false;
+      return;
+    }
 
     try {
       const { loadCustomModel, normalizeModel, setModelShadows, tintModelMaterials } = await import('../modelAssets.js');
@@ -646,7 +775,7 @@ export class RunnerController {
         return;
       }
 
-      const sens = 0.0032 * this.mouseSensitivity;
+      const sens = 0.0032 * this.mouseSensitivity * (this.aimFriction || 1.0);
       if (dx !== 0 && Math.abs(dx) < 250) {
         this.cameraYaw -= dx * sens;
       }
@@ -661,7 +790,7 @@ export class RunnerController {
       if (!this.enabled) return;
 
       if (Math.abs(e.deltaX) > 1.0) {
-        this.cameraYaw -= e.deltaX * 0.003 * this.mouseSensitivity;
+        this.cameraYaw -= e.deltaX * 0.003 * this.mouseSensitivity * (this.aimFriction || 1.0);
       }
     }, { passive: true });
 
@@ -683,7 +812,7 @@ export class RunnerController {
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
 
-        const sens = 0.005 * this.mouseSensitivity;
+        const sens = 0.005 * this.mouseSensitivity * (this.aimFriction || 1.0);
         this.cameraYaw -= dx * sens;
         this.cameraPitch -= dy * sens;
         this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch));
@@ -752,9 +881,10 @@ export class RunnerController {
   }
 
   addCameraLook(deltaYaw, deltaPitch) {
-    if (deltaYaw) this.cameraYaw += deltaYaw;
+    const f = this.aimFriction || 1.0;
+    if (deltaYaw) this.cameraYaw += deltaYaw * f;
     if (deltaPitch) {
-      this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch + deltaPitch));
+      this.cameraPitch = Math.max(-0.75, Math.min(1.15, this.cameraPitch + deltaPitch * f));
     }
   }
 
@@ -922,17 +1052,18 @@ export class RunnerController {
     this.knifeSwingTimer = Math.max(0, this.knifeSwingTimer - dt);
 
     // 1. Keyboard Camera Turn & Pitch Inputs
+    const kFriction = this.aimFriction || 1.0;
     if (this.keys.turnLeft) {
-      this.cameraYaw += 2.4 * dt;
+      this.cameraYaw += 2.4 * dt * kFriction;
     }
     if (this.keys.turnRight) {
-      this.cameraYaw -= 2.4 * dt;
+      this.cameraYaw -= 2.4 * dt * kFriction;
     }
     if (this.keys.pitchUp) {
-      this.cameraPitch = Math.min(1.15, this.cameraPitch + 1.8 * dt);
+      this.cameraPitch = Math.min(1.15, this.cameraPitch + 1.8 * dt * kFriction);
     }
     if (this.keys.pitchDown) {
-      this.cameraPitch = Math.max(-0.75, this.cameraPitch - 1.8 * dt);
+      this.cameraPitch = Math.max(-0.75, this.cameraPitch - 1.8 * dt * kFriction);
     }
 
     // 2. Player Seeing Direction & Heading Vectors

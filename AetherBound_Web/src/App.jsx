@@ -15,6 +15,7 @@ import { VirtualJoystick } from './components/mobile/VirtualJoystick.jsx';
 import { TouchLookZone } from './components/mobile/TouchLookZone.jsx';
 import { MobileActionPad } from './components/mobile/MobileActionPad.jsx';
 import { EquipmentToggleBar } from './components/EquipmentToggleBar.jsx';
+import { BackpackModal } from './components/BackpackModal.jsx';
 import { ITEM_DEFINITIONS } from './game/data/combat.js';
 
 export function App() {
@@ -73,6 +74,18 @@ export function App() {
     gameOverData: null,
     isPointerLocked: false,
     damageFlash: 0,
+    hasTarget: false,
+    aimAssistActive: false,
+    targetName: '',
+    backpackModalOpen: false,
+    equippedStick: 'APPRENTICE_STICK',
+    powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+    backpack: {
+      sticks: ['APPRENTICE_STICK'],
+      powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+      resources: {},
+    },
+    statusEffects: [],
     toastMessage: null,
     aiEnabled: true,
     humanSaboteurAvailable: false,
@@ -152,6 +165,42 @@ export function App() {
     if (engineRef.current) engineRef.current.setCraftingModalOpen(false);
   }, []);
 
+  const handleOpenBackpack = useCallback(() => {
+    if (engineRef.current) engineRef.current.setBackpackModalOpen(true);
+    else setEngineState((prev) => ({ ...prev, backpackModalOpen: true }));
+  }, []);
+
+  const handleCloseBackpack = useCallback(() => {
+    if (engineRef.current) engineRef.current.setBackpackModalOpen(false);
+    else setEngineState((prev) => ({ ...prev, backpackModalOpen: false }));
+  }, []);
+
+  const handleEquipStick = useCallback((stickId) => {
+    engineRef.current?.equipStick(stickId);
+  }, []);
+
+  const handleSetPowerSlot = useCallback((slotIndex, powerId) => {
+    if (engineRef.current) {
+      engineRef.current.setPowerSlot(slotIndex, powerId);
+    } else {
+      setEngineState((prev) => {
+        const nextSlots = [...(prev.powerSlots || [null, null, null, null, null, null, null])];
+        nextSlots[slotIndex] = powerId;
+        return { ...prev, powerSlots: nextSlots };
+      });
+    }
+  }, []);
+
+  const handleActivatePower = useCallback((powerId, slotIndex) => {
+    if (engineRef.current) {
+      if (typeof slotIndex === 'number') {
+        engineRef.current.usePowerSlot(slotIndex);
+      } else if (powerId) {
+        engineRef.current.activateAbility(powerId);
+      }
+    }
+  }, []);
+
   const handleCraftWeapon = useCallback((recipeIndex) => {
     if (engineRef.current) engineRef.current.craftWeapon(recipeIndex);
   }, []);
@@ -211,6 +260,22 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleGlobalKeys = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.code === 'KeyB' || e.code === 'KeyI') {
+        e.preventDefault();
+        setEngineState((prev) => {
+          const next = !prev.backpackModalOpen;
+          if (next && document.pointerLockElement) document.exitPointerLock?.();
+          return { ...prev, backpackModalOpen: next };
+        });
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeys);
+    return () => window.removeEventListener('keydown', handleGlobalKeys);
+  }, []);
+
   const handleJoystickChange = useCallback((vec) => {
     if (engineRef.current) engineRef.current.setJoystick(vec.x, vec.y);
   }, []);
@@ -249,6 +314,14 @@ export function App() {
 
   const handleToggleFullscreen = useCallback(() => {
     if (engineRef.current) engineRef.current.toggleFullscreen();
+  }, []);
+
+  const handleConfirmTrap = useCallback(() => {
+    if (engineRef.current?.isPlacingTrap) engineRef.current.confirmTrapPlacement();
+  }, []);
+
+  const handleCancelTrap = useCallback(() => {
+    if (engineRef.current?.isPlacingTrap) engineRef.current.cancelTrapTargeting();
   }, []);
 
   const handleToggleVoiceMute = useCallback(() => {
@@ -335,11 +408,17 @@ export function App() {
       <AimReticle
         visible={engineState.gameState === 'PLAYING'}
         isPointerLocked={engineState.isPointerLocked}
+        hasTarget={engineState.hasTarget}
+        aimAssistActive={engineState.aimAssistActive}
+        targetName={engineState.targetName}
         onLockRequest={handleLockRequest}
       />
 
-      {/* Damage Flash */}
-      <DamageOverlay damageFlash={engineState.damageFlash} />
+      {/* Damage & Status Effects Overlay */}
+      <DamageOverlay
+        damageFlash={engineState.damageFlash}
+        statusEffects={engineState.statusEffects || []}
+      />
 
       {/* Top HUD */}
       {engineState.gameState !== 'ROLE_SELECT' && (
@@ -379,17 +458,18 @@ export function App() {
         />
       )}
 
-      {/* On-Screen Weapon & Skill Equipment Toggle Bar */}
+      {/* On-Screen 1-Stick + 7-Powers Toggle Bar */}
       {engineState.gameState === 'PLAYING' && isRunner && (
         <EquipmentToggleBar
-          weapons={engineState.weapons || ['KNIFE']}
-          equippedWeapon={engineState.equippedWeapon || 'KNIFE'}
-          ammo={engineState.playerAmmo || {}}
-          inventory={engineState.inventory || []}
+          equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
+          powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null]}
+          backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'], resources: {} }}
           abilityCooldowns={engineState.abilityCooldowns || {}}
-          knifeCooldownMs={engineState.knifeCooldownMs || 0}
-          onEquipWeapon={handleEquipWeapon}
-          onActivateAbility={handleActivateAbility}
+          stickCooldownMs={engineState.knifeCooldownMs || 0}
+          onEquipStick={handleEquipStick}
+          onActivatePower={handleActivatePower}
+          onSetPowerSlot={handleSetPowerSlot}
+          onOpenBackpack={handleOpenBackpack}
           onOpenCrafting={handleOpenCrafting}
         />
       )}
@@ -419,7 +499,9 @@ export function App() {
           <MobileActionPad
             activeRole={engineState.activeRole}
             isPlacing={isPlacingMode}
-            equippedWeapon={engineState.equippedWeapon || 'KNIFE'}
+            isPlacingTrap={Boolean(engineState.isPlacingTrap)}
+            equippedWeapon={engineState.equippedWeapon || 'APPRENTICE_STICK'}
+            equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
             ammo={engineState.playerAmmo || {}}
             knifeCooldownMs={engineState.knifeCooldownMs || 0}
             voiceState={engineState.voiceState || {}}
@@ -427,36 +509,56 @@ export function App() {
             onVoicePttActive={handleVoicePttActive}
             onJump={handleJump}
             onAttack={handleKnifeAttack}
+            onConfirmTrap={handleConfirmTrap}
+            onCancelTrap={handleCancelTrap}
             onSlide={handleSlide}
             onSprintToggle={handleSprintToggle}
             onDeploy={handleDeploy}
             onRotate={handleRotate}
             onRecon={handleTriggerRecon}
             onToggleFullscreen={handleToggleFullscreen}
+            onOpenBackpack={handleOpenBackpack}
+            onOpenCrafting={handleOpenCrafting}
           />
         </>
       )}
 
-      {/* Weapon Forge / Crafting Modal */}
+      {/* Arcane Spell & Stick Altar */}
       <CraftingModal
         visible={Boolean(engineState.craftingModalOpen)}
         resources={engineState.playerResources || {}}
-        weapons={engineState.weapons || ['KNIFE']}
-        ammo={engineState.playerAmmo || {}}
-        equippedWeapon={engineState.equippedWeapon || 'KNIFE'}
+        weapons={engineState.weapons || ['APPRENTICE_STICK']}
+        equippedStick={engineState.equippedStick || 'APPRENTICE_STICK'}
+        powerSlots={engineState.powerSlots || []}
+        backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: [], resources: {} }}
         onCraft={handleCraftWeapon}
-        onEquip={handleEquipWeapon}
+        onEquip={handleEquipStick}
         onClose={handleCloseCrafting}
       />
 
-      {/* Role Select Modal */}
-      <RoleSelectModal
-        visible={engineState.gameState === 'ROLE_SELECT'}
-        currentRoom={engineState.roomCode}
-        currentConfig={engineState.matchConfig}
-        message={engineState.roleSelectMessage}
-        onSelectRole={handleSelectRole}
+      {/* Arcane Backpack Inventory Modal */}
+      <BackpackModal
+        visible={Boolean(engineState.backpackModalOpen)}
+        backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'], resources: {} }}
+        equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
+        powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null]}
+        resources={engineState.playerResources || {}}
+        onEquipStick={handleEquipStick}
+        onSetPowerSlot={handleSetPowerSlot}
+        onOpenCrafting={handleOpenCrafting}
+        onClose={handleCloseBackpack}
       />
+
+      {/* Role Select Modal */}
+      {engineState.gameState === 'ROLE_SELECT' && (
+        <RoleSelectModal
+          visible={true}
+          currentRoom={engineState.roomCode}
+          currentConfig={engineState.matchConfig}
+          message={engineState.roleSelectMessage}
+          onSelectRole={handleSelectRole}
+        />
+      )}
 
       {/* Game Over Modal */}
       <GameOverModal

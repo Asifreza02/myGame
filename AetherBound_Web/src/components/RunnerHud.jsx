@@ -38,15 +38,15 @@ export function RunnerHud({
         <span className="weapon-hud-icon">{currentWeaponDef.icon}</span>
         <div className="weapon-hud-info">
           <span className="weapon-hud-name">{currentWeaponDef.name}</span>
-          <span className="weapon-hud-ammo">AMMO: {currentAmmo}</span>
+          <span className="weapon-hud-ammo">{currentWeaponDef.ammo === Infinity ? 'BASIC SPELL: ∞' : `CHARGES: ${currentAmmo}`}</span>
         </div>
         <button
           type="button"
           className="workbench-toggle-btn interactive"
           onClick={onOpenCrafting}
-          title="Open Weapon Forge (Press C)"
+          title="Open Arcane Altar & Crafting (Press C)"
         >
-          ⚒️ FORGE [C]
+          ✨ ALTAR [C]
         </button>
       </div>
 

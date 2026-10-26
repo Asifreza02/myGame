@@ -174,6 +174,22 @@ export class NetworkClient {
       case 'WEAPON_FIRE_RESULT':
       case 'CRAFT_RESULT':
       case 'ITEM_SPAWNED':
+      case 'STICK_EQUIPPED':
+      case 'POWER_SLOT_CHANGED':
+      case 'STATUS_EFFECT_APPLIED':
+      case 'TRAP_DEPLOYED':
+      case 'TRAP_TRIGGERED':
+      case 'SPELL_CAST':
+      case 'DRAGON_STUNNED':
+      case 'DRAGON_LANDED':
+      case 'DRAGON_TAKEOFF':
+      case 'DRAGON_LANDING_TELEGRAPH':
+      case 'POWER_COOLDOWN':
+      case 'MOB_SPAWNED':
+      case 'MOB_DAMAGED':
+      case 'MOB_ATTACK':
+      case 'MOB_DEFEATED':
+      case 'MOB_ESCALATION':
         if (this.callbacks.onGameEvent) this.callbacks.onGameEvent(msg);
         break;
       case 'SESSION_IN_USE':
@@ -261,6 +277,11 @@ export class NetworkClient {
   useAbility(ability) { this.send({ type: 'USE_ABILITY', ability }); }
   craftWeapon(recipeIndex) { this.send({ type: 'CRAFT_WEAPON', recipeIndex }); }
   equipWeapon(weaponId) { this.send({ type: 'EQUIP_WEAPON', weaponId }); }
+  equipStick(stickId) { this.send({ type: 'EQUIP_STICK', stickId }); }
+  setPowerSlot(slotIndex, powerId) { this.send({ type: 'SET_POWER_SLOT', slotIndex, powerId }); }
+  usePowerSlot(slotIndex) { this.send({ type: 'USE_POWER_SLOT', slotIndex }); }
+  deployTrap(trapType, position) { this.send({ type: 'DEPLOY_TRAP', trapType, position }); }
+  castSpell(powerId, origin, direction) { this.send({ type: 'CAST_SPELL', powerId, origin, direction }); }
   fireWeapon(weaponId, origin, direction) {
     this.send({ type: 'WEAPON_FIRE', weaponId, origin, direction, fireId: Date.now() });
   }

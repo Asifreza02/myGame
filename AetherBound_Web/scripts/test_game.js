@@ -1,4 +1,6 @@
 import { WebSocket } from 'ws';
+import { MAGIC_STICKS, MAGIC_POWERS, TRAP_DEFINITIONS, MOB_SYSTEM_CONFIG, DRAGON_ATTACKS } from '../src/game/data/combat.js';
+import { RESOURCE_DEFINITIONS } from '../src/game/data/world.js';
 
 const BASE_URL = 'http://localhost:3001';
 const WS_URL = 'ws://localhost:3001';
@@ -149,7 +151,7 @@ async function runTests() {
     assert(p1InitState.playerId, `Player 1 received playerId: ${p1InitState.playerId}`, 'WS_CONN');
     assert(p1InitState.reconnectToken, 'Player 1 received reconnectToken', 'WS_CONN');
     assert(p1InitState.room === roomName, `Joined room: ${p1InitState.room}`, 'WS_CONN');
-    assert(p1InitState.snapshot && p1InitState.snapshot.dragon && p1InitState.snapshot.dragon.maxHealth === 420, 'Dragon initialized with 420 HP', 'WS_CONN');
+    assert(p1InitState.snapshot && p1InitState.snapshot.dragon && p1InitState.snapshot.dragon.maxHealth >= 400, `Dragon initialized with ${p1InitState.snapshot.dragon.maxHealth} HP`, 'WS_CONN');
     p1Id = p1InitState.playerId;
     p1Token = p1InitState.reconnectToken;
 
@@ -283,7 +285,7 @@ async function runTests() {
     const dragonStateMsg = await client1.waitForMessage((m) => m.type === 'MATCH_STATE' && m.snapshot.dragon);
     const dragon = dragonStateMsg.snapshot.dragon;
     assert(dragon.alive, `Dragon is alive with ${dragon.health}/${dragon.maxHealth} HP (Phase: ${dragon.phase})`, 'DRAGON');
-    assert(dragon.maxHealth === 420, 'Dragon boss health correctly initialized to 420', 'DRAGON');
+    assert(dragon.maxHealth >= 400, `Dragon boss health correctly initialized to ${dragon.maxHealth}`, 'DRAGON');
     assert(['PASSIVE', 'ENRAGED', 'INFERNO', 'APOCALYPTIC'].includes(dragon.phase), `Dragon phase is valid: ${dragon.phase}`, 'DRAGON');
   } catch (err) {
     log('DRAGON', `Dragon test failed: ${err.message}`, false);
@@ -318,13 +320,70 @@ async function runTests() {
     const craftResult = await client1.waitForNextMessage((m) => m.type === 'CRAFT_RESULT');
     assert(craftResult !== null, `Server responded to craft request: ${craftResult.reason || 'Crafted successfully'}`, 'CRAFTING');
 
-    // Test weapon equip
+    // Test stick equip
     client1.send({
-      type: 'EQUIP_WEAPON',
-      weaponId: 'KNIFE',
+      type: 'EQUIP_STICK',
+      stickId: 'APPRENTICE_STICK',
     });
-    const equipResult = await client1.waitForNextMessage((m) => m.type === 'WEAPON_EQUIPPED');
-    assert(equipResult && equipResult.weaponId === 'KNIFE', 'Equipped weapon is KNIFE', 'WEAPONS');
+    const equipResult = await client1.waitForNextMessage((m) => m.type === 'STICK_EQUIPPED' || m.type === 'WEAPON_EQUIPPED');
+    assert(equipResult && (equipResult.stickId === 'APPRENTICE_STICK' || equipResult.weaponId === 'APPRENTICE_STICK'), 'Equipped stick is APPRENTICE_STICK', 'WEAPONS');
+
+    // TEST 10: Phase 1 Data Contracts & Power Slots
+    console.log('\n--- Step 10: Phase 1 Data Contracts & Power Slots ---');
+    client1.send({
+      type: 'SET_POWER_SLOT',
+      slotIndex: 3,
+      powerId: 'AETHER_WAVE',
+    });
+    const powerSlotResult = await client1.waitForNextMessage((m) => m.type === 'POWER_SLOT_CHANGED');
+    assert(powerSlotResult && powerSlotResult.slotIndex === 3, 'Power slot 3 updated to AETHER_WAVE', 'PHASE_1');
+    assert(Array.isArray(powerSlotResult.powerSlots) && powerSlotResult.powerSlots.length === 7, 'Player powerSlots has exactly 7 slots', 'PHASE_1');
+
+    // TEST 11: Phase 4 Arcane Ground Traps
+    console.log('\n--- Step 11: Phase 4 Arcane Ground Traps & Detonations ---');
+    client1.send({
+      type: 'DEPLOY_TRAP',
+      trapType: 'FROST_TRAP',
+      position: { x: 15, y: 1, z: 15 },
+    });
+    const trapDeployed = await client1.waitForNextMessage((m) => m.type === 'TRAP_DEPLOYED');
+    assert(trapDeployed !== null && trapDeployed.trap?.trapType === 'FROST_TRAP', 'Frost Rune Trap deployed successfully on server', 'PHASE_4_TRAPS');
+    assert(trapDeployed.trap.armedAt > Date.now(), 'Trap has active arming delay', 'PHASE_4_TRAPS');
+    assert(trapDeployed.trap.radius > 0, `Trap trigger radius is valid (${trapDeployed.trap.radius}m)`, 'PHASE_4_TRAPS');
+
+    // TEST 12: Phase 5 3-Tier Mob System
+    console.log('\n--- Step 12: Phase 5 3-Tier Mob System (Aqua Fiend & Flame Brute) ---');
+    const latestState = await client1.waitForNextMessage((m) => m.type === 'MATCH_STATE');
+    assert(latestState && Array.isArray(latestState.snapshot?.mobs), 'Match snapshot contains mobs array', 'PHASE_5_MOBS');
+    const aquaFiend = latestState.snapshot.mobs.find((m) => m.tier === 1 && m.type === 'AQUA_FIEND');
+    assert(aquaFiend !== undefined, 'Tier 1 Aqua Fiend spawned at match start (0:00)', 'PHASE_5_MOBS');
+    assert(aquaFiend.health === 80, `Aqua Fiend has 80 HP (got ${aquaFiend.health})`, 'PHASE_5_MOBS');
+    assert(aquaFiend.attackDamage === 16, `Aqua Fiend attack deals 16 damage (got ${aquaFiend.attackDamage})`, 'PHASE_5_MOBS');
+
+    // TEST 13: Phase 6 Final Boss Dragon Multi-Attack & Aerial/Grounded Cycle
+    console.log('\n--- Step 13: Phase 6 Final Boss Dragon Multi-Attack & Ground Cycle ---');
+    const dragon = latestState.snapshot?.dragon;
+    assert(dragon !== undefined && dragon.alive, 'Dragon exists and is alive in snapshot', 'PHASE_6_DRAGON');
+    assert(dragon.health === 500 && dragon.maxHealth === 500, `Dragon health is 500 HP (got ${dragon.health})`, 'PHASE_6_DRAGON');
+    assert(dragon.flightPhase === 'AERIAL', `Dragon initializes in AERIAL flight phase (got ${dragon.flightPhase})`, 'PHASE_6_DRAGON');
+    assert(typeof dragon.flightPhaseTimer === 'number' && dragon.flightPhaseTimer > 0, `Flight phase countdown timer is active (${dragon.flightPhaseTimer}s)`, 'PHASE_6_DRAGON');
+
+    // Multi-attack configuration assertions
+    assert(DRAGON_ATTACKS.FIRE_BREATH !== undefined, 'Dragon has FIRE_BREATH cone attack (Aerial)', 'PHASE_6_DRAGON');
+    assert(DRAGON_ATTACKS.FIRE_BREATH.damage === 34 && DRAGON_ATTACKS.FIRE_BREATH.range === 52, 'FIRE_BREATH has 34 dmg and 52m range', 'PHASE_6_DRAGON');
+    assert(DRAGON_ATTACKS.GROUND_SLAM !== undefined, 'Dragon has GROUND_SLAM radial slam (Grounded)', 'PHASE_6_DRAGON');
+    assert(DRAGON_ATTACKS.GROUND_SLAM.damage === 28 && DRAGON_ATTACKS.GROUND_SLAM.radius === 9, 'GROUND_SLAM has 28 dmg and 9m radius', 'PHASE_6_DRAGON');
+    assert(DRAGON_ATTACKS.TAIL_SWEEP !== undefined, 'Dragon has TAIL_SWEEP 360-degree sweep (Grounded)', 'PHASE_6_DRAGON');
+    assert(DRAGON_ATTACKS.TAIL_SWEEP.damage === 22 && DRAGON_ATTACKS.TAIL_SWEEP.range === 8, 'TAIL_SWEEP has 22 dmg and 8m range', 'PHASE_6_DRAGON');
+
+    // TEST 14: Phase 7 Full Magical Power System & Natural Resources Verification
+    console.log('\n--- Step 14: Phase 7 Full Magical System & Resources ---');
+    assert(MAGIC_STICKS.APPRENTICE_STICK.damage > 0, 'Starter Apprentice Wand has valid spark damage', 'PHASE_7_SYSTEM');
+    assert(MAGIC_STICKS.APPRENTICE_STICK.ammo === Infinity, 'Starter Apprentice Wand has infinite basic spark ammo', 'PHASE_7_SYSTEM');
+    const primaryResources = Object.values(RESOURCE_DEFINITIONS).filter((r) => !r.aliasOf);
+    assert(primaryResources.length === 7, `7 Primary Natural Resources defined in the game (got ${primaryResources.length})`, 'PHASE_7_SYSTEM');
+    assert(Object.keys(TRAP_DEFINITIONS).length >= 3, 'Tactical magical ground traps defined', 'PHASE_7_SYSTEM');
+    assert(Object.keys(MAGIC_POWERS).length >= 7, 'Full 7-power arsenal defined for hotbar slots', 'PHASE_7_SYSTEM');
   } catch (err) {
     log('CRAFTING', `Crafting/weapon test failed: ${err.message}`, false);
     failed++;
