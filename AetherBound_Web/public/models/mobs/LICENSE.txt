@@ -1,0 +1,24 @@
+# 🧟 3D Zombie Models & Licensing Information
+
+The 3D zombie models in this directory are used under the **Creative Commons Attribution 4.0 International (CC BY 4.0)** license.
+
+---
+
+### 1. Realistic 3D Zombie (Walking Shambler)
+- **Model:** Zombie Walk Test
+- **File:** `zombie_realistic.glb`
+- **Author:** OSCAR CREATIVO
+- **Source:** [Sketchfab - Zombie Walk Test](https://sketchfab.com/3d-models/zombie-walk-test-165fd9342c364216bfdd8c2f1102223c)
+- **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- **Description:** Realistic humanoid undead zombie with decayed flesh, ragged clothing, sunken facial features, and baked 4.0s shambling walk animation. Converted to glTF 2.0 PBR Metallic-Roughness.
+
+---
+
+### 2. PSX Horror Undead Zombie
+- **Model:** PSX Creatures Free (Zombie)
+- **File:** `zombie_undead.glb`
+- **Author:** heyheythere
+- **Source:** [itch.io - PSX Creatures Free](https://heyheythere.itch.io/psx-creatures-free)
+- **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- **Credit Line:** `PSX Creatures Free by heyheythere - https://heyheythere.itch.io/psx-creatures-free - CC BY 4.0`
+- **Description:** Optimized low-poly undead zombie with 5 animations (idle, walk, attack, hit, death).

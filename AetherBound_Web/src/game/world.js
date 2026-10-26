@@ -246,11 +246,31 @@ export class WorldManager {
       this.barrierMesh.material.opacity = 0.28 + Math.sin(time * 2.2) * 0.07;
     }
 
+    // Ripple water on active chunks (low overhead)
+    for (const [key, chunk] of this.chunks.entries()) {
+      if (chunk.waterMesh) {
+        const [cxStr, czStr] = key.split(',');
+        const cx = parseFloat(cxStr);
+        const cz = parseFloat(czStr);
+        chunk.waterMesh.position.y = this.waterLevel + Math.sin(time * 2.5 + cx * 0.7 + cz * 0.7) * 0.04;
+      }
+    }
+
+    // Throttle chunk and building streaming checks to run at ~3Hz (every 300ms)
+    // Eliminates thousands of key string allocations and set operations every frame!
+    if (time - (this.lastStreamTime || 0) < 0.3) {
+      return;
+    }
+    this.lastStreamTime = time;
+
     const activeChunkKeys = new Set();
     const activeBuildingKeys = new Set();
 
+    // Focus streaming on primary players (player & camera)
+    const primaryPositions = (focusPositions || []).slice(0, 2);
+
     // 1. Chunks Streaming
-    for (const pos of focusPositions) {
+    for (const pos of primaryPositions) {
       if (!pos) continue;
       const centerCX = Math.floor(pos.x / this.chunkSize);
       const centerCZ = Math.floor(pos.z / this.chunkSize);
@@ -307,14 +327,6 @@ export class WorldManager {
           if (colliderIndex !== -1) this.colliders.splice(colliderIndex, 1);
         }
         this.chunks.delete(key);
-      } else {
-        // Animate water ripple
-        if (chunk.waterMesh) {
-          const [cxStr, czStr] = key.split(',');
-          const cx = parseFloat(cxStr);
-          const cz = parseFloat(czStr);
-          chunk.waterMesh.position.y = this.waterLevel + Math.sin(time * 2.5 + cx * 0.7 + cz * 0.7) * 0.04;
-        }
       }
     }
 
@@ -322,7 +334,6 @@ export class WorldManager {
     for (const [bKey, bld] of this.buildings.entries()) {
       if (!activeBuildingKeys.has(bKey)) {
         this.scene.remove(bld.group);
-        // Remove collider
         const idx = this.colliders.indexOf(bld.collider);
         if (idx !== -1) this.colliders.splice(idx, 1);
         this.buildings.delete(bKey);
@@ -477,7 +488,7 @@ export class WorldManager {
           const rotY = rng() * Math.PI * 2;
           rockMesh.rotation.set(rng() * 0.2, rotY, rng() * 0.2);
           rockMesh.position.set(wx, wy + (rockModels.length > 0 ? 0 : ry), wz);
-          rockMesh.castShadow = true;
+          rockMesh.castShadow = false;
           rockMesh.receiveShadow = true;
           group.add(rockMesh);
 
@@ -522,14 +533,14 @@ export class WorldManager {
         } else {
           const trunk = new THREE.Mesh(this.trunkGeo, this.trunkMat);
           trunk.position.y = 1.5;
-          trunk.castShadow = true;
+          trunk.castShadow = false;
           tree.add(trunk);
           const foliage = new THREE.Mesh(
             this.foliageGeo,
             dominantBiome === BIOMES.SNOW ? this.snowFoliageMat : this.foliageMat,
           );
           foliage.position.y = 3.6;
-          foliage.castShadow = true;
+          foliage.castShadow = false;
           tree.add(foliage);
           tree.scale.set(s, s, s);
         }

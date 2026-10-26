@@ -1012,7 +1012,22 @@ export class RunnerController {
     audio.playKnifeSwing();
   }
 
+  playCastGesture(duration = 0.25) {
+    this.castTimer = duration;
+    this.castDuration = duration;
+  }
+
+  triggerCameraShake(intensity = 0.35, duration = 0.25) {
+    this.cameraShake = { intensity, duration, timer: duration };
+  }
+
   update(dt) {
+    if (this.castTimer > 0) {
+      this.castTimer = Math.max(0, this.castTimer - dt);
+    }
+    if (this.cameraShake && this.cameraShake.timer > 0) {
+      this.cameraShake.timer = Math.max(0, this.cameraShake.timer - dt);
+    }
     if (this.invulnerableTimer > 0) {
       this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
     }
@@ -1213,6 +1228,8 @@ export class RunnerController {
       slideProgress: this.slideTimer / this.slideDuration,
       pitch: this.cameraPitch,
       attackProgress: this.knifeSwingTimer > 0 ? 1 - this.knifeSwingTimer / 0.28 : 0,
+      casting: this.castTimer > 0,
+      castProgress: (this.castDuration && this.castTimer > 0) ? (1 - this.castTimer / this.castDuration) : 0,
       hitProgress: this.hitReactTimer > 0 ? 1 - this.hitReactTimer / 0.24 : 0,
     });
 
@@ -1260,13 +1277,21 @@ export class RunnerController {
     // Camera orbit positioning:
     // Slightly compress horizontal orbit distance when looking steeply up or down for comfortable framing
     const horizDist = this.cameraDistance * Math.cos(pitch * 0.45);
-    const camX = this.position.x - forwardX * horizDist;
-    const camZ = this.position.z - forwardZ * horizDist;
+    let camX = this.position.x - forwardX * horizDist;
+    let camZ = this.position.z - forwardZ * horizDist;
 
     // Pitch height adjustment:
     // When aiming down (pitch < 0), camera raises up behind the player so the player doesn't occlude the ground.
     // When aiming up (pitch > 0), camera drops down slightly so the player doesn't occlude the sky/dragon.
     let camY = this.position.y + this.cameraHeight - sinPitch * 1.35;
+
+    // Apply tactile camera shake
+    if (this.cameraShake && this.cameraShake.timer > 0) {
+      const shakeAmt = (this.cameraShake.timer / this.cameraShake.duration) * this.cameraShake.intensity;
+      camX += (Math.random() - 0.5) * shakeAmt;
+      camY += (Math.random() - 0.5) * shakeAmt * 0.8;
+      camZ += (Math.random() - 0.5) * shakeAmt;
+    }
 
     // Prevent camera from clipping through terrain
     let minGroundY = this.position.y + 0.5;

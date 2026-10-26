@@ -993,7 +993,7 @@ class GameRoom {
           type: 'MOB_ESCALATION',
           tier: 2,
           name: t2Config.name,
-          message: '🔥 Warning! Tier 2 Flame Brutes have emerged with incinerating attacks!',
+          message: '🔥 Warning! Tier 2 Flame Zombies have emerged with incinerating attacks!',
         });
       }
       const activeT2Count = this.mobs.filter((m) => m.tier === 2 && m.alive).length;

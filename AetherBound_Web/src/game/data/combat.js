@@ -314,7 +314,7 @@ export function isTrap(id) {
 export const MOB_SYSTEM_CONFIG = {
   TIER_1_WATER_MOB: {
     id: 'AQUA_FIEND',
-    name: 'Aqua Fiend',
+    name: 'Aqua Zombie',
     tier: 1,
     spawnTimeSeconds: 0,
     health: 80,
@@ -331,11 +331,11 @@ export const MOB_SYSTEM_CONFIG = {
       color: 0x22aaff,
     },
     drops: ['RIVER_DEW', 'ELDER_WOOD', 'AETHER_ESSENCE'],
-    description: 'Basic aquatic elemental attacking with high-speed water projectiles.',
+    description: 'Drowned aquatic undead zombie attacking with high-speed water projectiles.',
   },
   TIER_2_FIRE_MOB: {
     id: 'FLAME_BRUTE',
-    name: 'Flame Brute',
+    name: 'Flame Zombie',
     tier: 2,
     spawnTimeSeconds: 90,
     health: 160,
@@ -357,7 +357,7 @@ export const MOB_SYSTEM_CONFIG = {
       color: 0xff5511,
     },
     drops: ['BLAZING_CINDER', 'EMBER_ORE', 'ARCANE_QUARTZ'],
-    description: 'Aggressive flame beast with incinerating attacks leaving a 3-second burn.',
+    description: 'Charred infernal magma zombie brute with incinerating attacks leaving a 3-second burn.',
   },
   TIER_3_DRAGON: {
     id: 'ASHWING_DRAKE',

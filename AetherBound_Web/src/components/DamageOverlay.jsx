@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-export function DamageOverlay({ damageFlash, statusEffects = [] }) {
+export function DamageOverlayComponent({ damageFlash, statusEffects = [] }) {
   const [isFlashing, setIsFlashing] = useState(false);
 
   useEffect(() => {
@@ -36,3 +36,5 @@ export function DamageOverlay({ damageFlash, statusEffects = [] }) {
     </>
   );
 }
+
+export const DamageOverlay = React.memo(DamageOverlayComponent);

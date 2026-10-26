@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export function TopHud({
+export function TopHudComponent({
   roomCode = 'default',
   playerCounts = {},
   competitors = [],
@@ -242,3 +242,5 @@ export function TopHud({
     </>
   );
 }
+
+export const TopHud = React.memo(TopHudComponent);

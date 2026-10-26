@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function AimReticle({
+export function AimReticleComponent({
   visible = true,
   isPointerLocked = false,
   hasTarget = false,
@@ -53,3 +53,5 @@ export function AimReticle({
     </>
   );
 }
+
+export const AimReticle = React.memo(AimReticleComponent);

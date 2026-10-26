@@ -2,7 +2,7 @@ import React from 'react';
 import { RESOURCE_DEFINITIONS } from '../game/data/world.js';
 import { WEAPON_DEFINITIONS } from '../game/data/combat.js';
 
-export function RunnerHud({
+export function RunnerHudComponent({
   stats = {},
   resources = {},
   equippedWeapon = 'KNIFE',
@@ -106,3 +106,5 @@ export function RunnerHud({
     </div>
   );
 }
+
+export const RunnerHud = React.memo(RunnerHudComponent);

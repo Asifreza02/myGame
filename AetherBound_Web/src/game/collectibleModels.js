@@ -425,12 +425,80 @@ export function preloadAllCollectibleModels() {
   return Promise.allSettled(types.map((t) => loadCollectibleTemplate(t)));
 }
 
-// Shared Geometries for visual rings and beams
+// Shared Geometries for visual rings, beams, and placeholders
 const sharedGlowRingGeo = new THREE.RingGeometry(0.45, 0.85, 24);
 sharedGlowRingGeo.rotateX(-Math.PI / 2);
 
 const sharedHaloGeo = new THREE.TorusGeometry(0.55, 0.024, 8, 28);
 const sharedBeamGeo = new THREE.CylinderGeometry(0.08, 0.38, 3.8, 16, 1, true);
+const sharedOctahedronGeo = new THREE.OctahedronGeometry(0.38, 0);
+
+// Global Material Caches (Drastically reduces GPU shader switches & memory footprint)
+const groundMatCache = new Map();
+const beamMatCache = new Map();
+const haloMatCache = new Map();
+const placeholderMatCache = new Map();
+
+function getGroundMat(color) {
+  let mat = groundMatCache.get(color);
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    groundMatCache.set(color, mat);
+  }
+  return mat;
+}
+
+function getBeamMat(color, opacity) {
+  const key = `${color}_${opacity}`;
+  let mat = beamMatCache.get(key);
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    beamMatCache.set(key, mat);
+  }
+  return mat;
+}
+
+function getHaloMat(color) {
+  let mat = haloMatCache.get(color);
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending,
+    });
+    haloMatCache.set(color, mat);
+  }
+  return mat;
+}
+
+function getPlaceholderMat(color) {
+  let mat = placeholderMatCache.get(color);
+  if (!mat) {
+    mat = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.6,
+      roughness: 0.3,
+      metalness: 0.4,
+    });
+    placeholderMatCache.set(color, mat);
+  }
+  return mat;
+}
 
 /**
  * Creates a rich, realistic 3D collectible entity with ground runes,
@@ -456,15 +524,8 @@ export function createCollectibleEntity(item, worldY) {
   const definition = ITEM_DEFINITIONS[type] || RESOURCE_DEFINITIONS[type];
   const themeColor = config.beamColor || definition?.color || 0x55eaff;
 
-  // 1. Ground Projector Rune Ring
-  const groundMat = new THREE.MeshBasicMaterial({
-    color: config.groundColor || themeColor,
-    transparent: true,
-    opacity: 0.45,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const groundRing = new THREE.Mesh(sharedGlowRingGeo, groundMat);
+  // 1. Ground Projector Rune Ring (Shared Cached Material)
+  const groundRing = new THREE.Mesh(sharedGlowRingGeo, getGroundMat(config.groundColor || themeColor));
   groundRing.position.y = 0.08;
   group.add(groundRing);
 
@@ -472,40 +533,20 @@ export function createCollectibleEntity(item, worldY) {
   let lightBeam = null;
   if (config.hasBeam || item.rarity === 'Rare' || item.rarity === 'Uncommon') {
     const beamHeight = config.beamHeight || (item.rarity === 'Rare' ? 4.5 : 3.5);
-    const beamMat = new THREE.MeshBasicMaterial({
-      color: themeColor,
-      transparent: true,
-      opacity: item.rarity === 'Rare' ? 0.32 : 0.22,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    lightBeam = new THREE.Mesh(sharedBeamGeo, beamMat);
+    const opacity = item.rarity === 'Rare' ? 0.32 : 0.22;
+    lightBeam = new THREE.Mesh(sharedBeamGeo, getBeamMat(themeColor, opacity));
     lightBeam.scale.set(1, beamHeight / 3.8, 1);
     lightBeam.position.y = beamHeight * 0.5;
     group.add(lightBeam);
   }
 
-  // 3. Orbiting Energy Halo
-  const haloMat = new THREE.MeshBasicMaterial({
-    color: themeColor,
-    transparent: true,
-    opacity: 0.65,
-    blending: THREE.AdditiveBlending,
-  });
-  const halo = new THREE.Mesh(sharedHaloGeo, haloMat);
+  // 3. Orbiting Energy Halo (Shared Cached Material)
+  const halo = new THREE.Mesh(sharedHaloGeo, getHaloMat(themeColor));
   halo.rotation.x = Math.PI / 3;
   floatingGroup.add(halo);
 
-  // 4. Fallback Stylized Shape (shown immediately while async GLB loads)
-  const placeholderMat = new THREE.MeshStandardMaterial({
-    color: themeColor,
-    emissive: themeColor,
-    emissiveIntensity: 0.6,
-    roughness: 0.3,
-    metalness: 0.4,
-  });
-  const placeholder = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0), placeholderMat);
+  // 4. Fallback Stylized Shape (Shared Geometry & Cached Material)
+  const placeholder = new THREE.Mesh(sharedOctahedronGeo, getPlaceholderMat(themeColor));
   placeholder.scale.setScalar(config.scale || 0.85);
   floatingGroup.add(placeholder);
 

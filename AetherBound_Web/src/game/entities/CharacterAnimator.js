@@ -84,6 +84,8 @@ export class CharacterAnimator {
     const slideProgress = THREE.MathUtils.clamp(state.slideProgress || 0, 0, 1);
     const vaultProgress = THREE.MathUtils.clamp(state.vaultProgress || 0, 0, 1);
     const attackEnvelope = Math.sin(Math.PI * THREE.MathUtils.clamp(state.attackProgress || 0, 0, 1));
+    const castProgress = THREE.MathUtils.clamp(state.castProgress || 0, 0, 1);
+    const castEnvelope = Math.sin(Math.PI * castProgress);
     const hitEnvelope = Math.sin(Math.PI * THREE.MathUtils.clamp(state.hitProgress || 0, 0, 1)) * w.hit;
     const landing = (1 - this.landingTime) * (grounded ? 1 : 0);
     const rising = verticalVelocity > 0.5 ? 1 : 0;
@@ -147,9 +149,10 @@ export class CharacterAnimator {
     rightKneeX += 0.28 * landing;
     torsoX += 0.08 * landing;
 
-    // The saboteur's gauntlet stays raised while a placement is being cast.
-    rightArmX = mix(rightArmX, -1.22 + Math.sin(this.idlePhase * 5) * 0.06, w.cast);
-    rightArmZ = mix(rightArmZ, -0.18, w.cast);
+    // Staff/wand forward raise and casting thrust recoil
+    rightArmX = mix(rightArmX, -1.35 - 0.28 * castEnvelope, w.cast);
+    rightArmZ = mix(rightArmZ, -0.22, w.cast);
+    rightElbowX += 0.28 * castEnvelope;
 
     // Knife attacks add a quick shoulder turn and a broad arm sweep.
     rightArmX += -1.15 * attackEnvelope * w.attack;
@@ -184,7 +187,9 @@ export class CharacterAnimator {
     this.root.rotation.z = rootZ;
 
     if (this.weapon) {
-      this.weapon.rotation.x = smooth(this.weapon.rotation.x, -1.6 * attackEnvelope * w.attack, frame, 20);
+      const weaponAttackRotX = -1.6 * attackEnvelope * w.attack;
+      const weaponCastRotX = -0.55 * castEnvelope * w.cast;
+      this.weapon.rotation.x = smooth(this.weapon.rotation.x, weaponAttackRotX + weaponCastRotX, frame, 20);
       this.weapon.rotation.z = smooth(this.weapon.rotation.z, 0.38 + 0.7 * attackEnvelope * w.attack, frame, 20);
     }
 

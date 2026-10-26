@@ -5,7 +5,7 @@ import { audio } from '../game/audio.js';
 const POWER_SLOT_HOTKEYS = ['2', '3', '4', '5', '6', '7', '8'];
 const POWER_SLOT_SUBKEYS = ['Q', 'E', 'R', 'F', 'Z', 'X', 'V'];
 
-export function EquipmentToggleBar({
+export function EquipmentToggleBarComponent({
   equippedStick = 'APPRENTICE_STICK',
   powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
   backpack = { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'], resources: {} },
@@ -20,11 +20,15 @@ export function EquipmentToggleBar({
   const [now, setNow] = useState(Date.now());
   const [dragOverIndex, setDragOverIndex] = useState(null);
 
-  // High-frequency refresh for cooldown animation and timer display
+  // Check if any ability or stick is actively on cooldown
+  const hasActiveCooldown = stickCooldownMs > 0 || Object.values(abilityCooldowns).some((readyAt) => readyAt > now);
+
+  // High-frequency refresh ONLY while abilities/sticks are on active cooldown
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 100);
+    if (!hasActiveCooldown) return;
+    const timer = setInterval(() => setNow(Date.now()), 150);
     return () => clearInterval(timer);
-  }, []);
+  }, [hasActiveCooldown]);
 
   const stickDef = MAGIC_STICKS[equippedStick] || WEAPON_DEFINITIONS[equippedStick] || MAGIC_STICKS.APPRENTICE_STICK;
 
@@ -244,3 +248,5 @@ export function EquipmentToggleBar({
     </nav>
   );
 }
+
+export const EquipmentToggleBar = React.memo(EquipmentToggleBarComponent);
