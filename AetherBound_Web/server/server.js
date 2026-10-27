@@ -220,10 +220,10 @@ class GameRoom {
       weapons: ['APPRENTICE_STICK', 'KNIFE'],
       equippedWeapon: 'APPRENTICE_STICK',
       equippedStick: 'APPRENTICE_STICK',
-      powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+      powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null],
       backpack: {
         sticks: ['APPRENTICE_STICK'],
-        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
         resources: {
           ELDER_WOOD: 3,
           ARCANE_QUARTZ: 1,
@@ -314,10 +314,10 @@ class GameRoom {
       weapons: ['APPRENTICE_STICK', 'KNIFE'],
       equippedWeapon: 'APPRENTICE_STICK',
       equippedStick: 'APPRENTICE_STICK',
-      powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+      powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null],
       backpack: {
         sticks: ['APPRENTICE_STICK'],
-        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
         resources: {
           ELDER_WOOD: 3,
           ARCANE_QUARTZ: 1,
@@ -973,7 +973,7 @@ class GameRoom {
     for (let i = 0; i < 16; i++) {
       const isClose = i < 4;
       const angle = (i / 16) * Math.PI * 2 + (this.seed % 7) * 0.2;
-      const radius = isClose ? (16 + i * 2.5) : (28 + (i % 4) * 16 + Math.random() * 12);
+      const radius = isClose ? (24 + i * 1.5) : (34 + (i % 4) * 16 + Math.random() * 14);
       const x = Math.round(Math.cos(angle) * radius);
       const z = Math.round(Math.sin(angle) * radius);
       const y = this.getTerrainHeight(x, z) + 1.0;
@@ -1138,7 +1138,7 @@ class GameRoom {
 
         // Attack when in range and cooldown expired
         if (closestDist <= mob.attackRange && now >= (mob.nextAttackAt || 0)) {
-          mob.nextAttackAt = now + (mob.attackCooldownMs || 3000);
+          mob.nextAttackAt = now + (mob.attackCooldownMs || 4200);
           const isFire = mob.tier === 2;
 
           this.broadcast({
@@ -1155,7 +1155,9 @@ class GameRoom {
 
           const absorbed = closestTarget.shieldUntil > now;
           if (absorbed) closestTarget.shieldUntil = 0;
-          const appliedDmg = absorbed ? 0 : Math.min(mob.attackDamage, closestTarget.health);
+          const distFactor = Math.max(0.65, 1.0 - (closestDist / (mob.attackRange * 1.6)));
+          const rawDmg = Math.round(mob.attackDamage * distFactor);
+          const appliedDmg = absorbed ? 0 : Math.min(rawDmg, closestTarget.health);
           if (!absorbed && appliedDmg > 0) {
             closestTarget.health = Math.max(0, closestTarget.health - appliedDmg);
             this.broadcast({
@@ -1174,7 +1176,7 @@ class GameRoom {
                 name: 'Ignited',
                 durationMs: 3000,
                 tickIntervalMs: 1000,
-                damagePerTick: 6,
+                damagePerTick: 2,
                 attackerId: mob.id,
               });
             }
@@ -1208,6 +1210,10 @@ class GameRoom {
     if (!mob) return;
     const appliedDamage = Math.min(damage, mob.health);
     mob.health = Math.max(0, mob.health - appliedDamage);
+
+    const now = Date.now();
+    mob.stunnedUntil = Math.max(mob.stunnedUntil || 0, now + 400);
+    mob.nextAttackAt = Math.max(mob.nextAttackAt || 0, now + 1200);
 
     const attacker = this.players.get(attackerId);
     if (attacker) {
@@ -2281,6 +2287,52 @@ class GameRoom {
     const cooldownMs = def.cooldownMs || 5000;
     player.powerCooldowns[powerId] = now + cooldownMs;
 
+    if (def.category === 'heal' || powerId === 'REJUVENATION') {
+      const healAmt = def.healAmount || 40;
+      const prevHealth = player.health;
+      player.health = Math.min(player.maxHealth, player.health + healAmt);
+      const actualHealed = player.health - prevHealth;
+
+      if (def.healOverTime) {
+        let ticksRemaining = Math.floor(def.healOverTime.durationMs / def.healOverTime.tickMs);
+        const hotInterval = setInterval(() => {
+          if (!player.alive || this.state !== 'ACTIVE' || ticksRemaining <= 0) {
+            clearInterval(hotInterval);
+            return;
+          }
+          ticksRemaining -= 1;
+          player.health = Math.min(player.maxHealth, player.health + (def.healOverTime.healPerTick || 5));
+          this.broadcast({
+            type: 'PLAYER_HEALED',
+            playerId: player.id,
+            health: player.health,
+            amount: def.healOverTime.healPerTick || 5,
+            isHot: true,
+          });
+          this.broadcastState();
+        }, def.healOverTime.tickMs);
+      }
+
+      this.broadcast({
+        type: 'PLAYER_HEALED',
+        playerId: player.id,
+        health: player.health,
+        amount: actualHealed,
+        ability: powerId,
+        cooldownMs,
+        readyAt: player.powerCooldowns[powerId],
+      });
+      this.broadcast({
+        type: 'ABILITY_USED',
+        playerId: player.id,
+        ability: powerId,
+        cooldownMs,
+        readyAt: player.powerCooldowns[powerId],
+      });
+      this.broadcastState();
+      return;
+    }
+
     if (def.category === 'defense' || powerId === 'AEGIS_WARD') {
       player.shieldUntil = now + (def.durationMs || 8000);
       this.broadcast({
@@ -2619,6 +2671,10 @@ class GameRoom {
     }
     if (message.type === 'USE_ABILITY' && this.state === 'ACTIVE' && player.alive) {
       const ability = String(message.ability || '');
+      if (ability === 'HEAL' || ability === 'REJUVENATION') {
+        this.castSpell(ws, player, { powerId: 'REJUVENATION' });
+        return;
+      }
       if (TRAP_DEFINITIONS[ability]) {
         this.deployTrap(player, { trapType: ability, position: message.position });
         return;

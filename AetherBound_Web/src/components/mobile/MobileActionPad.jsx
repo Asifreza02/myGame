@@ -32,6 +32,7 @@ export function MobileActionPad({
   onToggleFullscreen,
   onOpenBackpack,
   onOpenCrafting,
+  onQuickHeal,
 }) {
   const [sprintActive, setSprintActive] = useState(false);
 
@@ -87,6 +88,18 @@ export function MobileActionPad({
               >
                 ✨
               </button>
+
+              {onQuickHeal && (
+                <button
+                  className="mobile-aux-btn heal-btn interactive"
+                  onPointerUp={(event) => activateFromPointer(event, onQuickHeal)}
+                  onClick={(event) => activateFromKeyboard(event, onQuickHeal)}
+                  title="Vital Rejuvenation"
+                  style={{ background: 'rgba(30, 180, 80, 0.35)', borderColor: '#44ff88' }}
+                >
+                  💚
+                </button>
+              )}
 
               {voiceState.pushToTalk ? (
                 <button

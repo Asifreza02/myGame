@@ -274,10 +274,10 @@ export class GameEngine {
     this.equippedStick = 'APPRENTICE_STICK';
     this.equippedWeapon = 'APPRENTICE_STICK';
     this.weapons = ['APPRENTICE_STICK', 'KNIFE'];
-    this.powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null];
+    this.powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null];
     this.backpack = {
       sticks: ['APPRENTICE_STICK'],
-      powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+      powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
       resources: {},
     };
     this.statusEffects = [];
@@ -582,6 +582,10 @@ export class GameEngine {
         } else {
           this.toggleBackpackModal();
         }
+        return;
+      }
+      if (event.code === 'KeyH') {
+        this.activateAbility('REJUVENATION');
         return;
       }
     };
@@ -998,10 +1002,10 @@ export class GameEngine {
         this.playerResources = player.resources || {};
         this.equippedStick = player.equippedStick || player.equippedWeapon || 'APPRENTICE_STICK';
         this.equippedWeapon = this.equippedStick;
-        this.powerSlots = player.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null];
+        this.powerSlots = player.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null];
         this.backpack = player.backpack || {
           sticks: [this.equippedStick],
-          powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+          powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
           resources: this.playerResources,
         };
         this.statusEffects = player.statusEffects || [];
@@ -1402,6 +1406,23 @@ export class GameEngine {
     if (event.type === 'POWER_SLOT_CHANGED') {
       if (event.playerId === this.playerId && event.powerSlots) {
         this.powerSlots = event.powerSlots;
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'PLAYER_HEALED') {
+      if (event.playerId === this.playerId) {
+        this.runner.health = event.health;
+        audio.playPowerupPickup?.();
+        if (this.particles) {
+          this.particles.emitPowerupBurst(this.runner.position, 0x44ff88, 24);
+        }
+        if (!event.isHot) {
+          this.showToast(`💚 Vital Rejuvenation restored +${event.amount} Health! (${event.health}/${this.runner.maxHealth})`);
+        }
+      } else {
+        const rival = this.remotePlayers.get(event.playerId)?.state?.name || 'A rival';
+        if (!event.isHot) this.showToast(`💚 ${rival} restored +${event.amount} HP.`);
       }
       this.emitState();
       return;
@@ -1975,6 +1996,9 @@ export class GameEngine {
       if (def.category === 'defense') {
         this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
         if (audio.playShield) audio.playShield();
+      } else if (def.category === 'heal' || ability === 'REJUVENATION') {
+        this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
+        if (audio.playPowerupPickup) audio.playPowerupPickup();
       } else {
         const origin = new THREE.Vector3(this.runner.position.x, this.runner.position.y + 1.2, this.runner.position.z);
         const camDir = new THREE.Vector3();
@@ -3529,10 +3553,10 @@ export class GameEngine {
       weapons: this.weapons || ['APPRENTICE_STICK', 'KNIFE'],
       equippedWeapon: this.equippedWeapon || 'APPRENTICE_STICK',
       equippedStick: this.equippedStick || 'APPRENTICE_STICK',
-      powerSlots: this.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+      powerSlots: this.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null],
       backpack: this.backpack || {
         sticks: ['APPRENTICE_STICK'],
-        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
         resources: this.playerResources || {},
       },
       statusEffects: this.statusEffects || [],

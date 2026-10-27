@@ -10,6 +10,7 @@ export function RunnerHudComponent({
   ammo = {},
   onOpenCrafting,
   onEquipWeapon,
+  onQuickHeal,
 }) {
   const { health = 100, maxHealth = 100, stamina = 100, maxStamina = 100, buffs = [], knifeCooldownMs = 0 } = stats;
   const healthPct = Math.max(0, Math.min(100, (health / maxHealth) * 100));
@@ -28,6 +29,16 @@ export function RunnerHudComponent({
             <div className="health-fill" style={{ width: `${healthPct}%` }} />
           </div>
           <span className="health-text">{Math.ceil(health)}</span>
+          {health < maxHealth && (
+            <button
+              type="button"
+              className="quick-heal-btn interactive"
+              onClick={onQuickHeal}
+              title="Vital Rejuvenation [H / 5]"
+            >
+              💚 Heal
+            </button>
+          )}
         </div>
         <div className="vital-row stamina-row" title={`Stamina: ${Math.round(staminaPct)}%`}>
           <span className="vital-icon">⚡</span>

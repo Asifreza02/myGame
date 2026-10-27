@@ -209,6 +209,10 @@ export function App() {
     if (engineRef.current) engineRef.current.channelAltarEssence();
   }, []);
 
+  const handleQuickHeal = useCallback(() => {
+    if (engineRef.current) engineRef.current.activateAbility('REJUVENATION');
+  }, []);
+
   const handleEquipWeapon = useCallback((weaponId) => {
     if (engineRef.current) engineRef.current.equipWeapon(weaponId);
   }, []);
@@ -460,6 +464,7 @@ export function App() {
           onCycleSens={handleCycleRunnerSens}
           onCraft={handleCraftPowerUp}
           onUse={handleUsePowerUp}
+          onQuickHeal={handleQuickHeal}
         />
       )}
 
@@ -467,8 +472,8 @@ export function App() {
       {engineState.gameState === 'PLAYING' && isRunner && (
         <EquipmentToggleBar
           equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
-          powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null]}
-          backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'], resources: {} }}
+          powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null]}
+          backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'], resources: {} }}
           abilityCooldowns={engineState.abilityCooldowns || {}}
           stickCooldownMs={engineState.knifeCooldownMs || 0}
           onEquipStick={handleEquipStick}
@@ -524,6 +529,7 @@ export function App() {
             onToggleFullscreen={handleToggleFullscreen}
             onOpenBackpack={handleOpenBackpack}
             onOpenCrafting={handleOpenCrafting}
+            onQuickHeal={handleQuickHeal}
           />
         </>
       )}
@@ -545,9 +551,9 @@ export function App() {
       {/* Arcane Backpack Inventory Modal */}
       <BackpackModal
         visible={Boolean(engineState.backpackModalOpen)}
-        backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'], resources: {} }}
+        backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'], resources: {} }}
         equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
-        powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null]}
+        powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null]}
         resources={engineState.playerResources || {}}
         onEquipStick={handleEquipStick}
         onSetPowerSlot={handleSetPowerSlot}
