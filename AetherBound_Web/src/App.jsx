@@ -205,6 +205,10 @@ export function App() {
     if (engineRef.current) engineRef.current.craftWeapon(recipeIndex);
   }, []);
 
+  const handleChannelAltar = useCallback(() => {
+    if (engineRef.current) engineRef.current.channelAltarEssence();
+  }, []);
+
   const handleEquipWeapon = useCallback((weaponId) => {
     if (engineRef.current) engineRef.current.equipWeapon(weaponId);
   }, []);
@@ -534,6 +538,7 @@ export function App() {
         backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: [], resources: {} }}
         onCraft={handleCraftWeapon}
         onEquip={handleEquipStick}
+        onChannelAltar={handleChannelAltar}
         onClose={handleCloseCrafting}
       />
 

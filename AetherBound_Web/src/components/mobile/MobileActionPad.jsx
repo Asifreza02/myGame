@@ -74,18 +74,18 @@ export function MobileActionPad({
                 className="mobile-aux-btn interactive"
                 onPointerUp={(event) => activateFromPointer(event, onOpenBackpack)}
                 onClick={(event) => activateFromKeyboard(event, onOpenBackpack)}
-                title="Open Arcane Backpack"
+                title="Backpack"
               >
-                🎒 BAG
+                🎒
               </button>
 
               <button
                 className="mobile-aux-btn interactive"
                 onPointerUp={(event) => activateFromPointer(event, onOpenCrafting)}
                 onClick={(event) => activateFromKeyboard(event, onOpenCrafting)}
-                title="Open Arcane Altar & Crafting"
+                title="Altar & Crafting"
               >
-                ✨ ALTAR
+                ✨
               </button>
 
               {voiceState.pushToTalk ? (
@@ -95,18 +95,18 @@ export function MobileActionPad({
                   onPointerUp={() => onVoicePttActive?.(false)}
                   onPointerLeave={() => onVoicePttActive?.(false)}
                   onPointerCancel={() => onVoicePttActive?.(false)}
-                  title="Hold to Talk"
+                  title="Push-To-Talk"
                 >
-                  {voiceState.isSpeaking ? '🎙️ TALKING' : '🎙️ HOLD PTT'}
+                  {voiceState.isSpeaking ? '🎙️' : '🎤'}
                 </button>
               ) : (
                 <button
                   className={`mobile-aux-btn voice-btn interactive ${voiceState.isMuted ? 'muted' : voiceState.isSpeaking ? 'speaking' : 'active'}`}
                   onPointerUp={(event) => activateFromPointer(event, onToggleVoiceMute)}
                   onClick={(event) => activateFromKeyboard(event, onToggleVoiceMute)}
-                  title="Toggle Microphone"
+                  title="Mic"
                 >
-                  {voiceState.isMuted ? '🔇 MUTED' : voiceState.isSpeaking ? '🎙️ TALKING' : '🎤 MIC ON'}
+                  {voiceState.isMuted ? '🔇' : voiceState.isSpeaking ? '🎙️' : '🎤'}
                 </button>
               )}
             </div>
@@ -116,24 +116,27 @@ export function MobileActionPad({
                 className={`mobile-round-btn sprint-btn interactive ${sprintActive ? 'active' : ''}`}
                 onPointerUp={(event) => activateFromPointer(event, handleSprint)}
                 onClick={(event) => activateFromKeyboard(event, handleSprint)}
+                title="Sprint"
               >
-                ⚡ SPRINT
+                ⚡
               </button>
 
               <button
                 className="mobile-round-btn jump-btn interactive"
                 onPointerUp={(event) => activateFromPointer(event, onJump)}
                 onClick={(event) => activateFromKeyboard(event, onJump)}
+                title="Jump"
               >
-                🚀 JUMP
+                🚀
               </button>
 
               <button
                 className="mobile-round-btn slide-btn interactive"
                 onPointerUp={(event) => activateFromPointer(event, onSlide)}
                 onClick={(event) => activateFromKeyboard(event, onSlide)}
+                title="Slide"
               >
-                ⛷️ SLIDE
+                💨
               </button>
 
               {isPlacingTrap ? (
@@ -142,20 +145,20 @@ export function MobileActionPad({
                     className="mobile-round-btn trap-cancel-btn interactive"
                     onPointerUp={(event) => activateFromPointer(event, onCancelTrap)}
                     onClick={(event) => activateFromKeyboard(event, onCancelTrap)}
-                    title="Cancel Trap Placement"
+                    title="Cancel Placement"
                     style={{ background: 'rgba(230, 40, 40, 0.45)', borderColor: '#ff4444' }}
                   >
-                    ❌ CANCEL
+                    ❌
                   </button>
 
                   <button
                     className="mobile-round-btn trap-confirm-btn primary-action interactive"
                     onPointerUp={(event) => activateFromPointer(event, onConfirmTrap || onAttack)}
                     onClick={(event) => activateFromKeyboard(event, onConfirmTrap || onAttack)}
-                    title="Confirm Trap Placement"
+                    title="Confirm Placement"
                     style={{ background: 'rgba(0, 240, 255, 0.45)', borderColor: '#00f0ff' }}
                   >
-                    💥 PLACE
+                    💥
                   </button>
                 </>
               ) : (
@@ -166,9 +169,11 @@ export function MobileActionPad({
                   title={`Cast ${currentWeaponDef.name}`}
                 >
                   <span className="mobile-btn-icon">{currentWeaponDef.icon || '🪄'}</span>
-                  <span className="mobile-btn-label">
-                    {isAttackCooling ? `${(knifeCooldownMs / 1000).toFixed(1)}s` : isStickType ? 'SPARK' : isMelee ? 'STRIKE' : 'FIRE'}
-                  </span>
+                  {isAttackCooling && (
+                    <span className="mobile-btn-label">
+                      {(knifeCooldownMs / 1000).toFixed(1)}s
+                    </span>
+                  )}
                 </button>
               )}
             </div>

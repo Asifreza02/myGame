@@ -1562,8 +1562,8 @@ export class GameEngine {
       return;
     }
     if (event.type === 'CRAFT_RESULT') {
-      if (!event.success) {
-        this.showToast(event.reason || 'Could not craft item.');
+      if (event.reason) {
+        this.showToast(event.reason);
       }
       return;
     }
@@ -2925,6 +2925,11 @@ export class GameEngine {
   craftWeapon(recipeIndex) {
     if (!this.network?.connected) return;
     this.network.craftWeapon(recipeIndex);
+  }
+
+  channelAltarEssence() {
+    if (!this.network?.connected) return;
+    this.network.channelAltarEssence();
   }
 
   equipWeapon(weaponId) {

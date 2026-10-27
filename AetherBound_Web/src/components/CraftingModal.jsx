@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ARCANE_CRAFTING_RECIPES,
   MAGIC_STICKS,
@@ -6,6 +6,7 @@ import {
   TRAP_DEFINITIONS,
 } from '../game/data/combat.js';
 import { RESOURCE_DEFINITIONS } from '../game/data/world.js';
+import { audio } from '../game/audio.js';
 
 const TABS = [
   { id: 'ALL', label: 'All Recipes', icon: '✨' },
@@ -23,9 +24,16 @@ export function CraftingModal({
   backpack = { sticks: [], powers: [], resources: {} },
   onCraft,
   onEquip,
+  onChannelAltar,
   onClose,
 }) {
   const [activeTab, setActiveTab] = useState('ALL');
+  const [feedback, setFeedback] = useState(null);
+
+  // Clear feedback on tab switch or visibility change
+  useEffect(() => {
+    setFeedback(null);
+  }, [activeTab, visible]);
 
   const filteredRecipes = useMemo(() => {
     return ARCANE_CRAFTING_RECIPES.map((recipe, index) => ({ ...recipe, originalIndex: index }))
@@ -43,6 +51,48 @@ export function CraftingModal({
   }, [activeTab]);
 
   if (!visible) return null;
+
+  const handleCraftAttempt = (recipe, canCraft, isStickRecipe, isOwnedStick, isEquippedStick) => {
+    if (!canCraft) {
+      const missing = Object.entries(recipe.ingredients).map(([resId, reqCount]) => {
+        const owned = Math.max(resources[resId] || 0, backpack.resources?.[resId] || 0);
+        const def = RESOURCE_DEFINITIONS[resId];
+        return owned < reqCount ? `${reqCount - owned}x ${def?.name || resId}` : null;
+      }).filter(Boolean);
+
+      audio.playCooldown?.();
+      setFeedback({
+        type: 'warn',
+        message: `⚠️ Missing: ${missing.join(', ')}. Gather from the wilderness or tap "Channel Altar Aether"!`,
+      });
+      return;
+    }
+
+    // Call engine craft
+    onCraft?.(recipe.originalIndex);
+    audio.playCraftSuccess?.();
+
+    if (isStickRecipe) {
+      setFeedback({
+        type: 'success',
+        message: `✨ Forged ${recipe.name}! It is now equipped as your primary weapon.`,
+      });
+    } else {
+      setFeedback({
+        type: 'success',
+        message: `✨ Forged ${recipe.name}! Added to your Backpack [B] and active spells.`,
+      });
+    }
+  };
+
+  const handleChannelAltarClick = () => {
+    audio.playPowerupPickup?.();
+    onChannelAltar?.();
+    setFeedback({
+      type: 'info',
+      message: '✨ Channelled ambient Aether! Natural crafting essences added to your inventory.',
+    });
+  };
 
   return (
     <div className="crafting-modal-overlay" onClick={onClose}>
@@ -73,7 +123,8 @@ export function CraftingModal({
           <span className="resources-label">NATURAL RESOURCES:</span>
           <div className="resources-pill-grid">
             {Object.entries(RESOURCE_DEFINITIONS).map(([id, def]) => {
-              const count = resources[id] || backpack.resources?.[id] || 0;
+              if (def.aliasOf) return null; // Skip duplicate aliases
+              const count = Math.max(resources[id] || 0, backpack.resources?.[id] || 0);
               return (
                 <div
                   key={id}
@@ -87,7 +138,31 @@ export function CraftingModal({
               );
             })}
           </div>
+
+          <button
+            type="button"
+            className="altar-channel-btn interactive"
+            onClick={handleChannelAltarClick}
+            title="Channel ambient mana from the Altar to replenish basic crafting essences"
+          >
+            ⚡ Channel Altar Aether
+          </button>
         </div>
+
+        {/* Feedback / Guidance Banner */}
+        {feedback && (
+          <div className={`crafting-feedback-banner ${feedback.type}`}>
+            <span>{feedback.message}</span>
+            <button
+              type="button"
+              className="feedback-dismiss-btn"
+              onClick={() => setFeedback(null)}
+              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '13px' }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Category Tabs */}
         <div className="crafting-tabs-row">
@@ -126,9 +201,26 @@ export function CraftingModal({
 
             // Can craft check
             const canCraft = Object.entries(recipe.ingredients).every(([resId, reqCount]) => {
-              const currentStock = resources[resId] || backpack.resources?.[resId] || 0;
+              const currentStock = Math.max(resources[resId] || 0, backpack.resources?.[resId] || 0);
               return currentStock >= reqCount;
             });
+
+            // Action label
+            let actionLabel = 'FORGE';
+            if (isStickRecipe) {
+              if (isEquippedStick) actionLabel = 'EQUIPPED ✨';
+              else if (isOwnedStick) actionLabel = 'RE-FORGE 🪄';
+              else if (canCraft) actionLabel = 'FORGE & EQUIP 🔮';
+              else actionLabel = 'NEED MATERIALS 🔒';
+            } else if (isTrapRecipe) {
+              if (canCraft) actionLabel = 'FORGE TRAP 🕸️';
+              else actionLabel = 'NEED MATERIALS 🔒';
+            } else {
+              if (isSlottedPower) actionLabel = 'SLOTTED ⚡';
+              else if (isOwnedPower) actionLabel = 'LEARNED 📜';
+              else if (canCraft) actionLabel = 'FORGE SPELL ✨';
+              else actionLabel = 'NEED MATERIALS 🔒';
+            }
 
             return (
               <div
@@ -172,7 +264,7 @@ export function CraftingModal({
                   <span className="ingredients-label">Requires:</span>
                   <div className="ingredients-list">
                     {Object.entries(recipe.ingredients).map(([resId, reqCount]) => {
-                      const owned = resources[resId] || backpack.resources?.[resId] || 0;
+                      const owned = Math.max(resources[resId] || 0, backpack.resources?.[resId] || 0);
                       const hasEnough = owned >= reqCount;
                       const def = RESOURCE_DEFINITIONS[resId];
                       return (
@@ -191,19 +283,17 @@ export function CraftingModal({
                 <div className="recipe-action-row">
                   <button
                     type="button"
-                    className="craft-action-btn interactive"
-                    disabled={!canCraft}
-                    onClick={() => onCraft(recipe.originalIndex)}
+                    className={`craft-action-btn interactive ${!canCraft ? 'is-locked' : ''}`}
+                    onClick={() => handleCraftAttempt(recipe, canCraft, isStickRecipe, isOwnedStick, isEquippedStick)}
+                    title={!canCraft ? 'Click to see missing ingredients' : 'Click to forge item'}
                   >
-                    {isStickRecipe
-                      ? (isOwnedStick ? 'RE-FORGE' : 'FORGE & EQUIP')
-                      : (isOwnedPower ? 'ALREADY LEARNED' : 'FORGE SPELL')}
+                    {actionLabel}
                   </button>
                   {isStickRecipe && isOwnedStick && !isEquippedStick && (
                     <button
                       type="button"
                       className="equip-action-btn interactive"
-                      onClick={() => onEquip(recipe.stickId)}
+                      onClick={() => onEquip?.(recipe.stickId)}
                     >
                       EQUIP
                     </button>
@@ -217,7 +307,7 @@ export function CraftingModal({
         {/* Footer */}
         <div className="crafting-footer">
           <span>
-            Tip: Press [C] or Click Altar to toggle · Traps & Spells crafted are stored in your Backpack [B] and can be slotted in Hotbar [2-8]
+            Tip: Press [C] or Click Altar to toggle · Traps & Spells crafted are stored in Backpack [B] and can be slotted in Hotbar [2-8]
           </span>
         </div>
       </div>

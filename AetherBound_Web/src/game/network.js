@@ -275,7 +275,8 @@ export class NetworkClient {
   }
   collectItem(id) { this.send({ type: 'PICKUP_ITEM', id }); }
   useAbility(ability) { this.send({ type: 'USE_ABILITY', ability }); }
-  craftWeapon(recipeIndex) { this.send({ type: 'CRAFT_WEAPON', recipeIndex }); }
+  craftWeapon(recipeIndex) { this.send({ type: 'CRAFT_WEAPON', recipeIndex, recipeId: recipeIndex }); }
+  channelAltarEssence() { this.send({ type: 'CHANNEL_ALTAR_ESSENCE' }); }
   equipWeapon(weaponId) { this.send({ type: 'EQUIP_WEAPON', weaponId }); }
   equipStick(stickId) { this.send({ type: 'EQUIP_STICK', stickId }); }
   setPowerSlot(slotIndex, powerId) { this.send({ type: 'SET_POWER_SLOT', slotIndex, powerId }); }

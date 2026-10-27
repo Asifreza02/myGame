@@ -78,46 +78,25 @@ export function EquipmentToggleBarComponent({
   const normalizedPowerSlots = Array.from({ length: 7 }).map((_, i) => powerSlots[i] ?? null);
 
   return (
-    <nav className="equipment-toggle-dock magic-toggle-dock" aria-label="Magical Stick and 7 Powers Bar">
-      {/* ================= DEDICATED 1-STICK WEAPON SLOT ================= */}
+    <nav className="equipment-toggle-dock magic-toggle-dock minimal-toggle-dock" aria-label="Powers Hotbar">
+      {/* 1-Stick Weapon Slot */}
       <div className="equipment-group stick-group">
-        <div className="equipment-group-header">
-          <span className="group-label">🪄 STICK [1]</span>
-          <span className="group-hint">BASIC CAST: ∞</span>
-        </div>
-
-        <div className="equipment-slots-row">
-          <button
-            type="button"
-            className="equip-slot-btn stick-slot interactive is-equipped"
-            onClick={() => onEquipStick?.(equippedStick)}
-            title={`[1] ${stickDef.name} (${stickDef.damage} DMG · ${stickDef.range}m RNG)`}
-          >
-            <span className="slot-hotkey-badge">1</span>
-            <span className="slot-icon">{stickDef.icon || '🪄'}</span>
-            <div className="slot-details">
-              <span className="slot-name">{stickDef.name?.split(' ')[0] || 'Wand'}</span>
-              <span className="slot-ammo">SPARK ∞</span>
-            </div>
-            <span className="equipped-pill">ACTIVE</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          className="equip-slot-btn stick-slot interactive is-equipped"
+          onClick={() => onEquipStick?.(equippedStick)}
+          title={`[1] ${stickDef.name} (${stickDef.damage} DMG)`}
+        >
+          <span className="slot-hotkey-badge">1</span>
+          <span className="slot-icon">{stickDef.icon || '🪄'}</span>
+          <span className="slot-ammo-badge">∞</span>
+        </button>
       </div>
 
-      {/* ================= RUNIC DIVIDER ================= */}
-      <div className="equipment-divider" aria-hidden="true">
-        <span className="divider-line" />
-        <span className="divider-rune">❖</span>
-        <span className="divider-line" />
-      </div>
+      <div className="equipment-divider" aria-hidden="true" />
 
-      {/* ================= STRICT 7-POWER SYSTEM SLOTS ================= */}
+      {/* 7-Power System Slots */}
       <div className="equipment-group powers-group">
-        <div className="equipment-group-header">
-          <span className="group-label">⚡ 7 MAGICAL POWERS & TRAPS</span>
-          <span className="group-hint">KEYS [2-8] · [Q,E,R,F,Z,X,V]</span>
-        </div>
-
         <div className="equipment-slots-row">
           {normalizedPowerSlots.map((powerId, index) => {
             const def = powerId ? MAGIC_POWERS[powerId] : null;
@@ -128,7 +107,6 @@ export function EquipmentToggleBarComponent({
             const totalCooldownMs = (def?.cooldownMs) || 5000;
             const remainingRatio = Math.min(1, Math.max(0, remainingMs / totalCooldownMs));
             const numKey = POWER_SLOT_HOTKEYS[index];
-            const subKey = POWER_SLOT_SUBKEYS[index];
             const isDragOver = dragOverIndex === index;
 
             if (!def) {
@@ -142,14 +120,10 @@ export function EquipmentToggleBarComponent({
                   onDrop={(e) => handleDrop(e, index)}
                   className={`equip-slot-btn power-slot empty-power-slot interactive ${isDragOver ? 'is-drag-over' : ''}`}
                   onClick={() => onOpenBackpack?.()}
-                  title={`[${numKey} or ${subKey}] Empty Slot ${index + 1}. Click or drag from Backpack [B]`}
+                  title={`[${numKey}] Empty Slot. Tap to assign from Backpack`}
                 >
                   <span className="slot-hotkey-badge">{numKey}</span>
                   <span className="slot-icon empty-icon">+</span>
-                  <div className="slot-details">
-                    <span className="slot-name">SLOT {index + 1}</span>
-                    <span className="slot-status empty-hint">ASSIGN</span>
-                  </div>
                 </button>
               );
             }
@@ -174,18 +148,15 @@ export function EquipmentToggleBarComponent({
                 }}
                 title={
                   isCoolingDown
-                    ? `${def.name} cooling down (${cooldownSeconds}s)`
-                    : `[${numKey} or ${subKey}] Activate ${def.name} (${def.kind.toUpperCase()}) · Drag to swap`
+                    ? `${def.name} (${cooldownSeconds}s)`
+                    : `[${numKey}] ${def.name}`
                 }
               >
                 <span className="slot-hotkey-badge">{numKey}</span>
                 <span className="slot-icon">{def.icon || '✦'}</span>
-                <div className="slot-details">
-                  <span className="slot-name">{def.name.split(' ')[0]}</span>
-                  <span className={`slot-status ${isCoolingDown ? 'cooldown-text' : 'ready-text'}`}>
-                    {isCoolingDown ? `${cooldownSeconds}s` : (isTrap ? 'TRAP' : 'READY')}
-                  </span>
-                </div>
+                {isCoolingDown && (
+                  <span className="slot-cooldown-num">{cooldownSeconds}</span>
+                )}
                 {isCoolingDown && (
                   <div
                     className="cooldown-overlay-sweep"
@@ -200,48 +171,29 @@ export function EquipmentToggleBarComponent({
         </div>
       </div>
 
-      {/* ================= RUNIC DIVIDER ================= */}
-      <div className="equipment-divider" aria-hidden="true">
-        <span className="divider-line" />
-        <span className="divider-rune">❖</span>
-        <span className="divider-line" />
-      </div>
+      <div className="equipment-divider" aria-hidden="true" />
 
-      {/* ================= BACKPACK & ALTAR SHORTCUTS ================= */}
+      {/* Backpack & Altar Shortcuts */}
       <div className="equipment-group shortcuts-group">
-        <div className="equipment-group-header">
-          <span className="group-label">INVENTORY</span>
-        </div>
-
         <div className="equipment-slots-row">
-          {/* Backpack Full Inventory Button */}
           <button
             type="button"
             className="equip-slot-btn backpack-shortcut-btn interactive"
             onClick={onOpenBackpack}
-            title="Open Arcane Backpack [Press B]"
+            title="Arcane Backpack [B]"
           >
             <span className="slot-hotkey-badge">B</span>
             <span className="slot-icon">🎒</span>
-            <div className="slot-details">
-              <span className="slot-name">BAG</span>
-              <span className="slot-ammo">{backpack.powers?.length || 0} POW</span>
-            </div>
           </button>
 
-          {/* Arcane Altar Crafting Shortcut Button */}
           <button
             type="button"
             className="equip-slot-btn forge-shortcut-btn interactive"
             onClick={onOpenCrafting}
-            title="Open Arcane Crafting Altar [Press C]"
+            title="Arcane Altar [C]"
           >
             <span className="slot-hotkey-badge">C</span>
             <span className="slot-icon">✨</span>
-            <div className="slot-details">
-              <span className="slot-name">ALTAR</span>
-              <span className="slot-ammo">CRAFT</span>
-            </div>
           </button>
         </div>
       </div>

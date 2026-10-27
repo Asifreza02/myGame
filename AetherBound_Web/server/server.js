@@ -15,7 +15,7 @@ import {
   MOB_SYSTEM_CONFIG,
   ARCANE_CRAFTING_RECIPES,
 } from '../src/game/data/combat.js';
-import { BIOME_RESOURCES, RESOURCE_DEFINITIONS, getWeatherState } from '../src/game/data/world.js';
+import { BIOME_RESOURCES, RESOURCE_DEFINITIONS, RESOURCE_YIELDS, getWeatherState } from '../src/game/data/world.js';
 import { MATCH_MODES, normalizeMatchConfig, PLAYER_SLOT_THEMES, MAX_MATCH_PLAYERS } from '../src/game/data/matchModes.js';
 import { SimplexNoise, getBiomeWeights } from '../src/game/noise.js';
 import { GAME_CONFIG } from '../src/game/config.js';
@@ -208,7 +208,15 @@ class GameRoom {
       reconnectToken: token,
       reconnectExpiresAt: 0,
       reconnectTimer: null,
-      resources: {},
+      resources: {
+        ELDER_WOOD: 3,
+        ARCANE_QUARTZ: 1,
+        RIVER_DEW: 2,
+        EMBER_ORE: 2,
+        MOON_HERB: 1,
+        AETHER_ESSENCE: 2,
+        BLAZING_CINDER: 0,
+      },
       weapons: ['APPRENTICE_STICK', 'KNIFE'],
       equippedWeapon: 'APPRENTICE_STICK',
       equippedStick: 'APPRENTICE_STICK',
@@ -217,12 +225,12 @@ class GameRoom {
         sticks: ['APPRENTICE_STICK'],
         powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
         resources: {
-          ELDER_WOOD: 0,
-          ARCANE_QUARTZ: 0,
-          EMBER_ORE: 0,
-          MOON_HERB: 0,
-          AETHER_ESSENCE: 0,
-          RIVER_DEW: 0,
+          ELDER_WOOD: 3,
+          ARCANE_QUARTZ: 1,
+          RIVER_DEW: 2,
+          EMBER_ORE: 2,
+          MOON_HERB: 1,
+          AETHER_ESSENCE: 2,
           BLAZING_CINDER: 0,
         },
       },
@@ -294,7 +302,15 @@ class GameRoom {
       reconnectToken: null,
       reconnectExpiresAt: 0,
       reconnectTimer: null,
-      resources: {},
+      resources: {
+        ELDER_WOOD: 3,
+        ARCANE_QUARTZ: 1,
+        RIVER_DEW: 2,
+        EMBER_ORE: 2,
+        MOON_HERB: 1,
+        AETHER_ESSENCE: 2,
+        BLAZING_CINDER: 0,
+      },
       weapons: ['APPRENTICE_STICK', 'KNIFE'],
       equippedWeapon: 'APPRENTICE_STICK',
       equippedStick: 'APPRENTICE_STICK',
@@ -303,12 +319,12 @@ class GameRoom {
         sticks: ['APPRENTICE_STICK'],
         powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
         resources: {
-          ELDER_WOOD: 0,
-          ARCANE_QUARTZ: 0,
-          EMBER_ORE: 0,
-          MOON_HERB: 0,
-          AETHER_ESSENCE: 0,
-          RIVER_DEW: 0,
+          ELDER_WOOD: 3,
+          ARCANE_QUARTZ: 1,
+          RIVER_DEW: 2,
+          EMBER_ORE: 2,
+          MOON_HERB: 1,
+          AETHER_ESSENCE: 2,
           BLAZING_CINDER: 0,
         },
       },
@@ -851,10 +867,11 @@ class GameRoom {
     item.active = false;
     const definition = ITEM_DEFINITIONS[item.type];
     if (item.kind === 'resource') {
-      player.resources[item.type] = (player.resources[item.type] || 0) + 1;
+      const yieldCount = RESOURCE_YIELDS[item.type] || 2;
+      player.resources[item.type] = (player.resources[item.type] || 0) + yieldCount;
       player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
       player.backpack.resources = player.backpack.resources || {};
-      player.backpack.resources[item.type] = (player.backpack.resources[item.type] || 0) + 1;
+      player.backpack.resources[item.type] = (player.backpack.resources[item.type] || 0) + yieldCount;
     } else if (item.type === 'HEALTH') {
       player.health = Math.min(player.maxHealth, player.health + (definition?.heal || 35));
     } else if (item.type === 'KINETIC_AMMO') {
@@ -866,14 +883,18 @@ class GameRoom {
       player.ammo.LASER_GUN = Math.min(15, (player.ammo.LASER_GUN || 0) + 12);
       player.ammo.PLASMA_CANNON = Math.min(8, (player.ammo.PLASMA_CANNON || 0) + 6);
     } else if (item.type === 'CHEST') {
-      player.resources.ENERGY_CELL = (player.resources.ENERGY_CELL || 0) + 2;
-      player.resources.TITANIUM_SCRAP = (player.resources.TITANIUM_SCRAP || 0) + 2;
-      player.resources.AETHER_ESSENCE = (player.resources.AETHER_ESSENCE || 0) + 2;
+      const chestGifts = {
+        ELDER_WOOD: 3,
+        ARCANE_QUARTZ: 2,
+        AETHER_ESSENCE: 2,
+        BLAZING_CINDER: 1,
+      };
       player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
       player.backpack.resources = player.backpack.resources || {};
-      player.backpack.resources.ENERGY_CELL = (player.backpack.resources.ENERGY_CELL || 0) + 2;
-      player.backpack.resources.TITANIUM_SCRAP = (player.backpack.resources.TITANIUM_SCRAP || 0) + 2;
-      player.backpack.resources.AETHER_ESSENCE = (player.backpack.resources.AETHER_ESSENCE || 0) + 2;
+      for (const [resKey, amount] of Object.entries(chestGifts)) {
+        player.resources[resKey] = (player.resources[resKey] || 0) + amount;
+        player.backpack.resources[resKey] = (player.backpack.resources[resKey] || 0) + amount;
+      }
     } else {
       player.inventory = [...new Set([...player.inventory, item.type])];
     }
@@ -1720,20 +1741,35 @@ class GameRoom {
 
   craftWeapon(player, recipeIndex) {
     if (this.state !== 'ACTIVE' || !player.alive) return { success: false, reason: 'Player cannot craft now' };
-    const recipe = ARCANE_CRAFTING_RECIPES[recipeIndex] || WEAPON_CRAFTING_RECIPES[recipeIndex];
+    let recipe = null;
+    if (typeof recipeIndex === 'number' || (typeof recipeIndex === 'string' && /^\d+$/.test(recipeIndex))) {
+      const idx = Number(recipeIndex);
+      recipe = ARCANE_CRAFTING_RECIPES[idx] || WEAPON_CRAFTING_RECIPES[idx];
+    }
+    if (!recipe && recipeIndex) {
+      recipe = ARCANE_CRAFTING_RECIPES.find(
+        (r) => r.stickId === recipeIndex || r.powerId === recipeIndex || r.weaponId === recipeIndex || r.name === recipeIndex
+      );
+    }
     if (!recipe) return { success: false, reason: 'Invalid crafting recipe' };
 
+    player.resources = player.resources || {};
+    player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
+    player.backpack.resources = player.backpack.resources || {};
+
     for (const [ingredient, count] of Object.entries(recipe.ingredients)) {
-      if ((player.resources[ingredient] || 0) < count) {
-        return { success: false, reason: `Missing ${count}x ${RESOURCE_DEFINITIONS[ingredient]?.name || ingredient}` };
+      const available = Math.max(
+        player.resources[ingredient] || 0,
+        player.backpack.resources[ingredient] || 0
+      );
+      if (available < count) {
+        return { success: false, reason: `Missing ${count - available}x ${RESOURCE_DEFINITIONS[ingredient]?.name || ingredient}` };
       }
     }
 
     for (const [ingredient, count] of Object.entries(recipe.ingredients)) {
-      player.resources[ingredient] -= count;
-      if (player.backpack && player.backpack.resources) {
-        player.backpack.resources[ingredient] = Math.max(0, (player.backpack.resources[ingredient] || 0) - count);
-      }
+      player.resources[ingredient] = Math.max(0, (player.resources[ingredient] || 0) - count);
+      player.backpack.resources[ingredient] = Math.max(0, (player.backpack.resources[ingredient] || 0) - count);
     }
 
     if (recipe.type === 'stick' || recipe.stickId) {
@@ -2485,8 +2521,43 @@ class GameRoom {
       return;
     }
     if (message.type === 'CRAFT_WEAPON' && this.state === 'ACTIVE' && player.alive) {
-      const result = this.craftWeapon(player, message.recipeIndex);
+      const recipeTarget = message.recipeIndex !== undefined ? message.recipeIndex : message.recipeId;
+      const result = this.craftWeapon(player, recipeTarget);
       if (ws) safeSend(ws, { type: 'CRAFT_RESULT', ...result });
+      return;
+    }
+    if (message.type === 'CHANNEL_ALTAR_ESSENCE' && this.state === 'ACTIVE' && player.alive) {
+      const now = Date.now();
+      player.lastAltarChannelAt = player.lastAltarChannelAt || 0;
+      if (now - player.lastAltarChannelAt < 4000) {
+        if (ws) safeSend(ws, { type: 'CRAFT_RESULT', success: false, reason: 'Altar is replenishing ambient energy. Wait a moment.' });
+        return;
+      }
+      player.lastAltarChannelAt = now;
+      const starterGifts = {
+        ELDER_WOOD: 3,
+        ARCANE_QUARTZ: 2,
+        RIVER_DEW: 2,
+        EMBER_ORE: 2,
+        AETHER_ESSENCE: 2,
+      };
+      player.resources = player.resources || {};
+      player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
+      player.backpack.resources = player.backpack.resources || {};
+      for (const [resKey, amount] of Object.entries(starterGifts)) {
+        player.resources[resKey] = (player.resources[resKey] || 0) + amount;
+        player.backpack.resources[resKey] = (player.backpack.resources[resKey] || 0) + amount;
+      }
+      this.broadcast({
+        type: 'ITEM_COLLECTED',
+        playerId: player.id,
+        itemType: 'AETHER_ESSENCE',
+        kind: 'resource',
+        resources: player.resources,
+        backpack: player.backpack,
+      });
+      if (ws) safeSend(ws, { type: 'CRAFT_RESULT', success: true, reason: 'Channelled Altar energy! Gathered natural crafting essences.' });
+      this.broadcastState();
       return;
     }
     if (message.type === 'EQUIP_STICK' && player.alive) {

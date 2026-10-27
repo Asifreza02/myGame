@@ -19,54 +19,39 @@ export function RunnerHudComponent({
   const currentAmmo = currentWeaponDef.ammo === Infinity ? '∞' : (ammo[equippedWeapon] ?? 0);
 
   return (
-    <div id="runner-hud">
-      <div className="hud-panel health-container">
-        <div className="player-vitals-heading">
-          <span className="hud-label">HEALTH</span>
-          <span className="health-text">{Math.ceil(health)} / {maxHealth}</span>
+    <div id="runner-hud" className="minimal-runner-hud">
+      {/* Compact Vitals Cluster */}
+      <div className="hud-panel vitals-cluster">
+        <div className="vital-row health-row" title={`Health: ${Math.ceil(health)} / ${maxHealth}`}>
+          <span className="vital-icon">❤️</span>
+          <div className="bar-track health-track">
+            <div className="health-fill" style={{ width: `${healthPct}%` }} />
+          </div>
+          <span className="health-text">{Math.ceil(health)}</span>
         </div>
-        <div className="bar-track"><div className="health-fill" style={{ width: `${healthPct}%` }} /></div>
-      </div>
-
-      <div className="hud-panel progress-container">
-        <span className="hud-label">STAMINA · SHIFT SPRINT</span>
-        <div className="bar-track"><div id="stamina-fill" style={{ width: `${staminaPct}%` }} /></div>
-      </div>
-
-      {/* Active Weapon & Forge Toggle */}
-      <div className="hud-panel weapon-hud-slot">
-        <span className="weapon-hud-icon">{currentWeaponDef.icon}</span>
-        <div className="weapon-hud-info">
-          <span className="weapon-hud-name">{currentWeaponDef.name}</span>
-          <span className="weapon-hud-ammo">{currentWeaponDef.ammo === Infinity ? 'BASIC SPELL: ∞' : `CHARGES: ${currentAmmo}`}</span>
+        <div className="vital-row stamina-row" title={`Stamina: ${Math.round(staminaPct)}%`}>
+          <span className="vital-icon">⚡</span>
+          <div className="bar-track stamina-track">
+            <div id="stamina-fill" style={{ width: `${staminaPct}%` }} />
+          </div>
         </div>
-        <button
-          type="button"
-          className="workbench-toggle-btn interactive"
-          onClick={onOpenCrafting}
-          title="Open Arcane Altar & Crafting (Press C)"
-        >
-          ✨ ALTAR [C]
-        </button>
       </div>
 
-      {/* Weapon Quick Switcher */}
+      {/* Weapon Quick Switcher (Only if multiple weapons) */}
       {weapons.length > 1 && (
         <div className="hud-panel weapon-switcher-bar">
-          <span className="hud-label" style={{ fontSize: '10px' }}>WEAPONS:</span>
           {weapons.map((wId) => {
             const wDef = WEAPON_DEFINITIONS[wId];
             if (!wDef) return null;
-            const wAmmo = wDef.ammo === Infinity ? '∞' : (ammo[wId] ?? 0);
             return (
               <button
                 key={wId}
                 type="button"
                 className={`weapon-switch-btn interactive ${wId === equippedWeapon ? 'active' : ''}`}
                 onClick={() => onEquipWeapon && onEquipWeapon(wId)}
-                title={`Switch to ${wDef.name} (${wAmmo} ammo)`}
+                title={wDef.name}
               >
-                {wDef.icon} {wDef.name.split(' ')[0]} ({wAmmo})
+                {wDef.icon}
               </button>
             );
           })}
@@ -79,7 +64,7 @@ export function RunnerHudComponent({
           {Object.entries(resources).filter(([, count]) => count > 0).map(([id, count]) => {
             const resource = RESOURCE_DEFINITIONS[id];
             return resource ? (
-              <span key={id} title={resource.name} aria-label={`${resource.name}: ${count}`}>
+              <span key={id} title={resource.name} className="resource-pill">
                 {resource.icon} {count}
               </span>
             ) : null;
@@ -97,12 +82,6 @@ export function RunnerHudComponent({
           ))}
         </div>
       )}
-
-      <div className="hud-panel view-controls-panel">
-        <span className="hud-label">
-          WASD MOVE · SPACE JUMP · CTRL SLIDE · {currentWeaponDef.type === 'melee' ? (knifeCooldownMs > 0 ? `KNIFE READY IN ${(knifeCooldownMs / 1000).toFixed(1)}s` : 'KNIFE READY') : `${currentWeaponDef.name.toUpperCase()} READY`} · CLICK TO SHOOT
-        </span>
-      </div>
     </div>
   );
 }

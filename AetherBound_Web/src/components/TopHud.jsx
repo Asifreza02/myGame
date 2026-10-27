@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
+const WEATHER_ICONS = {
+  clear: '☀️',
+  rain: '🌧️',
+  storm: '⛈️',
+  snow: '❄️',
+  fog: '🌫️',
+};
+
 export function TopHudComponent({
   roomCode = 'default',
   playerCounts = {},
@@ -18,88 +26,86 @@ export function TopHudComponent({
   onExitToLobby,
   onShareRoom,
 }) {
-  const [showRoster, setShowRoster] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const isMobile = window.innerWidth <= 900 || window.innerHeight <= 600 || window.matchMedia('(pointer: coarse)').matches;
-      return !isMobile;
-    }
-    return false;
-  });
+  const [showRoster, setShowRoster] = useState(false);
 
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth <= 900 || window.innerHeight <= 600) {
-        setShowRoster(false);
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
   const alive = playerCounts.alive ?? playerCounts.total ?? 1;
   const maxPlayers = matchConfig.maxPlayers || playerCounts.max || 5;
-  const total = Math.min(maxPlayers, Math.max(playerCounts.total || 1, competitors.length));
   const { biome, todName, todClass } = environment;
   const dragonHealth = Math.max(0, dragon.health ?? 300);
   const dragonMaxHealth = dragon.maxHealth ?? 300;
   const dragonHealthPct = dragonMaxHealth > 0 ? (dragonHealth / dragonMaxHealth) * 100 : 0;
   const modeName = matchConfig.modeName || (matchConfig.mode === 'dragon-hunt'
     ? 'DRAGON HUNT'
-    : matchConfig.mode === 'solo' ? 'SOLO SURVIVAL' : '5-PLAYER FREE-FOR-ALL');
+    : matchConfig.mode === 'solo' ? 'SOLO' : 'FFA');
 
   return (
     <>
-      <div id="top-hud">
+      <div id="top-hud" className="minimal-top-hud">
+        {/* Room Code Quick Button */}
         <div className="hud-panel">
           <button
             type="button"
             className="room-tag-btn interactive"
             onClick={() => onShareRoom?.(roomCode)}
-            title="Click to copy Room Code & Invite Link"
+            title="Room Code (Click to Copy & Share)"
           >
-            <span className="room-tag">ROOM: {String(roomCode).toUpperCase()} 📋</span>
+            <span className="room-tag">📋 {String(roomCode).toUpperCase()}</span>
           </button>
         </div>
-        <div className="hud-panel"><span className="role-tag player">{modeName.toUpperCase()}</span></div>
-        {matchConfig.seed && <div className="hud-panel"><span className="room-tag">SEED: {matchConfig.seed}</span></div>}
-        {biome && <div className="hud-panel"><span className="biome-tag">{biome.name}</span></div>}
-        <div className="hud-panel">
-          <span className={`tod-tag ${todClass || 'clear'}`}>{todName || 'Clear Skies'}</span>
+
+        {/* Mode & Biome Pill */}
+        <div className="hud-panel hud-mode-panel" title={modeName}>
+          <span className="role-tag player">⚔️</span>
+          {biome && <span className="biome-tag desktop-only" title={biome.name}>🌲 {biome.name.split(' ')[0]}</span>}
+        </div>
+
+        {/* Weather Indicator */}
+        <div className="hud-panel weather-panel" title={`${todName || 'Clear Skies'} (${environment.weather?.secondsUntilChange || 0}s remaining)`}>
+          <span className="weather-icon">{WEATHER_ICONS[todClass] || '☀️'}</span>
           {environment.weather?.secondsUntilChange > 0 && (
             <span className="weather-countdown">{environment.weather.secondsUntilChange}s</span>
           )}
         </div>
+
+        {/* Survivors Count / Roster Toggle */}
         <div className="hud-panel">
           <button
             type="button"
             className="hud-roster-toggle interactive"
             onClick={() => setShowRoster((prev) => !prev)}
-            title="Toggle Competitor Standings"
+            title="Competitor Standings"
             style={{ background: 'transparent', border: 'none', color: '#b8fff0', cursor: 'pointer', font: 'inherit', padding: 0 }}
           >
             <span id="lobby-status">
-              ⚔️ {alive}/{maxPlayers} SURVIVORS {showRoster ? '▲' : '▼'}
+              👥 {alive}/{maxPlayers}
             </span>
           </button>
         </div>
-        <div className="hud-panel dragon-status" aria-live="polite">
-          <div className="dragon-status-heading">DRAGON · {dragon.alive === false ? 'DEFEATED' : (dragon.phase || 'PASSIVE')}</div>
-          <div className="dragon-health-track"><div className="dragon-health-fill" style={{ width: `${dragonHealthPct}%` }} /></div>
-          <span className="dragon-health-value">{dragonHealth} / {dragonMaxHealth}</span>
-          {dragon.alive !== false && (
-            <div className={`dragon-flight-badge ${dragon.flightPhase === 'GROUNDED' ? 'grounded' : 'aerial'}`}>
-              {dragon.flightPhase === 'GROUNDED'
-                ? `🐉 GROUNDED (${dragon.flightPhaseTimer ?? 25}s) · 1.25x DMG + TRAPS`
-                : `🦅 AIRBORNE (${dragon.flightPhaseTimer ?? 60}s)`}
-            </div>
-          )}
-          {dragon.attack && <strong className="dragon-telegraph-copy">⚠ {dragon.attack.name} · DODGE THE MARKED AREA</strong>}
+
+        {/* Minimal Dragon Boss Indicator */}
+        <div className="hud-panel dragon-status" aria-live="polite" title={`Dragon Boss: ${dragonHealth}/${dragonMaxHealth} HP`}>
+          <div className="dragon-health-track">
+            <div className="dragon-health-fill" style={{ width: `${dragonHealthPct}%` }} />
+          </div>
+          <div className="dragon-status-row">
+            <span className="dragon-icon">🐉</span>
+            <span className="dragon-health-value">{dragonHealth}</span>
+            {dragon.alive !== false && (
+              <span className={`dragon-flight-badge ${dragon.flightPhase === 'GROUNDED' ? 'grounded' : 'aerial'}`}>
+                {dragon.flightPhase === 'GROUNDED'
+                  ? `⬇ ${dragon.flightPhaseTimer ?? 25}s`
+                  : `🦅 ${dragon.flightPhaseTimer ?? 60}s`}
+              </span>
+            )}
+          </div>
+          {dragon.attack && <strong className="dragon-telegraph-copy">⚠ {dragon.attack.name}</strong>}
         </div>
 
         {/* Zombie Threat Radar */}
         {nearbyZombies && nearbyZombies.length > 0 && (
-          <div className="hud-panel zombie-radar-panel" title="Nearby Zombie Proximity Radar">
+          <div className="hud-panel zombie-radar-panel" title={`Threat: ${nearbyZombies[0].name}`}>
             <span className={`zombie-radar-badge ${nearbyZombies[0].tier === 2 ? 'tier2' : 'tier1'}`}>
-              🧟 {nearbyZombies[0].name.toUpperCase()} · {nearbyZombies[0].distance}m [{nearbyZombies[0].heading}]
+              🧟 {nearbyZombies[0].distance}m {nearbyZombies[0].heading}
             </span>
           </div>
         )}
@@ -110,54 +116,39 @@ export function TopHudComponent({
             type="button"
             className={`voice-hud-btn interactive ${voiceState.isMuted ? 'muted' : voiceState.isSpeaking ? 'speaking' : 'active'}`}
             onClick={onToggleVoiceMute}
-            title={voiceState.isMuted ? 'Microphone Muted (Click to Unmute)' : voiceState.pushToTalk ? 'Push-To-Talk [V] active (Hold [V] to talk, or click to Mute)' : 'Microphone Active (Click to Mute)'}
+            title={voiceState.isMuted ? 'Unmute Mic' : 'Mute Mic'}
           >
             <span className="voice-icon">
               {voiceState.isMuted ? '🔇' : voiceState.isSpeaking ? '🎙️' : '🎤'}
             </span>
-            <span className="voice-label">
-              {voiceState.permissionState === 'listen-only' || voiceState.permissionState === 'unsupported'
-                ? 'LISTEN ONLY'
-                : voiceState.isMuted
-                ? 'MIC MUTED'
-                : voiceState.pushToTalk
-                ? (voiceState.isSpeaking ? 'TALKING [V]' : 'HOLD [V]')
-                : (voiceState.isSpeaking ? 'TALKING' : 'MIC ON')}
-            </span>
-            {voiceState.isSpeaking && (
-              <span className="voice-waves" aria-hidden="true">
-                <span className="wave-bar b1" />
-                <span className="wave-bar b2" />
-                <span className="wave-bar b3" />
-              </span>
-            )}
           </button>
 
           <button
             type="button"
             className={`voice-ptt-toggle-btn interactive ${voiceState.pushToTalk ? 'ptt-active' : ''}`}
             onClick={onTogglePushToTalk}
-            title={voiceState.pushToTalk ? 'Push-To-Talk Enabled [V] (Click to switch to Open Mic)' : 'Open Mic (Click to switch to Push-To-Talk [V])'}
+            title={voiceState.pushToTalk ? 'Push-To-Talk [V]' : 'Open Mic'}
           >
-            {voiceState.pushToTalk ? 'PTT [V]' : 'OPEN MIC'}
+            {voiceState.pushToTalk ? 'PTT' : 'OPEN'}
           </button>
 
           <button
             type="button"
             className={`voice-deafen-btn interactive ${voiceState.isDeafened ? 'deafened' : ''}`}
             onClick={onToggleVoiceDeafen}
-            title={voiceState.isDeafened ? 'Audio Deafened (Click to Undeafen)' : 'Click to Deafen Room Voice Chat'}
+            title={voiceState.isDeafened ? 'Undeafen' : 'Deafen'}
           >
-            {voiceState.isDeafened ? '🔇 DEAFENED' : '🎧'}
+            {voiceState.isDeafened ? '🔕' : '🎧'}
           </button>
         </div>
 
+        {/* Quick Action Icon Buttons */}
         <div className="hud-panel hud-action-buttons">
-          <button id="share-room-button" className="interactive" type="button" onClick={() => onShareRoom?.(roomCode)}>
-            🔗 SHARE ROOM
+          <button id="share-room-button" className="interactive hud-icon-btn" type="button" onClick={() => onShareRoom?.(roomCode)} title="Share Room Code & Link">
+            🔗
           </button>
-          <button id="exit-lobby-button" className="interactive" type="button" onClick={onExitToLobby}>
-            🚪 LOBBY / ROOMS
+          <button id="exit-lobby-button" className="interactive hud-icon-btn" type="button" onClick={onExitToLobby} title="Exit to Lobby">
+            🚪
           </button>
         </div>
       </div>
