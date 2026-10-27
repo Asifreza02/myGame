@@ -355,10 +355,13 @@ async function runTests() {
     console.log('\n--- Step 12: Phase 5 3-Tier Mob System (Aqua Fiend & Flame Brute) ---');
     const latestState = await client1.waitForNextMessage((m) => m.type === 'MATCH_STATE');
     assert(latestState && Array.isArray(latestState.snapshot?.mobs), 'Match snapshot contains mobs array', 'PHASE_5_MOBS');
+    assert(latestState.snapshot.mobs.length >= 12, `High mob density: ${latestState.snapshot.mobs.length} active zombies in world (>= 12)`, 'PHASE_5_MOBS');
     const aquaFiend = latestState.snapshot.mobs.find((m) => m.tier === 1 && m.type === 'AQUA_FIEND');
     assert(aquaFiend !== undefined, 'Tier 1 Aqua Fiend spawned at match start (0:00)', 'PHASE_5_MOBS');
     assert(aquaFiend.health === 80, `Aqua Fiend has 80 HP (got ${aquaFiend.health})`, 'PHASE_5_MOBS');
     assert(aquaFiend.attackDamage === 16, `Aqua Fiend attack deals 16 damage (got ${aquaFiend.attackDamage})`, 'PHASE_5_MOBS');
+    assert(latestState.snapshot.mobs.some((m) => Math.hypot(m.x, m.z) <= 30), 'Close-range zombie spawn present within player starting sector (<= 30m)', 'PHASE_5_MOBS');
+    assert(aquaFiend.name.includes('Zombie'), `Mob displays Zombie moniker: "${aquaFiend.name}"`, 'PHASE_5_MOBS');
 
     // TEST 13: Phase 6 Final Boss Dragon Multi-Attack & Aerial/Grounded Cycle
     console.log('\n--- Step 13: Phase 6 Final Boss Dragon Multi-Attack & Ground Cycle ---');

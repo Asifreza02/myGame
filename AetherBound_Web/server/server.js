@@ -948,9 +948,11 @@ class GameRoom {
   spawnInitialMobs() {
     this.mobs = [];
     const t1Config = MOB_SYSTEM_CONFIG.TIER_1_WATER_MOB;
-    for (let i = 0; i < 4; i++) {
-      const angle = (i / 4) * Math.PI * 2 + (this.seed % 7) * 0.2;
-      const radius = 32 + (i % 2) * 25 + Math.random() * 15;
+    // Spawn 16 Tier 1 Aqua Zombies: 4 close-range (16-24m) for instant encounters + 12 perimeter (28-85m)
+    for (let i = 0; i < 16; i++) {
+      const isClose = i < 4;
+      const angle = (i / 16) * Math.PI * 2 + (this.seed % 7) * 0.2;
+      const radius = isClose ? (16 + i * 2.5) : (28 + (i % 4) * 16 + Math.random() * 12);
       const x = Math.round(Math.cos(angle) * radius);
       const z = Math.round(Math.sin(angle) * radius);
       const y = this.getTerrainHeight(x, z) + 1.0;
@@ -974,6 +976,8 @@ class GameRoom {
         alive: true,
         respawnAt: 0,
         spawnPos: { x, z },
+        patrolTarget: null,
+        nextPatrolAt: 0,
         color: t1Config.attack.color,
       });
     }
@@ -997,9 +1001,9 @@ class GameRoom {
         });
       }
       const activeT2Count = this.mobs.filter((m) => m.tier === 2 && m.alive).length;
-      if (activeT2Count < 2) {
+      if (activeT2Count < 5) {
         const angle = Math.random() * Math.PI * 2;
-        const radius = 45 + Math.random() * 55;
+        const radius = 35 + Math.random() * 45;
         const x = Math.round(Math.cos(angle) * radius);
         const z = Math.round(Math.sin(angle) * radius);
         const y = this.getTerrainHeight(x, z) + 1.0;
@@ -1024,6 +1028,8 @@ class GameRoom {
           alive: true,
           respawnAt: 0,
           spawnPos: { x, z },
+          patrolTarget: null,
+          nextPatrolAt: 0,
           color: t2Config.attack.color,
         };
         this.mobs.push(mob);
@@ -1031,7 +1037,8 @@ class GameRoom {
       }
     }
 
-    // 2. Respawn defeated mobs
+    // 2. Respawn defeated mobs & replenish low density
+    const activeT1Count = this.mobs.filter((m) => m.tier === 1 && m.alive).length;
     for (const mob of this.mobs) {
       if (!mob.alive && mob.respawnAt && now >= mob.respawnAt) {
         mob.alive = true;
@@ -1040,11 +1047,47 @@ class GameRoom {
         mob.z = mob.spawnPos.z + (Math.random() - 0.5) * 8;
         mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
         mob.respawnAt = 0;
+        mob.patrolTarget = null;
+        mob.nextPatrolAt = 0;
         this.broadcast({ type: 'MOB_SPAWNED', mob });
       }
     }
+    if (activeT1Count < 8) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 22 + Math.random() * 35;
+      const x = Math.round(Math.cos(angle) * radius);
+      const z = Math.round(Math.sin(angle) * radius);
+      const y = this.getTerrainHeight(x, z) + 1.0;
+      const t1Config = MOB_SYSTEM_CONFIG.TIER_1_WATER_MOB;
+      const newMob = {
+        id: `mob-t1-rep-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        type: t1Config.id,
+        name: t1Config.name,
+        tier: 1,
+        x,
+        y,
+        z,
+        ry: Math.random() * Math.PI * 2,
+        health: t1Config.health,
+        maxHealth: t1Config.maxHealth,
+        speed: t1Config.speed,
+        aggroRadius: t1Config.aggroRadius,
+        attackDamage: t1Config.attack.damage,
+        attackRange: t1Config.attack.range,
+        attackCooldownMs: t1Config.attack.cooldownMs,
+        nextAttackAt: 0,
+        alive: true,
+        respawnAt: 0,
+        spawnPos: { x, z },
+        patrolTarget: null,
+        nextPatrolAt: 0,
+        color: t1Config.attack.color,
+      };
+      this.mobs.push(newMob);
+      this.broadcast({ type: 'MOB_SPAWNED', mob: newMob });
+    }
 
-    // 3. AI Update: aggro, chase & attacks
+    // 3. AI Update: aggro, chase, idle shambling patrol & attacks
     for (const mob of this.mobs) {
       if (!mob.alive) continue;
       if (mob.stunnedUntil && now < mob.stunnedUntil) continue;
@@ -1122,11 +1165,17 @@ class GameRoom {
           }
         }
       } else {
-        // Passive gentle wander
-        mob.wanderAngle = (mob.wanderAngle || Math.random() * Math.PI * 2) + (Math.random() - 0.5) * 0.4;
-        const wanderStep = (mob.speed * 0.35) * dt;
-        mob.x += Math.cos(mob.wanderAngle) * wanderStep;
-        mob.z += Math.sin(mob.wanderAngle) * wanderStep;
+        // Passive gentle wander within territory anchor
+        const anchor = mob.spawnPos || { x: mob.x, z: mob.z };
+        const distFromAnchor = Math.hypot(mob.x - anchor.x, mob.z - anchor.z);
+        if (distFromAnchor > 18) {
+          mob.wanderAngle = Math.atan2(anchor.x - mob.x, anchor.z - mob.z);
+        } else {
+          mob.wanderAngle = (mob.wanderAngle ?? (Math.random() * Math.PI * 2)) + (Math.random() - 0.5) * 0.25;
+        }
+        const wanderStep = (mob.speed * 0.38) * dt;
+        mob.x += Math.sin(mob.wanderAngle) * wanderStep;
+        mob.z += Math.cos(mob.wanderAngle) * wanderStep;
         mob.ry = mob.wanderAngle;
         mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
       }

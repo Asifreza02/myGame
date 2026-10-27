@@ -747,9 +747,7 @@ export class GameEngine {
       // Upgrade any active world mobs to realistic 3D zombie models
       if (this.worldMobs) {
         for (const mobGroup of this.worldMobs.values()) {
-          if (mobGroup.userData?.isFallback) {
-            this.setupZombieModelForMob(mobGroup, mobGroup.userData.mob);
-          }
+          this.setupZombieModelForMob(mobGroup, mobGroup.userData.mob);
         }
       }
     }, undefined, (error) => {
@@ -1139,10 +1137,13 @@ export class GameEngine {
         if (!mesh) {
           const terrainY = this.worldManager.getHeightAt(item.x, item.z);
           mesh = createCollectibleEntity(item, terrainY);
+          mesh.visible = false; // Initialized hidden; animated distance culling will toggle visible
           this.scene.add(mesh);
           this.pickupMeshes.set(item.id, mesh);
         }
-        mesh.visible = item.active;
+        if (!item.active) {
+          mesh.visible = false;
+        }
       }
     }
     const activeHazards = new Set((snapshot.hazards || []).map((hazard) => hazard.id));
@@ -1204,7 +1205,6 @@ export class GameEngine {
       this.updateDragonTelegraph(this.dragonState.attack);
     }
     if (previousPhase && previousPhase !== this.dragonState.phase) this.showToast(`Dragon phase: ${this.dragonState.phase}.`);
-    this.emitState();
   }
 
   refreshRemoteCharacterModels() {
@@ -1490,18 +1490,18 @@ export class GameEngine {
       const target = event.target || { x: this.runner.position.x, y: this.runner.position.y + 1.0, z: this.runner.position.z };
       const isFire = event.attackType === 'FIRE_SPIT';
 
-      if (isFire) audio.playPlasma();
-      else audio.playSplash();
+      audio.playZombieAttack(isFire);
 
       this.spawnMobProjectileTracer(origin, target, isFire);
 
       if (event.targetId === this.playerId) {
         this.damageFlash = Date.now();
-        this.showToast(isFire ? `🔥 Struck by Flame Brute! (-${event.damage} DMG)` : `💧 Struck by Aqua Fiend! (-${event.damage} DMG)`);
+        this.showToast(isFire ? `🔥 Struck by Flame Zombie! (-${event.damage} DMG)` : `💧 Struck by Aqua Zombie! (-${event.damage} DMG)`);
       }
       return;
     }
     if (event.type === 'MOB_DAMAGED') {
+      audio.playZombieHit();
       const mobGroup = this.worldMobs?.get(event.mobId);
       if (mobGroup) {
         mobGroup.userData.hitFlashTimer = 0.18;
@@ -1528,7 +1528,7 @@ export class GameEngine {
         this.worldMobs.delete(event.mobId);
       }
       if (event.killerId === this.playerId) {
-        this.showToast(`✨ Defeated ${event.mobType}! Natural resources dropped.`);
+        this.showToast(`✨ Defeated ${event.mobType === 'FLAME_BRUTE' ? 'Flame Zombie' : 'Aqua Zombie'}! Natural resources dropped.`);
         audio.playCraftSuccess();
       }
       return;
@@ -2270,7 +2270,7 @@ export class GameEngine {
     drawMobNameplate(labelCanvas, labelCtx, mob.name, mob.health, mob.maxHealth, mob.tier);
     const labelTexture = new THREE.CanvasTexture(labelCanvas);
     const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false }));
-    labelSprite.position.y = isFire ? 3.1 : 2.5;
+    labelSprite.position.y = isFire ? 1.7 : 1.25;
     labelSprite.scale.set(2.4, 0.7, 1);
     group.add(labelSprite);
 
@@ -2306,42 +2306,62 @@ export class GameEngine {
       disposeThreeObject(group.userData.modelRoot);
       group.userData.modelRoot = null;
     }
+    if (group.userData.groundRing) {
+      group.remove(group.userData.groundRing);
+      group.userData.groundRing.geometry?.dispose();
+      group.userData.groundRing.material?.dispose();
+      group.userData.groundRing = null;
+    }
+    if (group.userData.emissiveParts) {
+      for (const part of group.userData.emissiveParts) {
+        group.remove(part);
+      }
+      group.userData.emissiveParts = [];
+    }
+    if (group.userData.orbitingParts) {
+      for (const drop of group.userData.orbitingParts) {
+        group.remove(drop);
+        drop.geometry?.dispose();
+        drop.material?.dispose();
+      }
+      group.userData.orbitingParts = [];
+    }
 
     const zombieScene = SkeletonUtils.clone(this.zombieGltf.scene);
     const modelRoot = new THREE.Group();
-    // Realistic scale: human is ~178cm, scale to ~1.88m (water) or ~2.35m (fire brute)
-    const scale = isFire ? 0.0132 : 0.0105;
+    // Realistic scale: the raw gltf.scene is 3.08m tall. Scale to ~1.88m (Aqua) or ~2.38m (Flame Brute)
+    const scale = isFire ? 0.77 : 0.61;
     modelRoot.scale.setScalar(scale);
-    modelRoot.position.y = 0;
+    // mob.y is getTerrainHeight + 1.0 (waist level). Set position.y to -1.0 so zombie feet stand firmly on the ground terrain!
+    modelRoot.position.y = -1.0;
     modelRoot.add(zombieScene);
 
     const emissiveMaterials = [];
     const orbitingParts = [];
     const emissiveParts = [];
 
-    // Distinct realistic zombie shaders and textures
+    // Distinct realistic zombie shaders and textures (Optimized for 60 FPS)
     zombieScene.traverse((child) => {
       if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+        child.castShadow = false; // Prevents 33k skinned vertices from executing duplicate shadow map passes
+        child.receiveShadow = false;
+        child.frustumCulled = true; // Enables camera frustum culling when offscreen
         if (child.material) {
-          child.material = child.material.clone();
+          const origMat = child.material;
+          child.material = new THREE.MeshStandardMaterial({
+            map: origMat?.map || null,
+            normalMap: origMat?.normalMap || null,
+            roughnessMap: origMat?.roughnessMap || null,
+            metalnessMap: origMat?.metalnessMap || null,
+            aoMap: origMat?.aoMap || null,
+            roughness: isFire ? 0.75 : 0.65,
+            metalness: 0.05,
+            color: isFire ? 0xffddcc : 0xffffff,
+            emissive: isFire ? 0xff2200 : 0x000000,
+            emissiveIntensity: isFire ? 0.35 : 0.0,
+            side: THREE.DoubleSide,
+          });
           emissiveMaterials.push(child.material);
-          if (isFire) {
-            // Tier 2: Magma Fire Zombie Brute - Charred volcanic flesh with glowing lava cracks
-            child.material.color.setHex(0x3d1a0d);
-            child.material.roughness = 0.85;
-            child.material.metalness = 0.2;
-            child.material.emissive.setHex(0xff3300);
-            child.material.emissiveIntensity = 1.35;
-          } else {
-            // Tier 1: Aqua Water Zombie - Drowned aquatic flesh with damp water gloss & cyan runes
-            child.material.color.setHex(0x2299cc);
-            child.material.roughness = 0.22;
-            child.material.metalness = 0.28;
-            child.material.emissive.setHex(0x0088cc);
-            child.material.emissiveIntensity = 0.6;
-          }
         }
       }
     });
@@ -2356,7 +2376,7 @@ export class GameEngine {
 
     if (headBone) {
       const eyeGeo = new THREE.SphereGeometry(0.8, 6, 6);
-      const eyeColor = isFire ? 0xff6600 : 0x00f0ff;
+      const eyeColor = isFire ? 0xff4400 : 0x00f0ff;
       const eyeMat = new THREE.MeshBasicMaterial({ color: eyeColor });
       const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
       leftEye.position.set(-2.6, 8.5, 9.6);
@@ -2383,8 +2403,8 @@ export class GameEngine {
         }
       });
 
-      // Swirling molten ground ring
-      const magmaRingGeo = new THREE.RingGeometry(0.4, 1.8, 24);
+      // Swirling molten ground ring at ground surface (serves as high-visibility contact aura)
+      const magmaRingGeo = new THREE.RingGeometry(0.4, 1.8, 20);
       const magmaRingMat = new THREE.MeshBasicMaterial({
         color: 0xff3300,
         transparent: true,
@@ -2394,17 +2414,12 @@ export class GameEngine {
       });
       const magmaRing = new THREE.Mesh(magmaRingGeo, magmaRingMat);
       magmaRing.rotation.x = -Math.PI / 2;
-      magmaRing.position.y = 0.06;
+      magmaRing.position.y = -0.96;
       group.add(magmaRing);
-
-      const fireLight = new THREE.PointLight(0xff4400, 2.5, 8.5);
-      fireLight.position.set(0, 1.4, 0);
-      group.add(fireLight);
-      emissiveParts.push(fireLight);
       group.userData.groundRing = magmaRing;
     } else {
       // Tier 1: Aqua Water Zombie - Orbiting water droplets and swirling ground pool
-      const dropletGeo = new THREE.SphereGeometry(0.18, 8, 8);
+      const dropletGeo = new THREE.SphereGeometry(0.18, 6, 6);
       const dropletMat = new THREE.MeshStandardMaterial({
         color: 0x38bdf8,
         transparent: true,
@@ -2413,14 +2428,14 @@ export class GameEngine {
         emissiveIntensity: 0.9,
         roughness: 0.1,
       });
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 3; i++) {
         const drop = new THREE.Mesh(dropletGeo, dropletMat);
         group.add(drop);
         orbitingParts.push(drop);
       }
 
-      // Swirling water aura ring
-      const waterRingGeo = new THREE.RingGeometry(0.3, 1.5, 24);
+      // Swirling water aura ring at ground surface
+      const waterRingGeo = new THREE.RingGeometry(0.3, 1.5, 20);
       const waterRingMat = new THREE.MeshBasicMaterial({
         color: 0x00c8ff,
         transparent: true,
@@ -2430,13 +2445,8 @@ export class GameEngine {
       });
       const waterRing = new THREE.Mesh(waterRingGeo, waterRingMat);
       waterRing.rotation.x = -Math.PI / 2;
-      waterRing.position.y = 0.06;
+      waterRing.position.y = -0.96;
       group.add(waterRing);
-
-      const waterLight = new THREE.PointLight(0x0284c7, 1.8, 6.5);
-      waterLight.position.set(0, 1.3, 0);
-      group.add(waterLight);
-      emissiveParts.push(waterLight);
       group.userData.groundRing = waterRing;
     }
 
@@ -2484,6 +2494,10 @@ export class GameEngine {
 
   updateMobsVisuals(dt, elapsedTime) {
     if (!this.worldMobs) return;
+    const playerPos = this.runner?.position;
+    let closestDist = Infinity;
+    let closestMob = null;
+
     for (const mobGroup of this.worldMobs.values()) {
       const data = mobGroup.userData;
       if (!data) continue;
@@ -2496,48 +2510,88 @@ export class GameEngine {
         mobGroup.rotation.y += yawDelta * Math.min(1.0, 10 * dt);
       }
 
-      // Update walking skeletal animation mixer
-      if (data.mixer) {
-        data.mixer.update(dt);
+      let d = 0;
+      if (playerPos) {
+        d = playerPos.distanceTo(mobGroup.position);
+        if (d < closestDist) {
+          closestDist = d;
+          closestMob = data.mob;
+        }
       }
 
-      // Rotate ground aura ring
-      if (data.groundRing) {
+      // Distance Culling (LOD):
+      // Beyond 85m: hide mesh completely and skip all skeletal/droplet math (massive FPS win)
+      if (d > 85) {
+        if (mobGroup.visible) mobGroup.visible = false;
+        continue;
+      }
+      if (!mobGroup.visible) mobGroup.visible = true;
+
+      // Update walking skeletal animation mixer with distance-based frame pacing
+      if (data.mixer) {
+        if (d > 35) {
+          data.mixerThrottle = (data.mixerThrottle || 0) + 1;
+          if (data.mixerThrottle % 2 === 0) {
+            data.mixer.update(dt * 2);
+          }
+        } else {
+          data.mixer.update(dt);
+        }
+      }
+
+      // Rotate ground aura ring (only if within 50m)
+      if (data.groundRing && d <= 50) {
         data.groundRing.rotation.z += (data.mob?.tier === 2 ? 0.9 : 1.4) * dt;
       }
 
-      // Orbiting water droplets for Aqua Zombie
+      // Orbiting water droplets for Aqua Zombie (only if close <= 30m)
       if (data.orbitingParts && data.orbitingParts.length) {
-        data.orbitingParts.forEach((drop, idx) => {
-          const angle = elapsedTime * 2.5 + (idx * Math.PI / 2);
-          const orbitRadius = 1.35 + Math.sin(elapsedTime * 3 + idx) * 0.15;
-          drop.position.set(
-            Math.cos(angle) * orbitRadius,
-            1.2 + Math.sin(elapsedTime * 2 + idx) * 0.25,
-            Math.sin(angle) * orbitRadius
-          );
-        });
+        if (d <= 30) {
+          data.orbitingParts.forEach((drop, idx) => {
+            if (!drop.visible) drop.visible = true;
+            const angle = elapsedTime * 2.5 + (idx * Math.PI / 2);
+            const orbitRadius = 1.35 + Math.sin(elapsedTime * 3 + idx) * 0.15;
+            drop.position.set(
+              Math.cos(angle) * orbitRadius,
+              0.2 + Math.sin(elapsedTime * 2 + idx) * 0.25,
+              Math.sin(angle) * orbitRadius
+            );
+          });
+        } else {
+          data.orbitingParts.forEach((drop) => {
+            if (drop.visible) drop.visible = false;
+          });
+        }
       }
 
-      // Heat pulsation for Magma Zombie light
-      if (data.mob?.tier === 2 && data.emissiveParts && data.emissiveParts[0]) {
-        data.emissiveParts[0].intensity = 2.2 + Math.sin(elapsedTime * 5) * 0.7;
-      }
-
-      // Hit flash visual feedback
+      // Hit flash visual feedback with single-event transition (no per-frame uniform updates)
       if (data.hitFlashTimer > 0) {
         data.hitFlashTimer -= dt;
+        data.needsFlashReset = true;
         if (data.emissiveMaterials && data.emissiveMaterials.length) {
           for (const mat of data.emissiveMaterials) {
-            mat.emissiveIntensity = 2.5;
+            mat.emissive.setHex(0xffffff);
+            mat.emissiveIntensity = 1.8;
           }
         }
-      } else if (data.emissiveMaterials && data.emissiveMaterials.length) {
-        const baseIntensity = data.mob?.tier === 2 ? 1.35 : 0.6;
-        for (const mat of data.emissiveMaterials) {
-          mat.emissiveIntensity = baseIntensity;
+      } else if (data.needsFlashReset) {
+        data.needsFlashReset = false;
+        if (data.emissiveMaterials && data.emissiveMaterials.length) {
+          const baseColor = data.mob?.tier === 2 ? 0xff2200 : 0x000000;
+          const baseIntensity = data.mob?.tier === 2 ? 0.35 : 0.0;
+          for (const mat of data.emissiveMaterials) {
+            mat.emissive.setHex(baseColor);
+            mat.emissiveIntensity = baseIntensity;
+          }
         }
       }
+    }
+
+    // Atmospheric ambient zombie groans when within 22m of any zombie
+    const now = Date.now();
+    if (closestDist <= 22 && now >= (this.nextZombieGroanAt || 0)) {
+      this.nextZombieGroanAt = now + 7000 + Math.random() * 5000;
+      audio.playZombieGroan(closestMob?.tier === 2);
     }
   }
 
@@ -3392,6 +3446,65 @@ export class GameEngine {
       biome = this.worldManager.getDominantBiome(activeChar.position.x, activeChar.position.z);
     }
 
+    let nearbyZombies = this.cachedNearbyZombies || [];
+    if (this.worldMobs && activeChar) {
+      const px = activeChar.position.x;
+      const pz = activeChar.position.z;
+      let closestMobData = null;
+      let minDistance = 65; // Threat radar range 65m
+
+      for (const mobGroup of this.worldMobs.values()) {
+        const mob = mobGroup.userData?.mob;
+        if (!mob || mob.health <= 0) continue;
+        const dx = mobGroup.position.x - px;
+        const dz = mobGroup.position.z - pz;
+        const dist = Math.round(Math.hypot(dx, dz));
+        if (dist < minDistance) {
+          minDistance = dist;
+          const angle = Math.atan2(dx, -dz);
+          let heading = 'N';
+          if (angle > -Math.PI / 8 && angle <= Math.PI / 8) heading = 'N';
+          else if (angle > Math.PI / 8 && angle <= 3 * Math.PI / 8) heading = 'NE';
+          else if (angle > 3 * Math.PI / 8 && angle <= 5 * Math.PI / 8) heading = 'E';
+          else if (angle > 5 * Math.PI / 8 && angle <= 7 * Math.PI / 8) heading = 'SE';
+          else if (angle > -3 * Math.PI / 8 && angle <= -Math.PI / 8) heading = 'NW';
+          else if (angle > -5 * Math.PI / 8 && angle <= -3 * Math.PI / 8) heading = 'W';
+          else if (angle > -7 * Math.PI / 8 && angle <= -5 * Math.PI / 8) heading = 'SW';
+          else heading = 'S';
+
+          closestMobData = {
+            id: mob.id,
+            name: mob.name || (mob.tier === 2 ? 'Flame Zombie' : 'Aqua Zombie'),
+            tier: mob.tier,
+            health: mob.health,
+            maxHealth: mob.maxHealth,
+            distance: dist,
+            heading,
+          };
+        }
+      }
+
+      if (!closestMobData) {
+        if (!this.cachedNearbyZombies || this.cachedNearbyZombies.length > 0) {
+          this.cachedNearbyZombies = [];
+        }
+        nearbyZombies = this.cachedNearbyZombies;
+      } else {
+        const last = this.cachedNearbyZombies?.[0];
+        if (
+          last &&
+          last.id === closestMobData.id &&
+          last.heading === closestMobData.heading &&
+          Math.abs(last.distance - closestMobData.distance) < 2
+        ) {
+          nearbyZombies = this.cachedNearbyZombies;
+        } else {
+          this.cachedNearbyZombies = [closestMobData];
+          nearbyZombies = this.cachedNearbyZombies;
+        }
+      }
+    }
+
     const snapshot = {
       gameState: this.gameState,
       activeRole: this.activeRole,
@@ -3426,6 +3539,7 @@ export class GameEngine {
       abilityCooldowns: this.abilityCooldowns,
       knifeCooldownMs: Math.max(0, this.attackCooldownUntil - Date.now()),
       dragon: this.dragonState,
+      nearbyZombies: nearbyZombies.slice(0, 3),
       environment: {
         biome,
         todName: this.todName,

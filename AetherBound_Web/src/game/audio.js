@@ -793,6 +793,81 @@ class SoundSystem {
     osc.start(now);
     osc.stop(now + 0.08);
   }
+
+  playZombieGroan(isFire = false) {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    osc.type = isFire ? 'sawtooth' : 'triangle';
+    const baseFreq = isFire ? 65 : 85;
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.linearRampToValueAtTime(baseFreq + 25, now + 0.3);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq - 30, now + 0.85);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(isFire ? 420 : 320, now);
+    filter.Q.setValueAtTime(3.5, now);
+
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.linearRampToValueAtTime(isFire ? 0.22 : 0.18, now + 0.2);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.9);
+  }
+
+  playZombieAttack(isFire = false) {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(isFire ? 180 : 220, now);
+    osc.frequency.exponentialRampToValueAtTime(70, now + 0.25);
+
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.26);
+  }
+
+  playZombieHit() {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now + 0.16);
+
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
 }
 
 export const audio = new SoundSystem();

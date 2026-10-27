@@ -430,6 +430,7 @@ export function App() {
           playerId={engineState.playerId}
           environment={engineState.environment}
           dragon={engineState.dragon}
+          nearbyZombies={engineState.nearbyZombies || []}
           matchConfig={engineState.matchConfig}
           toastMessage={engineState.toastMessage}
           voiceState={engineState.voiceState || {}}

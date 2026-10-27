@@ -8,6 +8,7 @@ export function TopHudComponent({
   playerId = null,
   environment = {},
   dragon = {},
+  nearbyZombies = [],
   matchConfig = {},
   toastMessage = null,
   voiceState = {},
@@ -93,6 +94,15 @@ export function TopHudComponent({
           )}
           {dragon.attack && <strong className="dragon-telegraph-copy">⚠ {dragon.attack.name} · DODGE THE MARKED AREA</strong>}
         </div>
+
+        {/* Zombie Threat Radar */}
+        {nearbyZombies && nearbyZombies.length > 0 && (
+          <div className="hud-panel zombie-radar-panel" title="Nearby Zombie Proximity Radar">
+            <span className={`zombie-radar-badge ${nearbyZombies[0].tier === 2 ? 'tier2' : 'tier1'}`}>
+              🧟 {nearbyZombies[0].name.toUpperCase()} · {nearbyZombies[0].distance}m [{nearbyZombies[0].heading}]
+            </span>
+          </div>
+        )}
 
         {/* Room Voice Chat HUD Controls */}
         <div className="hud-panel voice-controls-panel">
