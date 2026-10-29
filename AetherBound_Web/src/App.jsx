@@ -176,7 +176,14 @@ export function App() {
   }, []);
 
   const handleEquipStick = useCallback((stickId) => {
-    engineRef.current?.equipStick(stickId);
+    if (engineRef.current?.selectStickSlot) {
+      engineRef.current.selectStickSlot();
+      if (stickId && stickId !== engineRef.current.equippedStick) {
+        engineRef.current.equipStick(stickId);
+      }
+    } else {
+      engineRef.current?.equipStick(stickId);
+    }
   }, []);
 
   const handleSetPowerSlot = useCallback((slotIndex, powerId) => {
@@ -194,9 +201,17 @@ export function App() {
   const handleActivatePower = useCallback((powerId, slotIndex) => {
     if (engineRef.current) {
       if (typeof slotIndex === 'number') {
-        engineRef.current.usePowerSlot(slotIndex);
+        if (engineRef.current.selectPowerSlot) {
+          engineRef.current.selectPowerSlot(slotIndex);
+        } else {
+          engineRef.current.usePowerSlot(slotIndex);
+        }
       } else if (powerId) {
-        engineRef.current.activateAbility(powerId);
+        if (engineRef.current.selectPower) {
+          engineRef.current.selectPower(powerId);
+        } else {
+          engineRef.current.activateAbility(powerId);
+        }
       }
     }
   }, []);
@@ -473,6 +488,7 @@ export function App() {
         <EquipmentToggleBar
           equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
           powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null]}
+          selectedSlotIndex={engineState.selectedSlotIndex ?? 0}
           backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'], resources: {} }}
           skillCounts={engineState.skillCounts || engineState.backpack?.skillCounts || {}}
           abilityCooldowns={engineState.abilityCooldowns || {}}

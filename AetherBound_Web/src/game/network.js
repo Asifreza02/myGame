@@ -176,6 +176,7 @@ export class NetworkClient {
       case 'ITEM_SPAWNED':
       case 'STICK_EQUIPPED':
       case 'POWER_SLOT_CHANGED':
+      case 'SKILL_COUNT_CHANGED':
       case 'STATUS_EFFECT_APPLIED':
       case 'TRAP_DEPLOYED':
       case 'TRAP_TRIGGERED':

@@ -52,12 +52,12 @@ export class SaboteurController {
     this.stamina = GAME_CONFIG.RUNNER.STAMINA_MAX;
     this.isSprinting = false;
 
-    // Third-Person Camera with full Yaw & 3D Pitch Aiming
+    // Third-Person Camera with full Yaw & 3D Pitch Aiming (Near-FPP over-the-shoulder)
     this.mouseSensitivity = 1.2;
     this.prevMouseX = 0;
     this.prevMouseY = 0;
-    this.cameraDistance = 6.2; // Fixed orbit distance
-    this.cameraHeight = 2.6;   // Base eye-level camera height
+    this.cameraDistance = 1.95; // Close orbit distance (near-FPP view, reduced from 6.2)
+    this.cameraHeight = 1.82;   // Base eye-level camera height (reduced from 2.6)
     this.cameraPitch = 0.05;   // Pitch angle in radians (down < 0, up > 0)
     this.cameraYaw = 0;
     this.isPointerLocked = false;
@@ -1224,10 +1224,14 @@ export class SaboteurController {
     const aimDirY = sinPitch;
     const aimDirZ = forwardZ * cosPitch;
 
+    const rightX = Math.cos(this.cameraYaw);
+    const rightZ = -Math.sin(this.cameraYaw);
+    const shoulderOffset = 0.40;
+
     const horizDist = this.cameraDistance * Math.cos(pitch * 0.45);
-    const camX = this.position.x - forwardX * horizDist;
-    const camZ = this.position.z - forwardZ * horizDist;
-    let camY = this.position.y + this.cameraHeight - sinPitch * 1.35;
+    const camX = this.position.x - forwardX * horizDist + rightX * shoulderOffset;
+    const camZ = this.position.z - forwardZ * horizDist + rightZ * shoulderOffset;
+    let camY = this.position.y + this.cameraHeight - sinPitch * 0.45;
 
     let minGroundY = this.position.y + 0.5;
     if (this.physics?.worldManager && typeof this.physics.worldManager.getHeightAt === 'function') {
@@ -1238,7 +1242,7 @@ export class SaboteurController {
 
     this.camera.position.set(camX, camY, camZ);
 
-    const eyeHeight = 1.65;
+    const eyeHeight = 1.70;
     const lookDist = 35.0;
     const lookTargetX = this.position.x + aimDirX * lookDist;
     const lookTargetY = this.position.y + eyeHeight + aimDirY * lookDist;

@@ -343,12 +343,15 @@ export class GameEngine {
     this.equippedWeapon = 'APPRENTICE_STICK';
     this.weapons = ['APPRENTICE_STICK', 'KNIFE'];
     this.powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null];
+    this.selectedSlotIndex = 0; // 0 = Staff (Key 1), 1..7 = Power Slots 0..6 (Keys 2..8)
+    this.selectedPowerId = null; // null when primary staff is selected; or primed spell ID
     this.skillCounts = {
       FIREBALL: 3,
       FROST_LANCE: 3,
       FROST_TRAP: 2,
       REJUVENATION: 2,
     };
+    this.pendingSkillDecrements = {};
     this.backpack = {
       sticks: ['APPRENTICE_STICK'],
       powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
@@ -604,11 +607,26 @@ export class GameEngine {
       if (e && e.button === 2) {
         if (this.isPlacingTrap) {
           this.cancelTrapTargeting();
+          this.selectedSlotIndex = 0;
+          this.selectedPowerId = null;
+          this.emitState();
           return;
         }
+        if (this.selectedPowerId) {
+          this.selectedPowerId = null;
+          this.selectedSlotIndex = 0;
+          this.showToast('⚔️ Primary staff selected');
+          this.emitState();
+          return;
+        }
+        return;
       }
       if (this.isPlacingTrap) {
         this.confirmTrapPlacement();
+        return;
+      }
+      if (this.selectedPowerId && MAGIC_POWERS[this.selectedPowerId]) {
+        this.executeSpellCast(this.selectedPowerId);
         return;
       }
       this.attack();
@@ -622,6 +640,16 @@ export class GameEngine {
       if (event.code === 'Escape') {
         if (this.isPlacingTrap) {
           this.cancelTrapTargeting();
+          this.selectedSlotIndex = 0;
+          this.selectedPowerId = null;
+          this.emitState();
+          return;
+        }
+        if (this.selectedPowerId) {
+          this.selectedPowerId = null;
+          this.selectedSlotIndex = 0;
+          this.showToast('⚔️ Primary staff selected');
+          this.emitState();
           return;
         }
         if (this.craftingModalOpen) {
@@ -643,7 +671,7 @@ export class GameEngine {
       }
       // Slot 0 (Key 1): Dedicated Magical Stick
       if (event.code === 'Digit1') {
-        this.equipStick(this.equippedStick || 'APPRENTICE_STICK');
+        this.selectStickSlot();
         return;
       }
       // Power Slots 1 to 7 (Number Keys 2 to 8, or letter hotkeys Q, E, R, F, Z, X, V)
@@ -659,7 +687,7 @@ export class GameEngine {
         const slots = this.powerSlots || [];
         const powerId = slots[powerSlotIndex];
         if (powerId) {
-          this.activateAbility(powerId);
+          this.selectPowerSlot(powerSlotIndex);
         } else {
           this.toggleBackpackModal();
         }
@@ -1086,7 +1114,15 @@ export class GameEngine {
         this.equippedStick = player.equippedStick || player.equippedWeapon || 'APPRENTICE_STICK';
         this.equippedWeapon = this.equippedStick;
         this.powerSlots = player.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null];
-        this.skillCounts = player.skillCounts || player.backpack?.skillCounts || this.skillCounts || {};
+        const serverCounts = player.skillCounts || player.backpack?.skillCounts || {};
+        this.skillCounts = this.skillCounts || {};
+        for (const [k, v] of Object.entries(serverCounts)) {
+          if (this.pendingSkillDecrements && this.pendingSkillDecrements[k] && this.pendingSkillDecrements[k] > Date.now()) {
+            this.skillCounts[k] = Math.min(this.skillCounts[k] ?? v, v);
+          } else {
+            this.skillCounts[k] = v;
+          }
+        }
         // If player has zero count of any skill, remove it from loadout!
         for (let i = 0; i < this.powerSlots.length; i++) {
           const pId = this.powerSlots[i];
@@ -1541,6 +1577,9 @@ export class GameEngine {
         if (event.skillCounts) this.skillCounts = event.skillCounts;
         if (event.powerSlots) this.powerSlots = event.powerSlots;
         if (this.backpack && this.skillCounts) this.backpack.skillCounts = this.skillCounts;
+        if (this.pendingSkillDecrements && event.powerId) {
+          delete this.pendingSkillDecrements[event.powerId];
+        }
       }
       this.emitState();
       return;
@@ -1583,6 +1622,14 @@ export class GameEngine {
     }
     if (event.type === 'TRAP_DEPLOYED') {
       if (event.trap) this.handleTrapDeployed(event.trap);
+      if (event.trap?.ownerId === this.playerId && event.skillCounts) {
+        this.skillCounts = event.skillCounts;
+        if (this.backpack) this.backpack.skillCounts = event.skillCounts;
+        if (this.pendingSkillDecrements && event.trap?.trapType) {
+          delete this.pendingSkillDecrements[event.trap.trapType];
+        }
+        this.emitState();
+      }
       return;
     }
     if (event.type === 'TRAP_TRIGGERED') {
@@ -2127,58 +2174,135 @@ export class GameEngine {
     this.emitState();
   }
 
-  activateAbility(ability) {
+  selectStickSlot() {
+    this.selectedSlotIndex = 0;
+    this.selectedPowerId = null;
+    if (this.isPlacingTrap) this.cancelTrapTargeting();
+    this.equipStick(this.equippedStick || 'APPRENTICE_STICK');
+    this.emitState();
+  }
+
+  selectPowerSlot(slotIndex) {
+    if (slotIndex < 0 || slotIndex >= 7) return;
+    const powerId = this.powerSlots?.[slotIndex];
+    if (!powerId) {
+      this.toggleBackpackModal();
+      return;
+    }
+    this.selectPower(powerId, slotIndex);
+  }
+
+  selectPower(powerId, slotIndex) {
     if (this.activeRole !== 'player') return;
+
+    this.skillCounts = this.skillCounts || {};
+    const count = this.skillCounts[powerId] ?? 0;
+    if (count <= 0) {
+      const def = MAGIC_POWERS[powerId] || TRAP_DEFINITIONS[powerId];
+      this.showToast(`⚠️ No charges remaining for ${def?.name || powerId}! Craft more at the Arcane Altar [C].`);
+      for (let i = 0; i < this.powerSlots.length; i++) {
+        if (this.powerSlots[i] === powerId) this.powerSlots[i] = null;
+      }
+      this.selectedSlotIndex = 0;
+      this.selectedPowerId = null;
+      this.emitState();
+      return;
+    }
+
+    let foundSlotIdx = (typeof slotIndex === 'number' && slotIndex >= 0) ? slotIndex : this.powerSlots?.indexOf(powerId);
+    const targetSlotIndex = foundSlotIdx !== -1 ? foundSlotIdx + 1 : 1;
+
+    if (TRAP_DEFINITIONS[powerId] || MAGIC_POWERS[powerId]?.kind === 'trap') {
+      this.selectedSlotIndex = targetSlotIndex;
+      this.selectedPowerId = powerId;
+      this.startTrapTargeting(powerId);
+      return;
+    }
+
+    if (MAGIC_POWERS[powerId]) {
+      const def = MAGIC_POWERS[powerId];
+      if (this.isPlacingTrap) this.cancelTrapTargeting();
+      this.selectedSlotIndex = targetSlotIndex;
+      this.selectedPowerId = powerId;
+      audio.playPlacement?.();
+      this.showToast(`⚡ Primed ${def.name}! Click Fire / Attack to cast.`);
+      this.emitState();
+    }
+  }
+
+  executeSpellCast(ability) {
+    if (this.activeRole !== 'player' || this.runner?.health <= 0) return;
+    const def = MAGIC_POWERS[ability];
+    if (!def) return;
 
     this.skillCounts = this.skillCounts || {};
     const count = this.skillCounts[ability] ?? 0;
     if (count <= 0) {
-      const def = MAGIC_POWERS[ability] || TRAP_DEFINITIONS[ability];
-      this.showToast(`⚠️ No charges remaining for ${def?.name || ability}! Craft more at the Arcane Altar [C].`);
+      this.showToast(`⚠️ No charges remaining for ${def.name}! Craft more at the Arcane Altar [C].`);
       for (let i = 0; i < this.powerSlots.length; i++) {
         if (this.powerSlots[i] === ability) this.powerSlots[i] = null;
       }
+      this.selectedSlotIndex = 0;
+      this.selectedPowerId = null;
       this.emitState();
       return;
     }
 
-    if (TRAP_DEFINITIONS[ability]) {
-      this.startTrapTargeting(ability);
+    // Cooldown check
+    const readyAt = this.abilityCooldowns?.[ability] || 0;
+    const now = Date.now();
+    if (now < readyAt) {
+      const waitSec = Math.ceil((readyAt - now) / 1000);
+      this.showToast(`⏳ ${def.name} on cooldown (${waitSec}s)!`);
       return;
     }
 
-    if (MAGIC_POWERS[ability]) {
-      const def = MAGIC_POWERS[ability];
+    const cooldownMs = def.cooldownMs || 3000;
+    this.abilityCooldowns[ability] = now + cooldownMs;
 
-      // Optimistically decrement count for spell
-      this.skillCounts[ability] = Math.max(0, count - 1);
-      if (this.backpack) this.backpack.skillCounts = this.skillCounts;
-      if (this.skillCounts[ability] === 0) {
-        for (let i = 0; i < this.powerSlots.length; i++) {
-          if (this.powerSlots[i] === ability) this.powerSlots[i] = null;
-        }
-        this.showToast(`⚠️ ${def.name} charges depleted and removed from loadout!`);
+    // Optimistically decrement count for spell
+    this.skillCounts[ability] = Math.max(0, count - 1);
+    this.pendingSkillDecrements = this.pendingSkillDecrements || {};
+    this.pendingSkillDecrements[ability] = Date.now() + 3000;
+    if (this.backpack) this.backpack.skillCounts = this.skillCounts;
+    if (this.skillCounts[ability] === 0) {
+      for (let i = 0; i < this.powerSlots.length; i++) {
+        if (this.powerSlots[i] === ability) this.powerSlots[i] = null;
       }
-
-      if (def.category === 'defense') {
-        this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
-        if (audio.playShield) audio.playShield();
-      } else if (def.category === 'heal' || ability === 'REJUVENATION') {
-        this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
-        if (audio.playPowerupPickup) audio.playPowerupPickup();
-      } else {
-        const origin = new THREE.Vector3(this.runner.position.x, this.runner.position.y + 1.2, this.runner.position.z);
-        const camDir = new THREE.Vector3();
-        this.camera.getWorldDirection(camDir);
-        this.network?.castSpell(ability, origin, camDir);
-        if (def.color === 0xff4411) audio.playPlasma();
-        else audio.playSpark();
-      }
-      this.emitState();
-      return;
+      this.selectedSlotIndex = 0;
+      this.selectedPowerId = null;
+      this.showToast(`⚠️ ${def.name} charges depleted and removed from loadout!`);
     }
-    this.network?.useAbility(ability);
+
+    if (def.category === 'defense') {
+      this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
+      if (audio.playShield) audio.playShield();
+    } else if (def.category === 'heal' || ability === 'REJUVENATION') {
+      this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
+      if (audio.playPowerupPickup) audio.playPowerupPickup();
+    } else {
+      const origin = new THREE.Vector3(this.runner.position.x, this.runner.position.y + 1.2, this.runner.position.z);
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
+      this.network?.castSpell(ability, origin, camDir);
+      if (def.color === 0xff4411) audio.playPlasma?.();
+      else audio.playSpark?.();
+    }
+
+    if (this.runner?.playKnifeSwing) {
+      this.runner.playKnifeSwing();
+    }
+
     this.emitState();
+  }
+
+  activateAbility(ability) {
+    if (this.activeRole !== 'player') return;
+    if (ability === 'REJUVENATION') {
+      this.executeSpellCast('REJUVENATION');
+      return;
+    }
+    this.selectPower(ability);
   }
 
   initTrapSystems() {
@@ -2237,6 +2361,10 @@ export class GameEngine {
   cancelTrapTargeting() {
     this.isPlacingTrap = false;
     this.activeTargetingTrap = null;
+    if (this.selectedPowerId && (TRAP_DEFINITIONS[this.selectedPowerId] || MAGIC_POWERS[this.selectedPowerId]?.kind === 'trap')) {
+      this.selectedSlotIndex = 0;
+      this.selectedPowerId = null;
+    }
     if (this.trapTargetingGroup) this.trapTargetingGroup.visible = false;
     this.emitState();
   }
@@ -2250,6 +2378,8 @@ export class GameEngine {
     this.skillCounts = this.skillCounts || {};
     const count = this.skillCounts[trapType] ?? 0;
     this.skillCounts[trapType] = Math.max(0, count - 1);
+    this.pendingSkillDecrements = this.pendingSkillDecrements || {};
+    this.pendingSkillDecrements[trapType] = Date.now() + 3000;
     if (this.backpack) this.backpack.skillCounts = this.skillCounts;
 
     if (this.skillCounts[trapType] === 0) {
@@ -2259,6 +2389,9 @@ export class GameEngine {
       }
       this.showToast(`⚠️ ${def?.name || trapType} depleted and removed from loadout!`);
     }
+
+    this.selectedSlotIndex = 0;
+    this.selectedPowerId = null;
 
     this.network?.deployTrap(trapType, trapPos);
     audio.playTrapArm();
@@ -3027,12 +3160,25 @@ export class GameEngine {
   }
 
   attack() {
-    if (this.activeRole !== 'player' || this.runner.health <= 0) return;
+    if (this.activeRole !== 'player' || this.runner?.health <= 0) return;
     if (!this.network?.connected) {
       this.showToast('Connecting to the match server…');
       return;
     }
 
+    // 1. If actively targeting / placing a trap, confirm trap placement!
+    if (this.isPlacingTrap && this.activeTargetingTrap) {
+      this.confirmTrapPlacement();
+      return;
+    }
+
+    // 2. If a magic spell is primed in loadout, cast the spell!
+    if (this.selectedPowerId && MAGIC_POWERS[this.selectedPowerId]) {
+      this.executeSpellCast(this.selectedPowerId);
+      return;
+    }
+
+    // 3. Otherwise: standard primary weapon / stick attack!
     const currentWeapon = this.equippedWeapon || 'APPRENTICE_STICK';
     const def = WEAPON_DEFINITIONS[currentWeapon] || MAGIC_STICKS[currentWeapon] || WEAPON_DEFINITIONS.APPRENTICE_STICK;
 
@@ -3176,10 +3322,7 @@ export class GameEngine {
   }
 
   usePowerSlot(slotIndex) {
-    if (slotIndex < 0 || slotIndex >= 7) return;
-    const powerId = this.powerSlots?.[slotIndex];
-    if (!powerId) return;
-    this.activateAbility(powerId);
+    this.selectPowerSlot(slotIndex);
   }
 
   toggleCraftingModal() {
@@ -3748,6 +3891,8 @@ export class GameEngine {
       equippedWeapon: this.equippedWeapon || 'APPRENTICE_STICK',
       equippedStick: this.equippedStick || 'APPRENTICE_STICK',
       powerSlots: this.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null],
+      selectedSlotIndex: this.selectedSlotIndex ?? 0,
+      selectedPowerId: this.selectedPowerId ?? null,
       skillCounts: this.skillCounts || {},
       backpack: {
         ...(this.backpack || {

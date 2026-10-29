@@ -8,6 +8,7 @@ const POWER_SLOT_SUBKEYS = ['Q', 'E', 'R', 'F', 'Z', 'X', 'V'];
 export function EquipmentToggleBarComponent({
   equippedStick = 'APPRENTICE_STICK',
   powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
+  selectedSlotIndex = 0,
   backpack = { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'], resources: {} },
   skillCounts = {},
   abilityCooldowns = {},
@@ -234,9 +235,9 @@ export function EquipmentToggleBarComponent({
       <div className="equipment-group stick-group">
         <button
           type="button"
-          className={`equip-slot-btn stick-slot interactive is-equipped ${isChangeMode ? 'is-change-mode-slot' : ''}`}
+          className={`equip-slot-btn stick-slot interactive is-equipped ${selectedSlotIndex === 0 ? 'active-selected-slot' : ''} ${isChangeMode ? 'is-change-mode-slot' : ''}`}
           onClick={handleStickClick}
-          title={isChangeMode ? 'Click to change primary staff' : `[1] ${stickDef.name} (${stickDef.damage} DMG)`}
+          title={isChangeMode ? 'Click to change primary staff' : `[1] ${stickDef.name} (${stickDef.damage} DMG) · Active Staff`}
         >
           <span className="slot-hotkey-badge">1</span>
           <span className="slot-icon">{stickDef.icon || '🪄'}</span>
@@ -264,6 +265,7 @@ export function EquipmentToggleBarComponent({
             const numKey = POWER_SLOT_HOTKEYS[index];
             const isDragOver = dragOverIndex === index;
             const isTargetChanging = changingSlot?.type === 'power' && changingSlot.index === index;
+            const isSelected = selectedSlotIndex === (index + 1);
 
             if (!def) {
               return (
@@ -274,7 +276,7 @@ export function EquipmentToggleBarComponent({
                   onDragOver={handleDragOver}
                   onDragLeave={() => setDragOverIndex(null)}
                   onDrop={(e) => handleDrop(e, index)}
-                  className={`equip-slot-btn power-slot empty-power-slot interactive ${isDragOver ? 'is-drag-over' : ''} ${isTargetChanging ? 'is-target-slot' : ''}`}
+                  className={`equip-slot-btn power-slot empty-power-slot interactive ${isSelected ? 'active-selected-slot' : ''} ${isDragOver ? 'is-drag-over' : ''} ${isTargetChanging ? 'is-target-slot' : ''}`}
                   onClick={() => setChangingSlot({ type: 'power', index })}
                   title={`[${numKey}] Empty Slot. Click to change / assign a skill`}
                 >
@@ -297,7 +299,7 @@ export function EquipmentToggleBarComponent({
                 onDragOver={handleDragOver}
                 onDragLeave={() => setDragOverIndex(null)}
                 onDrop={(e) => handleDrop(e, index)}
-                className={`equip-slot-btn power-slot interactive ${isTrap ? 'is-trap-slot' : 'is-spell-slot'} ${isCoolingDown ? 'is-cooldown' : 'is-ready'} ${isDragOver ? 'is-drag-over' : ''} ${isTargetChanging ? 'is-target-slot' : ''} ${isChangeMode ? 'is-change-mode-slot' : ''}`}
+                className={`equip-slot-btn power-slot interactive ${isTrap ? 'is-trap-slot' : 'is-spell-slot'} ${isCoolingDown ? 'is-cooldown' : 'is-ready'} ${isSelected ? 'active-selected-slot' : ''} ${isDragOver ? 'is-drag-over' : ''} ${isTargetChanging ? 'is-target-slot' : ''} ${isChangeMode ? 'is-change-mode-slot' : ''}`}
                 disabled={!isChangeMode && isCoolingDown}
                 onClick={() => handlePowerClick(powerId, index, count)}
                 style={{
@@ -308,7 +310,7 @@ export function EquipmentToggleBarComponent({
                     ? `Click to change slot ${index + 1}`
                     : isCoolingDown
                     ? `${def.name} (${cooldownSeconds}s) · ${count} charges`
-                    : `[${numKey}] ${def.name} · ${count} charges`
+                    : `[${numKey}] ${def.name} · ${count} charges ${isSelected ? '(Primed - Press Fire/Attack to use)' : ''}`
                 }
               >
                 <span className="slot-hotkey-badge">{numKey}</span>

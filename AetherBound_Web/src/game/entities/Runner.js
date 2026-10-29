@@ -207,12 +207,12 @@ export class RunnerController {
     this.onPointerLockChange = null;
     this.onSensitivityChange = null;
 
-    // Third-Person Camera with full Yaw & 3D Pitch Aiming
+    // Third-Person Camera with full Yaw & 3D Pitch Aiming (Near-FPP over-the-shoulder)
     this.mouseSensitivity = 1.2;
     this.prevMouseX = 0;
     this.prevMouseY = 0;
-    this.cameraDistance = 6.2; // Fixed orbit distance
-    this.cameraHeight = 2.6;   // Base eye-level camera height
+    this.cameraDistance = 1.95; // Close orbit distance (near-FPP view, reduced from 6.2)
+    this.cameraHeight = 1.82;   // Eye-level camera height (reduced from 2.6)
     this.cameraPitch = 0.05;   // Pitch angle in radians (down < 0, up > 0)
     this.cameraYaw = 0;
     this.isPointerLocked = false;
@@ -1284,16 +1284,19 @@ export class RunnerController {
     const aimDirY = sinPitch;
     const aimDirZ = forwardZ * cosPitch;
 
+    // Perpendicular Right unit vector for over-the-shoulder near-FPP alignment
+    const rightX = Math.cos(this.cameraYaw);
+    const rightZ = -Math.sin(this.cameraYaw);
+    const shoulderOffset = 0.40; // 0.40m offset to right shoulder so character does not occlude the reticle
+
     // Camera orbit positioning:
-    // Slightly compress horizontal orbit distance when looking steeply up or down for comfortable framing
+    // Snug orbit distance close behind character's head/shoulder
     const horizDist = this.cameraDistance * Math.cos(pitch * 0.45);
-    let camX = this.position.x - forwardX * horizDist;
-    let camZ = this.position.z - forwardZ * horizDist;
+    let camX = this.position.x - forwardX * horizDist + rightX * shoulderOffset;
+    let camZ = this.position.z - forwardZ * horizDist + rightZ * shoulderOffset;
 
     // Pitch height adjustment:
-    // When aiming down (pitch < 0), camera raises up behind the player so the player doesn't occlude the ground.
-    // When aiming up (pitch > 0), camera drops down slightly so the player doesn't occlude the sky/dragon.
-    let camY = this.position.y + this.cameraHeight - sinPitch * 1.35;
+    let camY = this.position.y + this.cameraHeight - sinPitch * 0.45;
 
     // Smooth, harmonic camera shake (smooth sine waves instead of violent random position spikes)
     if (this.cameraShake && this.cameraShake.timer > 0) {
@@ -1322,7 +1325,7 @@ export class RunnerController {
     this.camera.position.set(camX, camY, camZ);
 
     // Look target points 35 meters ahead along the player's 3D aim direction from eye level
-    const eyeHeight = 1.65;
+    const eyeHeight = 1.70;
     const lookDist = 35.0;
     const lookTargetX = this.position.x + aimDirX * lookDist;
     const lookTargetY = this.position.y + eyeHeight + aimDirY * lookDist;

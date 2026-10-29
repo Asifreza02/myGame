@@ -6943,6 +6943,27 @@
   box-shadow: 0 0 14px rgba(16, 185, 129, 0.65) !important;
 }
 
+.equip-slot-btn.active-selected-slot {
+  border-color: #00f0ff !important;
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.75), inset 0 0 8px rgba(0, 240, 255, 0.35) !important;
+  transform: translateY(-2px) scale(1.05) !important;
+  background: rgba(0, 240, 255, 0.22) !important;
+  z-index: 2;
+}
+
+.equip-slot-btn.active-selected-slot::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 3px;
+  background: #00f0ff;
+  border-radius: 2px;
+  box-shadow: 0 0 8px #00f0ff;
+}
+
 @keyframes pulseSlot {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.06); }
