@@ -7253,3 +7253,165 @@
   border-color: #f59e0b !important;
   color: #fff !important;
 }
+
+/* ================= CINEMATIC DRAGON BOSS HEALTH BAR ================= */
+.boss-health-bar-container {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(540px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 14px;
+  background: linear-gradient(180deg, rgba(22, 9, 14, 0.9) 0%, rgba(14, 5, 9, 0.95) 100%);
+  border: 1px solid rgba(255, 90, 40, 0.6);
+  box-shadow: 0 4px 22px rgba(255, 40, 0, 0.28), inset 0 1px 0 rgba(255, 180, 100, 0.25);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  z-index: 19;
+  pointer-events: none;
+  animation: boss-bar-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes boss-bar-enter {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.boss-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.boss-name-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.boss-name-group .boss-icon {
+  font-size: 15px;
+  filter: drop-shadow(0 0 5px rgba(255, 100, 0, 0.85));
+}
+
+.boss-name-group .boss-title {
+  font-family: 'Cinzel', 'Trajan Pro', Georgia, serif, system-ui;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.4px;
+  color: #fff0e6;
+  text-shadow: 0 0 8px rgba(255, 80, 0, 0.7);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.boss-phase-badge-group {
+  flex-shrink: 0;
+}
+
+.boss-flight-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.boss-flight-badge.aerial {
+  color: #ffcc00;
+  background: rgba(255, 180, 0, 0.2);
+  border: 1px solid rgba(255, 200, 0, 0.5);
+  box-shadow: 0 0 6px rgba(255, 180, 0, 0.3);
+}
+
+.boss-flight-badge.grounded {
+  color: #ff3344;
+  background: rgba(255, 40, 60, 0.28);
+  border: 1px solid rgba(255, 50, 70, 0.75);
+  box-shadow: 0 0 8px rgba(255, 40, 60, 0.55);
+  animation: pulse-grounded 1s ease-in-out infinite;
+}
+
+@keyframes pulse-grounded {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.82; transform: scale(1.02); }
+}
+
+.boss-hp-numbers {
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffb890;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.boss-health-track-frame {
+  position: relative;
+  width: 100%;
+  height: 9px;
+  background: rgba(28, 10, 15, 0.95);
+  border: 1px solid rgba(255, 100, 50, 0.45);
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.boss-health-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff1a1a 0%, #ff5500 50%, #ffbb00 100%);
+  border-radius: 4px;
+  transition: width 0.2s ease-out;
+  box-shadow: 0 0 8px rgba(255, 80, 0, 0.8);
+}
+
+.boss-attack-alert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: #fff;
+  background: rgba(255, 30, 30, 0.35);
+  border: 1px solid rgba(255, 50, 50, 0.75);
+  border-radius: 4px;
+  text-transform: uppercase;
+  animation: attack-alert-glow 0.6s infinite alternate;
+}
+
+@keyframes attack-alert-glow {
+  from { background: rgba(255, 30, 30, 0.25); box-shadow: 0 0 4px rgba(255, 0, 0, 0.3); }
+  to { background: rgba(255, 30, 30, 0.55); box-shadow: 0 0 12px rgba(255, 50, 0, 0.7); }
+}
+
+@media (max-width: 600px) {
+  .boss-health-bar-container {
+    top: 42px;
+    padding: 4px 10px;
+    gap: 3px;
+  }
+  .boss-name-group .boss-title {
+    font-size: 9.5px;
+    letter-spacing: 0.8px;
+  }
+  .boss-flight-badge {
+    font-size: 8px;
+    padding: 1px 6px;
+  }
+  .boss-hp-numbers {
+    font-size: 9px;
+  }
+  .boss-health-track-frame {
+    height: 7px;
+  }
+}

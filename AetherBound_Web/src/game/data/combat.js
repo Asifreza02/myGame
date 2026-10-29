@@ -332,7 +332,7 @@ export const MOB_SYSTEM_CONFIG = {
     health: 80,
     maxHealth: 80,
     speed: 4.2,
-    aggroRadius: 16,
+    aggroRadius: 28,
     attack: {
       type: 'WATER_SPIT',
       name: 'Aqua Water Spit',
@@ -353,7 +353,7 @@ export const MOB_SYSTEM_CONFIG = {
     health: 95,
     maxHealth: 95,
     speed: 5.2,
-    aggroRadius: 18,
+    aggroRadius: 32,
     attack: {
       type: 'FIRE_SPIT',
       name: 'Molten Fire Spit',

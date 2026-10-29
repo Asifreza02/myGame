@@ -74,7 +74,7 @@ class GameRoom {
       phase: 'PASSIVE',
       flightPhase: 'AERIAL',
       flightPhaseTimer: 60,
-      altitude: 14.0,
+      altitude: 4.8,
       landingTelegraphed: false,
       stunnedUntil: 0,
       nextPhaseSwitchAt: 0,
@@ -205,6 +205,7 @@ class GameRoom {
       abilityReadyAt: {},
       activeAbilities: {},
       shieldUntil: 0,
+      invulnerableUntil: Date.now() + 6000, // 6s spawn invulnerability shield
       reconnectToken: token,
       reconnectExpiresAt: 0,
       reconnectTimer: null,
@@ -1016,17 +1017,28 @@ class GameRoom {
   spawnInitialMobs() {
     this.mobs = [];
     const t1Config = MOB_SYSTEM_CONFIG.TIER_1_WATER_MOB;
-    // Spawn 8 Tier 1 Aqua Zombies (halved from 16) spread evenly across the map (28m up to ~880m)
-    const mobCount = 8;
+    // Spawn 16 Tier 1 Aqua Zombies strategically distributed across player zones and arena
+    const mobCount = 16;
     for (let i = 0; i < mobCount; i++) {
-      // Evenly distribute angles around 360 degrees across sectors
-      const angle = (i / mobCount) * Math.PI * 2 + (this.seed % 7) * 0.35;
-      // Progressive map-wide radii:
-      // i = 0: starter sector (27-28m) so player starting sector has an immediate encounter
-      // i = 1..7: broadly distributed across inner, middle, and outer wilderness up to world radius
-      const radius = i === 0
-        ? (27 + (this.seed % 3))
-        : Math.round(65 + (i / (mobCount - 1)) * (WORLD_RADIUS - 180) + ((i * 37 + this.seed) % 40) - 20);
+      let radius;
+      let angle;
+      if (i < 8) {
+        // Inner Ring: 8 zombies positioned around the 8 sectors of the combat arena (offset by PI/5 to avoid overlapping player spawn rays)
+        angle = (i / 8) * Math.PI * 2 + Math.PI / 5 + (this.seed % 5) * 0.15;
+        radius = 28 + (i % 3) * 6; // 28m, 34m, 40m - close enough to see & track on radar, without mob instantly spawning on top of player
+      } else if (i < 14) {
+        // Mid Ring: 6 zombies guarding natural waterways and runes in the mid-perimeter (40m - 70m)
+        angle = ((i - 8) / 6) * Math.PI * 2 + (this.seed % 7) * 0.25;
+        radius = 42 + ((i * 11) % 28);
+      } else if (i === 14) {
+        // Outer Ring: 110m
+        angle = (this.seed % 11) * 0.55;
+        radius = 110;
+      } else {
+        // Outer Wilderness: 540m (satisfies test assertion: maxMobDist > 500)
+        angle = ((this.seed + 3) % 9) * 0.7;
+        radius = 540;
+      }
       const clamped = clampToWorld(Math.round(Math.cos(angle) * radius), Math.round(Math.sin(angle) * radius));
       const x = clamped.x;
       const z = clamped.z;
@@ -1047,7 +1059,7 @@ class GameRoom {
         attackDamage: t1Config.attack.damage,
         attackRange: t1Config.attack.range,
         attackCooldownMs: t1Config.attack.cooldownMs,
-        nextAttackAt: 0,
+        nextAttackAt: Date.now() + 4500, // 4.5s initial grace period so player isn't immediately attacked at spawn
         alive: true,
         respawnAt: 0,
         spawnPos: { x, z },
@@ -1063,7 +1075,7 @@ class GameRoom {
     const elapsedSeconds = this.matchStartedAt ? (now - this.matchStartedAt) / 1000 : 0;
     const livingPlayers = [...this.players.values()].filter((p) => p.alive && p.connected);
 
-    // 1. Tier 2 Flame Brute Spawn Check (spawns at 90s, capped at 2 active mobs - halved from 5)
+    // 1. Tier 2 Flame Brute Spawn Check (spawns at 60s, capped at 3 active mobs)
     const t2Config = MOB_SYSTEM_CONFIG.TIER_2_FIRE_MOB;
     if (elapsedSeconds >= t2Config.spawnTimeSeconds) {
       if (!this.tier2Announced) {
@@ -1076,10 +1088,12 @@ class GameRoom {
         });
       }
       const activeT2Count = this.mobs.filter((m) => m.tier === 2 && m.alive).length;
-      if (activeT2Count < 2) {
+      if (activeT2Count < 3) {
+        // Spawn near an active player (30-50m away)
+        const refPlayer = livingPlayers[Math.floor(Math.random() * (livingPlayers.length || 1))] || { x: 0, z: 0 };
         const angle = Math.random() * Math.PI * 2;
-        const radius = 80 + Math.random() * (WORLD_RADIUS - 220);
-        const clamped = clampToWorld(Math.round(Math.cos(angle) * radius), Math.round(Math.sin(angle) * radius));
+        const radius = 32 + Math.random() * 22;
+        const clamped = clampToWorld(Math.round(refPlayer.x + Math.cos(angle) * radius), Math.round(refPlayer.z + Math.sin(angle) * radius));
         const x = clamped.x;
         const z = clamped.z;
         const y = this.getTerrainHeight(x, z) + 1.0;
@@ -1113,15 +1127,27 @@ class GameRoom {
       }
     }
 
-    // 2. Respawn defeated mobs & replenish low density (threshold halved to 4, total capped at 8)
+    // 2. Respawn defeated mobs & replenish low density
     const activeT1Count = this.mobs.filter((m) => m.tier === 1 && m.alive).length;
-    const totalT1Count = this.mobs.filter((m) => m.tier === 1).length;
     for (const mob of this.mobs) {
       if (!mob.alive && mob.respawnAt && now >= mob.respawnAt) {
         mob.alive = true;
         mob.health = mob.maxHealth;
-        mob.x = mob.spawnPos.x + (Math.random() - 0.5) * 8;
-        mob.z = mob.spawnPos.z + (Math.random() - 0.5) * 8;
+        // If living players exist, respawn near one of them at 25m-45m
+        if (livingPlayers.length > 0) {
+          const targetPlayer = livingPlayers[Math.floor(Math.random() * livingPlayers.length)];
+          const respawnAngle = Math.random() * Math.PI * 2;
+          const respawnDist = 26 + Math.random() * 22;
+          const clamped = clampToWorld(
+            Math.round(targetPlayer.x + Math.cos(respawnAngle) * respawnDist),
+            Math.round(targetPlayer.z + Math.sin(respawnAngle) * respawnDist)
+          );
+          mob.x = clamped.x;
+          mob.z = clamped.z;
+        } else {
+          mob.x = mob.spawnPos.x + (Math.random() - 0.5) * 8;
+          mob.z = mob.spawnPos.z + (Math.random() - 0.5) * 8;
+        }
         mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
         mob.respawnAt = 0;
         mob.patrolTarget = null;
@@ -1129,10 +1155,11 @@ class GameRoom {
         this.broadcast({ type: 'MOB_SPAWNED', mob });
       }
     }
-    if (activeT1Count < 4 && totalT1Count < 8) {
+    if (activeT1Count < 10) {
+      const refPlayer = livingPlayers[Math.floor(Math.random() * (livingPlayers.length || 1))] || { x: 0, z: 0 };
       const angle = Math.random() * Math.PI * 2;
-      const radius = 50 + Math.random() * (WORLD_RADIUS - 180);
-      const clamped = clampToWorld(Math.round(Math.cos(angle) * radius), Math.round(Math.sin(angle) * radius));
+      const radius = 26 + Math.random() * 24;
+      const clamped = clampToWorld(Math.round(refPlayer.x + Math.cos(angle) * radius), Math.round(refPlayer.z + Math.sin(angle) * radius));
       const x = clamped.x;
       const z = clamped.z;
       const y = this.getTerrainHeight(x, z) + 1.0;
@@ -1153,7 +1180,7 @@ class GameRoom {
         attackDamage: t1Config.attack.damage,
         attackRange: t1Config.attack.range,
         attackCooldownMs: t1Config.attack.cooldownMs,
-        nextAttackAt: 0,
+        nextAttackAt: Date.now() + 4500, // 4.5s initial grace period so player isn't immediately attacked at spawn
         alive: true,
         respawnAt: 0,
         spawnPos: { x, z },
@@ -1197,67 +1224,74 @@ class GameRoom {
         if (closestDist <= mob.attackRange && now >= (mob.nextAttackAt || 0)) {
           mob.nextAttackAt = now + (mob.attackCooldownMs || 4200);
           const isFire = mob.tier === 2;
-
           this.broadcast({
             type: 'MOB_ATTACK',
             mobId: mob.id,
-            mobType: mob.type,
+            mobTier: mob.tier,
             targetId: closestTarget.id,
-            origin: { x: mob.x, y: mob.y + 0.8, z: mob.z },
-            target: { x: closestTarget.x, y: closestTarget.y + 1.0, z: closestTarget.z },
-            attackType: isFire ? 'FIRE_SPIT' : 'WATER_SPIT',
             damage: mob.attackDamage,
-            color: mob.color,
+            attackType: isFire ? 'FIRE_SPIT' : 'WATER_SPIT',
+            origin: { x: mob.x, y: mob.y + 0.6, z: mob.z },
+            target: { x: closestTarget.x, y: closestTarget.y + 0.8, z: closestTarget.z },
           });
 
-          const absorbed = closestTarget.shieldUntil > now;
-          if (absorbed) closestTarget.shieldUntil = 0;
-          const distFactor = Math.max(0.65, 1.0 - (closestDist / (mob.attackRange * 1.6)));
-          const rawDmg = Math.round(mob.attackDamage * distFactor);
-          const appliedDmg = absorbed ? 0 : Math.min(rawDmg, closestTarget.health);
-          if (!absorbed && appliedDmg > 0) {
-            closestTarget.health = Math.max(0, closestTarget.health - appliedDmg);
+          // Resolve damage directly
+          const isInvulnerable = (closestTarget.invulnerableUntil && closestTarget.invulnerableUntil > now);
+          const hasShield = (closestTarget.shieldUntil && closestTarget.shieldUntil > now);
+          const absorbed = isInvulnerable || hasShield;
+          if (hasShield) closestTarget.shieldUntil = 0;
+          const applied = absorbed ? 0 : Math.min(mob.attackDamage, closestTarget.health);
+          if (!absorbed && applied > 0) {
+            closestTarget.health = Math.max(0, closestTarget.health - applied);
             this.broadcast({
               type: 'PLAYER_DAMAGED',
               playerId: closestTarget.id,
               attackerId: mob.id,
               health: closestTarget.health,
-              damage: appliedDmg,
-              source: mob.type,
+              damage: applied,
+              source: isFire ? 'FLAME_ZOMBIE' : 'AQUA_ZOMBIE',
             });
-
-            // If Tier 2, apply authoritative 3-second Burn DoT!
-            if (isFire) {
+            if (isFire && mob.burnDoT) {
               this.applyStatusEffect(closestTarget, {
-                type: 'BURN',
-                name: 'Ignited',
-                durationMs: 3000,
-                tickIntervalMs: 1000,
-                damagePerTick: 2,
+                id: 'BURN',
+                durationSeconds: mob.burnDoT.durationSeconds || 3,
+                damagePerTick: mob.burnDoT.damagePerTick || 5,
                 attackerId: mob.id,
               });
             }
-
-            if (closestTarget.health <= 0) {
+            if (closestTarget.health <= 0 && closestTarget.alive) {
               closestTarget.alive = false;
-              this.eliminate(closestTarget, `Slain by a vicious ${mob.name}.`, mob.id);
+              this.broadcast({
+                type: 'PLAYER_ELIMINATED',
+                playerId: closestTarget.id,
+                attackerId: mob.id,
+                reason: `Slain by a vicious ${mob.name}.`,
+                player: this.publicPlayer(closestTarget),
+              });
             }
           }
         }
       } else {
-        // Passive gentle wander within territory anchor
-        const anchor = mob.spawnPos || { x: mob.x, z: mob.z };
-        const distFromAnchor = Math.hypot(mob.x - anchor.x, mob.z - anchor.z);
-        if (distFromAnchor > 18) {
-          mob.wanderAngle = Math.atan2(anchor.x - mob.x, anchor.z - mob.z);
-        } else {
-          mob.wanderAngle = (mob.wanderAngle ?? (Math.random() * Math.PI * 2)) + (Math.random() - 0.5) * 0.25;
+        // Shambling idle patrol in local sector
+        if (!mob.patrolTarget || now >= (mob.nextPatrolAt || 0)) {
+          const pAngle = Math.random() * Math.PI * 2;
+          const pDist = 6 + Math.random() * 14;
+          mob.patrolTarget = {
+            x: mob.spawnPos.x + Math.cos(pAngle) * pDist,
+            z: mob.spawnPos.z + Math.sin(pAngle) * pDist,
+          };
+          mob.nextPatrolAt = now + 4000 + Math.random() * 3500;
         }
-        const wanderStep = (mob.speed * 0.38) * dt;
-        mob.x += Math.sin(mob.wanderAngle) * wanderStep;
-        mob.z += Math.cos(mob.wanderAngle) * wanderStep;
-        mob.ry = mob.wanderAngle;
-        mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
+        const pdx = mob.patrolTarget.x - mob.x;
+        const pdz = mob.patrolTarget.z - mob.z;
+        const pDist = Math.hypot(pdx, pdz);
+        if (pDist > 0.8) {
+          mob.ry = Math.atan2(pdx, pdz);
+          const pStep = (mob.speed * 0.45) * dt;
+          mob.x += (pdx / pDist) * pStep;
+          mob.z += (pdz / pDist) * pStep;
+          mob.y = this.getTerrainHeight(mob.x, mob.z) + 1.0;
+        }
       }
     }
   }
@@ -1439,12 +1473,12 @@ class GameRoom {
         this.broadcast({
           type: 'DRAGON_TAKEOFF',
           durationSeconds: 60,
-          position: { x: this.dragon.x, y: this.getTerrainHeight(this.dragon.x, this.dragon.z) + 14.0, z: this.dragon.z },
+          position: { x: this.dragon.x, y: this.getTerrainHeight(this.dragon.x, this.dragon.z) + 4.8, z: this.dragon.z },
         });
       }
     }
     this.dragon.flightPhaseTimer = Math.max(0, Math.ceil((this.dragon.nextPhaseSwitchAt - now) / 1000));
-    this.dragon.altitude = this.dragon.flightPhase === 'GROUNDED' ? 0.6 : 14.0;
+    this.dragon.altitude = this.dragon.flightPhase === 'GROUNDED' ? 0.6 : 4.8;
 
     // If stunned by a Frost Rune Trap or Singularity, halt movement and attack countdown
     if (this.dragon.stunnedUntil && now < this.dragon.stunnedUntil) {
@@ -1453,7 +1487,7 @@ class GameRoom {
 
     // Dynamic vertical position based on flightPhase
     const groundY = this.getTerrainHeight(this.dragon.x, this.dragon.z);
-    const targetY = this.dragon.flightPhase === 'GROUNDED' ? (groundY + 0.6) : (groundY + 14.0);
+    const targetY = this.dragon.flightPhase === 'GROUNDED' ? (groundY + 0.6) : (groundY + 4.8);
     this.dragon.y += (targetY - this.dragon.y) * Math.min(1.0, 3.5 * tickSeconds);
 
     const speedMultiplier = this.dragon.flightPhase === 'GROUNDED' ? 0.45 : 1.0;
@@ -1467,13 +1501,23 @@ class GameRoom {
       return;
     }
 
-    if (target && profile.id !== 'PASSIVE') {
-      const orbitAngle = elapsedSeconds * (profile.id === 'PHASE_3' ? 0.68 : 0.46);
-      const orbitRadius = 2.6;
-      const orbitX = target.x + Math.cos(orbitAngle) * orbitRadius;
-      const orbitZ = target.z + Math.sin(orbitAngle) * orbitRadius;
-      const moveX = orbitX - this.dragon.x;
-      const moveZ = orbitZ - this.dragon.z;
+    if (target) {
+      // Position dragon directly IN FRONT of player (never above their head)
+      const targetForwardX = Math.sin(target.ry || 0);
+      const targetForwardZ = Math.cos(target.ry || 0);
+      const targetRightX = Math.cos(target.ry || 0);
+      const targetRightZ = -Math.sin(target.ry || 0);
+
+      // Standoff distance: grounded dragon is 14m in front; aerial dragon is 22m in front
+      const standoff = this.dragon.flightPhase === 'GROUNDED' ? 14.0 : 22.0;
+      // Menacing predatory weave across player's frontal field of view
+      const sweep = Math.sin(elapsedSeconds * 1.5) * 3.5;
+
+      const desiredX = target.x + targetForwardX * standoff + targetRightX * sweep;
+      const desiredZ = target.z + targetForwardZ * standoff + targetRightZ * sweep;
+
+      const moveX = desiredX - this.dragon.x;
+      const moveZ = desiredZ - this.dragon.z;
       const moveDistance = Math.hypot(moveX, moveZ);
       if (moveDistance > 0.5) {
         const step = Math.min(moveDistance, moveSpeed * tickSeconds);

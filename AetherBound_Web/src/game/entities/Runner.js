@@ -511,6 +511,9 @@ export class RunnerController {
         if (!node.isMesh) return;
         node.castShadow = true;
         node.receiveShadow = true;
+        if (node.isSkinnedMesh) {
+          node.frustumCulled = false;
+        }
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) {
           material.map = skinTexture;
@@ -1239,13 +1242,20 @@ export class RunnerController {
     this.velocity.x *= 0.85;
     this.velocity.z *= 0.85;
 
+    this.lastForwardX = forwardX;
+    this.lastForwardZ = forwardZ;
+    this.finalizeTransform(dt);
+  }
+
+  finalizeTransform(dt = 0.016) {
     this.constrainToWorld();
-    // Update avatar mesh position and rotation
+    // Synchronize avatar group with authoritative position
     this.group.position.copy(this.position);
     this.group.rotation.y = this.rotationY;
 
-    // 6. Update Camera: 3D Third-Person View with Yaw and Pitch aiming
-    this.updateCamera(forwardX, forwardZ);
+    const fwdX = this.lastForwardX !== undefined ? this.lastForwardX : -Math.sin(this.cameraYaw);
+    const fwdZ = this.lastForwardZ !== undefined ? this.lastForwardZ : -Math.cos(this.cameraYaw);
+    this.updateCamera(fwdX, fwdZ, dt);
   }
 
   constrainToWorld() {
@@ -1263,7 +1273,7 @@ export class RunnerController {
     }
   }
 
-  updateCamera(forwardX, forwardZ) {
+  updateCamera(forwardX, forwardZ, dt = 0.016) {
     this.group.visible = true;
     const pitch = this.cameraPitch || 0;
     const cosPitch = Math.cos(pitch);
@@ -1285,21 +1295,29 @@ export class RunnerController {
     // When aiming up (pitch > 0), camera drops down slightly so the player doesn't occlude the sky/dragon.
     let camY = this.position.y + this.cameraHeight - sinPitch * 1.35;
 
-    // Apply tactile camera shake
+    // Smooth, harmonic camera shake (smooth sine waves instead of violent random position spikes)
     if (this.cameraShake && this.cameraShake.timer > 0) {
-      const shakeAmt = (this.cameraShake.timer / this.cameraShake.duration) * this.cameraShake.intensity;
-      camX += (Math.random() - 0.5) * shakeAmt;
-      camY += (Math.random() - 0.5) * shakeAmt * 0.8;
-      camZ += (Math.random() - 0.5) * shakeAmt;
+      const shakeProgress = this.cameraShake.timer / this.cameraShake.duration;
+      const shakeAmt = shakeProgress * Math.min(this.cameraShake.intensity, 0.12);
+      camX += Math.sin(this.cameraShake.timer * 40) * shakeAmt;
+      camY += Math.cos(this.cameraShake.timer * 30) * shakeAmt * 0.45;
+      camZ += Math.sin(this.cameraShake.timer * 36) * shakeAmt;
     }
 
-    // Prevent camera from clipping through terrain
+    // Prevent camera from clipping through terrain with smooth damped elevation
     let minGroundY = this.position.y + 0.5;
     if (this.worldManager && typeof this.worldManager.getHeightAt === 'function') {
       const terrainY = this.worldManager.getHeightAt(camX, camZ);
-      minGroundY = Math.max(minGroundY, terrainY + 0.8);
+      minGroundY = Math.max(minGroundY, terrainY + 0.7);
     }
-    camY = Math.max(minGroundY, camY);
+    const targetCamY = Math.max(minGroundY, camY);
+    if (this.currentCamY === undefined || Number.isNaN(this.currentCamY)) {
+      this.currentCamY = targetCamY;
+    } else {
+      const blend = 1 - Math.exp(-20 * Math.min(dt || 0.016, 0.05));
+      this.currentCamY = THREE.MathUtils.lerp(this.currentCamY, targetCamY, blend);
+    }
+    camY = this.currentCamY;
 
     this.camera.position.set(camX, camY, camZ);
 
@@ -1334,6 +1352,8 @@ export class RunnerController {
     this.rotationY = st.ry || 0;
     if (st.pitch !== undefined) this.cameraPitch = st.pitch;
     if (st.health !== undefined) this.health = st.health;
+    this.velocity.set(0, 0, 0);
+    this.isGrounded = true;
     this.group.position.copy(this.position);
     this.group.rotation.y = this.rotationY;
     this.group.visible = true;

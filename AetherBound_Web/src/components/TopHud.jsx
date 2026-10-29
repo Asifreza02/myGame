@@ -153,6 +153,39 @@ export function TopHudComponent({
         </div>
       </div>
 
+      {/* Cinematic Dragon Boss Health Bar */}
+      {dragon && dragon.alive !== false && (
+        <div className="boss-health-bar-container" aria-label="Dragon Boss Health Bar">
+          <div className="boss-title-row">
+            <div className="boss-name-group">
+              <span className="boss-icon">🐉</span>
+              <span className="boss-title">IGNIS, ANCIENT AETHER WYRM</span>
+            </div>
+            <div className="boss-phase-badge-group">
+              <span className={`boss-flight-badge ${dragon.flightPhase === 'GROUNDED' ? 'grounded' : 'aerial'}`}>
+                {dragon.flightPhase === 'GROUNDED'
+                  ? `⬇ GROUNDED (1.25x CRIT) · ${dragon.flightPhaseTimer ?? 25}s`
+                  : `🦅 AERIAL PATROL · ${dragon.flightPhaseTimer ?? 60}s`}
+              </span>
+            </div>
+            <div className="boss-hp-numbers">
+              {dragonHealth} / {dragonMaxHealth} HP ({Math.round(dragonHealthPct)}%)
+            </div>
+          </div>
+          <div className="boss-health-track-frame">
+            <div
+              className="boss-health-fill"
+              style={{ width: `${dragonHealthPct}%` }}
+            />
+          </div>
+          {dragon.attack && (
+            <div className="boss-attack-alert">
+              <span className="alert-pulse">⚠</span> INCOMING ATTACK: {dragon.attack.name || dragon.attack.type}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 5-Player Competitor Standings Panel */}
       {showRoster && competitors && competitors.length > 0 && (
         <aside className="competitors-panel" aria-label="5-Player Match Standings">

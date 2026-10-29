@@ -42,7 +42,20 @@ export class HumanoidAnimator {
     if (!action || action === this.activeAction) return;
 
     const previous = this.activeAction;
-    action.reset();
+    if (key !== 'attack' && key !== 'jump') {
+      if (previous && (this.activeKey === 'walk' || this.activeKey === 'run') && (key === 'walk' || key === 'run')) {
+        // Synchronize stride phase between walk and run so character limbs don't snap/break
+        const prevDuration = previous.getClip().duration || 1;
+        const nextDuration = action.getClip().duration || 1;
+        const phase = (previous.time / prevDuration) % 1;
+        action.time = phase * nextDuration;
+      } else {
+        action.reset();
+      }
+    } else {
+      action.reset();
+    }
+
     action.enabled = true;
     action.setEffectiveWeight(1);
     action.setEffectiveTimeScale(1);
@@ -54,7 +67,7 @@ export class HumanoidAnimator {
       action.clampWhenFinished = false;
     }
     action.play();
-    if (previous) action.crossFadeFrom(previous, 0.14, false);
+    if (previous) action.crossFadeFrom(previous, 0.18, false);
     this.activeAction = action;
     this.activeKey = key;
   }
@@ -64,10 +77,18 @@ export class HumanoidAnimator {
 
     const frame = Math.min(Math.max(dt, 0), 0.1);
     const attackProgress = THREE.MathUtils.clamp(state.attackProgress || 0, 0, 1);
-    const airborne = state.grounded === false || Boolean(state.vaulting);
+
+    // Airborne hysteresis / coyote time prevents 1-frame terrain bumps from snapping into jump
+    if (state.grounded !== false) {
+      this.airborneTimer = 0;
+    } else {
+      this.airborneTimer = (this.airborneTimer || 0) + frame;
+    }
+    const isReallyAirborne = (!state.grounded && (this.airborneTimer > 0.28 || (state.verticalVelocity && state.verticalVelocity > 2.5))) || Boolean(state.vaulting);
+
     const actionKey = attackProgress > 0
       ? 'attack'
-      : airborne
+      : isReallyAirborne
         ? 'jump'
         : state.moving
           ? (state.sprinting ? 'run' : 'walk')
@@ -95,9 +116,9 @@ export class HumanoidAnimator {
     );
     this.poseRoot.rotation.z = damp(
       this.poseRoot.rotation.z,
-      -strafe * 0.05 + hit * 0.28,
+      -strafe * 0.05 + hit * 0.07, // Subtle tactile flinch instead of breaking/twisting the spine
       frame,
-      18,
+      14,
     );
     this.poseRoot.position.y = damp(this.poseRoot.position.y, -slide * 0.16, frame, 16);
 

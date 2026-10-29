@@ -206,6 +206,74 @@ function drawMobNameplate(canvas, ctx, name, health, maxHealth, tier) {
   ctx.fillText(`${Math.ceil(health)} / ${maxHealth}`, barX + barW / 2, barY + barH / 2);
 }
 
+function drawDragonNameplate(canvas, ctx, health, maxHealth, flightPhase) {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const isGrounded = flightPhase === 'GROUNDED';
+  const borderColor = isGrounded ? '#ff2a3a' : '#ff7a18';
+
+  // Backdrop
+  ctx.fillStyle = 'rgba(14, 6, 10, 0.94)';
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.roundRect(4, 4, w - 8, h - 8, 12);
+  ctx.fill();
+  ctx.stroke();
+
+  // Dragon Boss Icon & Title
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🐉 IGNIS [BOSS]', 18, 26);
+
+  // Flight Phase Badge
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'right';
+  if (isGrounded) {
+    ctx.fillStyle = '#ff3344';
+    ctx.fillText('⬇ GROUNDED (1.25x CRIT)', w - 18, 26);
+  } else {
+    ctx.fillStyle = '#ffbb00';
+    ctx.fillText('🦅 AERIAL PATROL', w - 18, 26);
+  }
+
+  // Health Bar Frame
+  const barX = 16;
+  const barY = 48;
+  const barW = w - 32;
+  const barH = 22;
+  ctx.fillStyle = 'rgba(30, 10, 16, 0.95)';
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 7);
+  ctx.fill();
+
+  const curHp = Math.max(0, health ?? maxHealth ?? 500);
+  const maxHp = maxHealth || 500;
+  const pct = Math.max(0, Math.min(1, curHp / maxHp));
+
+  if (pct > 0) {
+    const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    grad.addColorStop(0, '#ff1a1a');
+    grad.addColorStop(0.5, '#ff6a00');
+    grad.addColorStop(1, '#ffc400');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(barX + 2, barY + 2, Math.max(6, (barW - 4) * pct), barH - 4, 5);
+    ctx.fill();
+  }
+
+  // Exact HP Text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${Math.ceil(curHp)} / ${maxHp} HP`, w / 2, barY + barH / 2);
+}
+
 export class GameEngine {
   constructor(containerElement, onStateChange) {
     this.container = containerElement;
@@ -464,6 +532,7 @@ export class GameEngine {
     this.dragonRenderPosition = this.dragonTargetPosition.clone();
     this.dragonTargetYaw = 0;
     this.scene.add(this.dragonMesh);
+    this.createDragonNameplate();
     this.dragonMixer = null;
     this.dragonAnimationClips = new Map();
     this.dragonActiveAction = null;
@@ -752,7 +821,9 @@ export class GameEngine {
 
   loadZombieModel() {
     const loader = new GLTFLoader();
+    console.log('[ZOMBIE] Loading /models/mobs/zombie_realistic.glb ...');
     loader.load('/models/mobs/zombie_realistic.glb', (gltf) => {
+      console.log('[ZOMBIE] Loaded successfully, animations:', gltf.animations?.length);
       if (this.destroyed) {
         disposeThreeObject(gltf.scene);
         return;
@@ -767,7 +838,7 @@ export class GameEngine {
         }
       }
     }, undefined, (error) => {
-      console.warn('Could not load realistic 3D zombie model:', error);
+      console.error('[ZOMBIE ERROR] Could not load realistic 3D zombie model:', error);
     });
   }
 
@@ -1225,14 +1296,41 @@ export class GameEngine {
       const isGrounded = this.dragonState.flightPhase === 'GROUNDED';
       const altitude = Number.isFinite(this.dragonState.altitude)
         ? this.dragonState.altitude
-        : (isGrounded ? 0.6 : 14.0);
+        : (isGrounded ? 0.6 : 4.8);
       this.dragonBaseY = this.worldManager.getHeightAt(this.dragonState.x, this.dragonState.z) + altitude;
       this.dragonTargetPosition.set(this.dragonState.x, this.dragonBaseY, this.dragonState.z);
       this.dragonTargetYaw = this.dragonState.ry || 0;
       this.dragonMesh.visible = this.dragonState.alive;
       this.updateDragonTelegraph(this.dragonState.attack);
+      this.updateDragonNameplate();
     }
     if (previousPhase && previousPhase !== this.dragonState.phase) this.showToast(`Dragon phase: ${this.dragonState.phase}.`);
+  }
+
+  createDragonNameplate() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 380;
+    canvas.height = 88;
+    const ctx = canvas.getContext('2d');
+    const texture = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+    sprite.position.set(0, 5.2, 0);
+    sprite.scale.set(6.2, 1.44, 1);
+    this.dragonMesh.add(sprite);
+
+    this.dragonNameplate = { canvas, ctx, texture, sprite };
+    this.updateDragonNameplate();
+  }
+
+  updateDragonNameplate() {
+    if (!this.dragonNameplate || !this.dragonState) return;
+    const { canvas, ctx, texture, sprite } = this.dragonNameplate;
+    const d = this.dragonState;
+    sprite.visible = Boolean(d.alive);
+    if (!d.alive) return;
+
+    drawDragonNameplate(canvas, ctx, d.health, d.maxHealth, d.flightPhase);
+    texture.needsUpdate = true;
   }
 
   refreshRemoteCharacterModels() {
@@ -1645,14 +1743,6 @@ export class GameEngine {
       }
       return;
     }
-    if (event.type === 'PLAYER_DAMAGED' && event.damage > 0) {
-      if (event.playerId === this.playerId) this.runner.hitReactTimer = 0.24;
-      else {
-        const remote = this.remotePlayers.get(event.playerId);
-        if (remote) remote.hitReactTimer = 0.24;
-      }
-    }
-
     if (event.type === 'HAZARD_DEPLOYED') {
       const geometry = new THREE.CylinderGeometry(0.78, 0.92, 0.28, 8);
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xc84237, emissive: 0x57100a, emissiveIntensity: 0.6 }));
@@ -1675,15 +1765,27 @@ export class GameEngine {
         audio.playImpact();
         this.showToast(event.targetType === 'dragon' ? `Dragon struck for ${event.damage} damage.` : `Knife hit for ${event.damage} damage.`);
       }
-    } else if (event.type === 'PLAYER_DAMAGED' && event.playerId === this.playerId) {
-      this.damageFlash = Date.now();
-      this.runner.health = event.health;
-      audio.playImpact();
+    } else if (event.type === 'PLAYER_DAMAGED') {
       if (event.damage > 0) {
-        const source = event.attackerId === 'dragon'
-          ? (event.source === 'FIRE_BREATH' ? 'Dragon fire breath' : event.source === 'GROUND_SLAM' ? 'Dragon ground slam' : 'Dragon')
-          : event.source === 'knife' ? 'Knife' : event.source === 'volcanic-ground' ? 'Volcanic ground' : 'Hazard';
-        this.showToast(`${source} hit: −${event.damage} health.`);
+        if (event.playerId === this.playerId) this.runner.hitReactTimer = 0.24;
+        else {
+          const remote = this.remotePlayers.get(event.playerId);
+          if (remote) remote.hitReactTimer = 0.24;
+        }
+      }
+      if (event.playerId === this.playerId) {
+        this.damageFlash = Date.now();
+        this.runner.health = event.health;
+        audio.playImpact();
+        if (event.damage > 0) {
+          const source = event.attackerId === 'dragon'
+            ? (event.source === 'FIRE_BREATH' ? 'Dragon fire breath' : event.source === 'GROUND_SLAM' ? 'Dragon ground slam' : 'Dragon')
+            : event.source === 'knife' ? 'Knife'
+            : event.source === 'AQUA_ZOMBIE' ? 'Aqua Zombie'
+            : event.source === 'FLAME_ZOMBIE' ? 'Flame Zombie'
+            : event.source === 'volcanic-ground' ? 'Volcanic ground' : 'Hazard';
+          this.showToast(`${source} hit: −${event.damage} health.`);
+        }
       }
     } else if (event.type === 'PLAYER_ELIMINATED') {
       const victimName = event.player?.name || 'A contender';
@@ -1743,15 +1845,18 @@ export class GameEngine {
       this.showToast(event.reason || 'Ability could not be used.');
     } else if (event.type === 'DRAGON_DAMAGED') {
       this.dragonState.health = event.health;
+      this.updateDragonNameplate();
       const vulnText = event.isVulnerable ? ' (💥 CRITICAL HIT · 1.25x Grounded DMG)' : '';
       this.showToast(`Dragon took ${event.damage || 0} damage${vulnText} · ${event.health} health left.`);
     } else if (event.type === 'DRAGON_ATTACK_TELEGRAPH') {
       this.dragonState.attack = event.attack;
       this.updateDragonTelegraph(event.attack);
+      this.updateDragonNameplate();
     } else if (event.type === 'DRAGON_ATTACK_RESOLVED') {
       const resolvedAttack = this.dragonState.attack;
       this.dragonState.attack = null;
       this.updateDragonTelegraph(null);
+      this.updateDragonNameplate();
       if (resolvedAttack && this.particles) {
         if (resolvedAttack.type === 'FIRE_BREATH' && resolvedAttack.target) {
           const { x, z } = resolvedAttack.target;
@@ -2624,8 +2729,8 @@ export class GameEngine {
       }
 
       // Distance Culling (LOD):
-      // Beyond 85m: hide mesh completely and skip all skeletal/droplet math (massive FPS win)
-      if (d > 85) {
+      // Beyond 160m: hide mesh completely and skip all skeletal/droplet math (massive FPS win)
+      if (d > 160) {
         if (mobGroup.visible) mobGroup.visible = false;
         continue;
       }
@@ -2633,7 +2738,7 @@ export class GameEngine {
 
       // Update walking skeletal animation mixer with distance-based frame pacing
       if (data.mixer) {
-        if (d > 35) {
+        if (d > 45) {
           data.mixerThrottle = (data.mixerThrottle || 0) + 1;
           if (data.mixerThrottle % 2 === 0) {
             data.mixer.update(dt * 2);
@@ -3431,6 +3536,7 @@ export class GameEngine {
         this.runner.weatherSpeedMultiplier = this.weatherState.movementMultiplier;
         this.runner.update(dt);
         this.physics.updateCharacterPhysics(this.runner, dt);
+        this.runner.finalizeTransform(dt);
 
         // Update aim targeting and aim assist
         this.updateTargetingAndAimAssist(dt);
