@@ -11,6 +11,7 @@ export function BackpackModal({
   equippedStick = 'APPRENTICE_STICK',
   powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
   resources = {},
+  skillCounts = {},
   onEquipStick,
   onSetPowerSlot,
   onOpenCrafting,
@@ -18,6 +19,7 @@ export function BackpackModal({
 }) {
   const [activeTab, setActiveTab] = useState('EQUIPMENT'); // 'EQUIPMENT' | 'RESOURCES' | 'STICKS' | 'POWERS'
   const [selectedPowerToSlot, setSelectedPowerToSlot] = useState(null);
+  const [targetSlotForChange, setTargetSlotForChange] = useState(null);
   const [dragOverSlot, setDragOverSlot] = useState(null);
 
   if (!visible) return null;
@@ -36,24 +38,38 @@ export function BackpackModal({
   };
 
   const handleStickSelect = (stickId) => {
-    audio.playCraftSuccess();
+    audio.playCraftSuccess?.();
     onEquipStick?.(stickId);
   };
 
   const handleAssignPowerToSlot = (slotIdx, powerIdToAssign = selectedPowerToSlot) => {
     if (powerIdToAssign) {
-      audio.playPlacement();
+      const count = skillCounts[powerIdToAssign] ?? 0;
+      if (count <= 0) {
+        audio.playCooldown?.();
+        return;
+      }
+      audio.playPlacement?.();
       onSetPowerSlot?.(slotIdx, powerIdToAssign);
       setSelectedPowerToSlot(null);
+      setTargetSlotForChange(null);
     }
   };
 
   const handleClearSlot = (slotIdx) => {
-    audio.playTick();
+    audio.playTick?.();
     onSetPowerSlot?.(slotIdx, null);
+    if (targetSlotForChange === slotIdx) {
+      setTargetSlotForChange(null);
+    }
   };
 
   const handleDragStartPower = (e, powerId, fromSlotIndex = null) => {
+    const count = skillCounts[powerId] ?? 0;
+    if (count <= 0) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData('text/plain', powerId);
     e.dataTransfer.setData('powerId', powerId);
     if (fromSlotIndex !== null) {
@@ -74,7 +90,7 @@ export function BackpackModal({
         // Swap slots
         const powerA = powerSlots[fromIdx];
         const powerB = powerSlots[targetSlotIdx];
-        audio.playPlacement();
+        audio.playPlacement?.();
         onSetPowerSlot?.(fromIdx, powerB);
         onSetPowerSlot?.(targetSlotIdx, powerA);
         return;
@@ -82,9 +98,15 @@ export function BackpackModal({
     }
 
     if (powerId && (MAGIC_POWERS[powerId] || ownedPowers.includes(powerId))) {
-      audio.playPlacement();
+      const count = skillCounts[powerId] ?? 0;
+      if (count <= 0) {
+        audio.playCooldown?.();
+        return;
+      }
+      audio.playPlacement?.();
       onSetPowerSlot?.(targetSlotIdx, powerId);
       setSelectedPowerToSlot(null);
+      setTargetSlotForChange(null);
     }
   };
 
@@ -103,7 +125,7 @@ export function BackpackModal({
             <div>
               <h2 className="crafting-title">Arcane Backpack & Grimoire</h2>
               <p className="crafting-subtitle">
-                Drag-and-drop or click to assign spells and staves into your 8-slot action bar.
+                Configure your 1-Staff + 7-Skill Hotbar loadout. Skills with zero charges are auto-removed from the loadout.
               </p>
             </div>
           </div>
@@ -122,28 +144,28 @@ export function BackpackModal({
           <button
             type="button"
             className={`backpack-tab-btn ${activeTab === 'EQUIPMENT' ? 'is-active' : ''}`}
-            onClick={() => { setActiveTab('EQUIPMENT'); setSelectedPowerToSlot(null); }}
+            onClick={() => { setActiveTab('EQUIPMENT'); setSelectedPowerToSlot(null); setTargetSlotForChange(null); }}
           >
             ⚡ HOTBAR LOADOUT (1 STICK + 7 POWERS)
           </button>
           <button
             type="button"
             className={`backpack-tab-btn ${activeTab === 'STICKS' ? 'is-active' : ''}`}
-            onClick={() => { setActiveTab('STICKS'); setSelectedPowerToSlot(null); }}
+            onClick={() => { setActiveTab('STICKS'); setSelectedPowerToSlot(null); setTargetSlotForChange(null); }}
           >
             🪄 STICKS & STAVES ({ownedSticks.length})
           </button>
           <button
             type="button"
             className={`backpack-tab-btn ${activeTab === 'POWERS' ? 'is-active' : ''}`}
-            onClick={() => { setActiveTab('POWERS'); setSelectedPowerToSlot(null); }}
+            onClick={() => { setActiveTab('POWERS'); setSelectedPowerToSlot(null); setTargetSlotForChange(null); }}
           >
-            🔮 SPELLS & TRAPS ({ownedPowers.length})
+            🔮 SPELLS & TRAPS ({Object.keys(MAGIC_POWERS).length})
           </button>
           <button
             type="button"
             className={`backpack-tab-btn ${activeTab === 'RESOURCES' ? 'is-active' : ''}`}
-            onClick={() => { setActiveTab('RESOURCES'); setSelectedPowerToSlot(null); }}
+            onClick={() => { setActiveTab('RESOURCES'); setSelectedPowerToSlot(null); setTargetSlotForChange(null); }}
           >
             🪵 RAW MATERIALS
           </button>
@@ -152,6 +174,7 @@ export function BackpackModal({
         {/* ================= TAB 1: EQUIPMENT & HOTBAR SETUP ================= */}
         {activeTab === 'EQUIPMENT' && (
           <div className="backpack-tab-content">
+            {/* Slot 1: Primary Stick */}
             <div className="backpack-section-title">
               <span>ACTIVE 1-STICK WEAPON SLOT</span>
               <span className="section-subtext">Click any stick to equip into your primary hand</span>
@@ -193,21 +216,26 @@ export function BackpackModal({
               })}
             </div>
 
+            {/* Slots 2-8: 7 Powers */}
             <div className="backpack-section-title" style={{ marginTop: '20px' }}>
-              <span>ACTIVE 7-POWER TOGGLE BAR SLOTS</span>
+              <span>ACTIVE 7-POWER LOADOUT SLOTS</span>
               <span className="section-subtext">
-                {selectedPowerToSlot
-                  ? `👉 Select a slot below to place "${MAGIC_POWERS[selectedPowerToSlot]?.name || selectedPowerToSlot}"`
-                  : 'Drag & drop spells here or drag between slots to reorder'}
+                {targetSlotForChange !== null
+                  ? `👉 Select a skill below to equip into Slot ${targetSlotForChange + 1}`
+                  : selectedPowerToSlot
+                  ? `👉 Click any slot below to place "${MAGIC_POWERS[selectedPowerToSlot]?.name || selectedPowerToSlot}"`
+                  : 'Click [CHANGE] on a slot or click any skill below to equip into your loadout'}
               </span>
             </div>
 
             <div className="backpack-powers-grid">
               {Array.from({ length: 7 }).map((_, slotIdx) => {
                 const powerId = powerSlots[slotIdx];
-                const def = powerId ? MAGIC_POWERS[powerId] : null;
+                const count = powerId ? (skillCounts[powerId] || 0) : 0;
+                const def = (powerId && count > 0) ? MAGIC_POWERS[powerId] : null;
                 const hotkey = POWER_SLOT_HOTKEYS[slotIdx];
                 const isDragOver = dragOverSlot === slotIdx;
+                const isTargetSelected = targetSlotForChange === slotIdx;
 
                 return (
                   <div
@@ -221,9 +249,17 @@ export function BackpackModal({
                     }}
                     onDragLeave={() => setDragOverSlot(null)}
                     onDrop={(e) => handleSlotDrop(e, slotIdx)}
-                    className={`backpack-slot-cell ${def ? 'has-power' : 'empty-cell'} ${selectedPowerToSlot ? 'awaiting-assignment' : ''} ${isDragOver ? 'is-drag-over' : ''}`}
-                    onClick={() => selectedPowerToSlot ? handleAssignPowerToSlot(slotIdx) : null}
-                    title={def ? `Drag to re-order, or click remove button` : `Drag a spell or click with a selected spell`}
+                    className={`backpack-slot-cell ${def ? 'has-power' : 'empty-cell'} ${
+                      isTargetSelected ? 'target-for-change is-active-slot' : ''
+                    } ${selectedPowerToSlot ? 'awaiting-assignment' : ''} ${isDragOver ? 'is-drag-over' : ''}`}
+                    onClick={() => {
+                      if (selectedPowerToSlot) {
+                        handleAssignPowerToSlot(slotIdx);
+                      } else {
+                        setTargetSlotForChange(isTargetSelected ? null : slotIdx);
+                      }
+                    }}
+                    title={def ? `Slot ${slotIdx + 1}: ${def.name} (${count} charges)` : `Slot ${slotIdx + 1}: Empty`}
                   >
                     <div className="slot-cell-header">
                       <span className="slot-number-badge">SLOT {slotIdx + 1}</span>
@@ -234,23 +270,41 @@ export function BackpackModal({
                       <div className="slot-cell-body">
                         <span className="slot-power-icon">{def.icon}</span>
                         <span className="slot-power-name">{def.name}</span>
-                        <span className={`slot-kind-badge ${def.kind === 'trap' ? 'trap-badge' : 'spell-badge'}`}>
-                          {def.kind.toUpperCase()}
-                        </span>
-                        <button
-                          type="button"
-                          className="slot-remove-btn"
-                          onClick={(e) => { e.stopPropagation(); handleClearSlot(slotIdx); }}
-                          title="Remove from Hotbar"
-                        >
-                          ✕
-                        </button>
+                        <span className="slot-charge-badge-lg">⚡ {count} CHARGES</span>
+                        <div className="slot-actions-row">
+                          <button
+                            type="button"
+                            className="slot-swap-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTargetSlotForChange(slotIdx);
+                            }}
+                            title="Change item in this slot"
+                          >
+                            CHANGE
+                          </button>
+                          <button
+                            type="button"
+                            className="slot-remove-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleClearSlot(slotIdx);
+                            }}
+                            title="Remove from Loadout"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="slot-cell-empty">
                         <span className="empty-plus">+</span>
                         <span className="empty-text">
-                          {selectedPowerToSlot ? 'CLICK TO PLACE' : 'DRAG SPELL HERE'}
+                          {selectedPowerToSlot
+                            ? 'CLICK TO PLACE'
+                            : isTargetSelected
+                            ? 'PICK SKILL BELOW'
+                            : 'CLICK TO ASSIGN'}
                         </span>
                       </div>
                     )}
@@ -259,18 +313,122 @@ export function BackpackModal({
               })}
             </div>
 
-            {selectedPowerToSlot && (
+            {/* Assignment or Slot Change Guidance Banner */}
+            {(targetSlotForChange !== null || selectedPowerToSlot) && (
               <div className="slot-assignment-banner">
-                <span>Assigning <strong>{MAGIC_POWERS[selectedPowerToSlot]?.name}</strong> to your hotbar.</span>
+                {targetSlotForChange !== null ? (
+                  <span>
+                    👉 <strong>Slot {targetSlotForChange + 1}</strong> selected. Click any skill below to equip it!
+                  </span>
+                ) : (
+                  <span>
+                    Assigning <strong>{MAGIC_POWERS[selectedPowerToSlot]?.name}</strong> to your loadout. Click a slot above.
+                  </span>
+                )}
                 <button
                   type="button"
                   className="cancel-assignment-btn"
-                  onClick={() => setSelectedPowerToSlot(null)}
+                  onClick={() => {
+                    setSelectedPowerToSlot(null);
+                    setTargetSlotForChange(null);
+                  }}
                 >
                   Cancel
                 </button>
               </div>
             )}
+
+            {/* Quick Picker for Skills in Equipment Tab */}
+            <div className="backpack-section-title" style={{ marginTop: '24px' }}>
+              <span>AVAILABLE SKILLS IN YOUR GRIMOIRE</span>
+              <span className="section-subtext">
+                Craft skills at the Arcane Altar [C] to replenish charges. Zero-charge skills cannot be slotted.
+              </span>
+            </div>
+
+            <div className="backpack-cards-grid">
+              {Object.entries(MAGIC_POWERS).map(([pId, def]) => {
+                const count = skillCounts[pId] || 0;
+                const hasCharges = count > 0;
+                const isSlotted = powerSlots.includes(pId);
+                const slotIndex = powerSlots.indexOf(pId);
+
+                return (
+                  <div
+                    key={pId}
+                    draggable={hasCharges}
+                    onDragStart={(e) => hasCharges && handleDragStartPower(e, pId)}
+                    className={`backpack-card power-card ${isSlotted ? 'is-slotted' : ''} ${!hasCharges ? 'is-depleted' : ''}`}
+                    style={{ cursor: hasCharges ? 'grab' : 'not-allowed' }}
+                  >
+                    <div className="card-top">
+                      <span className="card-icon">{def.icon}</span>
+                      <div className="card-header-text">
+                        <span className="card-name">{def.name}</span>
+                        <span className={`card-tag ${def.kind === 'trap' ? 'trap-badge' : 'spell-badge'}`}>
+                          {def.kind.toUpperCase()}
+                        </span>
+                      </div>
+                      {hasCharges ? (
+                        <span className="charges-stock-badge">⚡ {count} CHARGES</span>
+                      ) : (
+                        <span className="depleted-stock-badge">0 CHARGES</span>
+                      )}
+                    </div>
+
+                    <p className="card-desc">{def.description}</p>
+
+                    <div className="card-stats">
+                      {def.damage && <span>💥 {def.damage} DMG</span>}
+                      {def.burstDamage && <span>💥 {def.burstDamage} BURST</span>}
+                      {def.freezeDurationMs && <span>❄️ {(def.freezeDurationMs / 1000).toFixed(1)}s FREEZE</span>}
+                      {def.burnDoT && <span>🔥 3s BURN</span>}
+                      <span>⏳ {(def.cooldownMs / 1000).toFixed(1)}s CD</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
+                      {hasCharges ? (
+                        <button
+                          type="button"
+                          className="card-action-btn btn-assign"
+                          onClick={() => {
+                            if (targetSlotForChange !== null) {
+                              handleAssignPowerToSlot(targetSlotForChange, pId);
+                            } else {
+                              // Find first open slot or select
+                              const openIdx = powerSlots.findIndex((s) => s === null);
+                              if (openIdx !== -1) {
+                                handleAssignPowerToSlot(openIdx, pId);
+                              } else {
+                                setSelectedPowerToSlot(pId);
+                              }
+                            }
+                          }}
+                        >
+                          {targetSlotForChange !== null
+                            ? `EQUIP TO SLOT ${targetSlotForChange + 1}`
+                            : isSlotted
+                            ? `SLOTTED (SLOT ${slotIndex + 1})`
+                            : 'EQUIP TO LOADOUT'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="card-action-btn btn-craft-needed"
+                          onClick={() => {
+                            onClose();
+                            onOpenCrafting?.();
+                          }}
+                          title="Open Arcane Altar to forge this skill"
+                        >
+                          ✨ CRAFT AT ALTAR [C]
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -315,19 +473,19 @@ export function BackpackModal({
         {activeTab === 'POWERS' && (
           <div className="backpack-tab-content">
             <div className="backpack-cards-grid">
-              {ownedPowers.map((pId) => {
-                const def = MAGIC_POWERS[pId];
-                if (!def) return null;
+              {Object.entries(MAGIC_POWERS).map(([pId, def]) => {
+                const count = skillCounts[pId] || 0;
+                const hasCharges = count > 0;
                 const isSlotted = powerSlots.includes(pId);
                 const slotIndex = powerSlots.indexOf(pId);
 
                 return (
                   <div
                     key={pId}
-                    draggable={true}
-                    onDragStart={(e) => handleDragStartPower(e, pId)}
-                    className={`backpack-card power-card ${isSlotted ? 'is-slotted' : ''}`}
-                    style={{ cursor: 'grab' }}
+                    draggable={hasCharges}
+                    onDragStart={(e) => hasCharges && handleDragStartPower(e, pId)}
+                    className={`backpack-card power-card ${isSlotted ? 'is-slotted' : ''} ${!hasCharges ? 'is-depleted' : ''}`}
+                    style={{ cursor: hasCharges ? 'grab' : 'not-allowed' }}
                   >
                     <div className="card-top">
                       <span className="card-icon">{def.icon}</span>
@@ -337,7 +495,11 @@ export function BackpackModal({
                           {def.kind.toUpperCase()} {def.category ? `· ${def.category.toUpperCase()}` : ''}
                         </span>
                       </div>
-                      {isSlotted && <span className="slotted-badge">SLOT {slotIndex + 1}</span>}
+                      {hasCharges ? (
+                        <span className="charges-stock-badge">⚡ {count} CHARGES</span>
+                      ) : (
+                        <span className="depleted-stock-badge">0 CHARGES</span>
+                      )}
                     </div>
                     <p className="card-desc">{def.description}</p>
                     <div className="card-stats">
@@ -349,16 +511,29 @@ export function BackpackModal({
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
-                      <button
-                        type="button"
-                        className="card-action-btn btn-assign"
-                        onClick={() => {
-                          setSelectedPowerToSlot(pId);
-                          setActiveTab('EQUIPMENT');
-                        }}
-                      >
-                        {isSlotted ? 'REASSIGN SLOT' : 'ASSIGN TO HOTBAR'}
-                      </button>
+                      {hasCharges ? (
+                        <button
+                          type="button"
+                          className="card-action-btn btn-assign"
+                          onClick={() => {
+                            setSelectedPowerToSlot(pId);
+                            setActiveTab('EQUIPMENT');
+                          }}
+                        >
+                          {isSlotted ? `REASSIGN (SLOT ${slotIndex + 1})` : 'ASSIGN TO HOTBAR'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="card-action-btn btn-craft-needed"
+                          onClick={() => {
+                            onClose();
+                            onOpenCrafting?.();
+                          }}
+                        >
+                          ✨ FORGE AT ALTAR [C]
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -397,7 +572,7 @@ export function BackpackModal({
         <div className="backpack-footer-bar">
           <div className="footer-stats">
             <span>Sticks: <strong>{ownedSticks.length}</strong></span>
-            <span>Spells & Traps: <strong>{ownedPowers.length}</strong></span>
+            <span>Spells & Traps: <strong>{Object.keys(MAGIC_POWERS).length}</strong></span>
             <span>Total Resources: <strong>{Object.values(mergedResources).reduce((a, b) => a + (Number(b) || 0), 0)}</strong></span>
           </div>
 

@@ -275,9 +275,21 @@ export class GameEngine {
     this.equippedWeapon = 'APPRENTICE_STICK';
     this.weapons = ['APPRENTICE_STICK', 'KNIFE'];
     this.powerSlots = ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null];
+    this.skillCounts = {
+      FIREBALL: 3,
+      FROST_LANCE: 3,
+      FROST_TRAP: 2,
+      REJUVENATION: 2,
+    };
     this.backpack = {
       sticks: ['APPRENTICE_STICK'],
       powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
+      skillCounts: {
+        FIREBALL: 3,
+        FROST_LANCE: 3,
+        FROST_TRAP: 2,
+        REJUVENATION: 2,
+      },
       resources: {},
     };
     this.statusEffects = [];
@@ -1003,11 +1015,23 @@ export class GameEngine {
         this.equippedStick = player.equippedStick || player.equippedWeapon || 'APPRENTICE_STICK';
         this.equippedWeapon = this.equippedStick;
         this.powerSlots = player.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null];
+        this.skillCounts = player.skillCounts || player.backpack?.skillCounts || this.skillCounts || {};
+        // If player has zero count of any skill, remove it from loadout!
+        for (let i = 0; i < this.powerSlots.length; i++) {
+          const pId = this.powerSlots[i];
+          if (pId && (this.skillCounts[pId] ?? 0) <= 0) {
+            this.powerSlots[i] = null;
+          }
+        }
         this.backpack = player.backpack || {
           sticks: [this.equippedStick],
           powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
+          skillCounts: this.skillCounts,
           resources: this.playerResources,
         };
+        if (this.backpack && !this.backpack.skillCounts) {
+          this.backpack.skillCounts = this.skillCounts;
+        }
         this.statusEffects = player.statusEffects || [];
         this.matchStats = player.stats || this.matchStats;
         this.abilityCooldowns = player.abilityReadyAt || this.abilityCooldowns;
@@ -1383,6 +1407,8 @@ export class GameEngine {
         }
         if (event.backpack) this.backpack = event.backpack;
         if (event.powerSlots) this.powerSlots = event.powerSlots;
+        if (event.skillCounts) this.skillCounts = event.skillCounts;
+        if (this.backpack && this.skillCounts) this.backpack.skillCounts = this.skillCounts;
         audio.playCraftSuccess();
         const def = WEAPON_DEFINITIONS[event.weaponId] || MAGIC_STICKS[event.stickId] || MAGIC_POWERS[event.powerId];
         this.showToast(def ? `Forged ${def.name}!` : `Crafted successfully!`);
@@ -1404,8 +1430,19 @@ export class GameEngine {
       return;
     }
     if (event.type === 'POWER_SLOT_CHANGED') {
-      if (event.playerId === this.playerId && event.powerSlots) {
-        this.powerSlots = event.powerSlots;
+      if (event.playerId === this.playerId) {
+        if (event.powerSlots) this.powerSlots = event.powerSlots;
+        if (event.skillCounts) this.skillCounts = event.skillCounts;
+        if (this.backpack && this.skillCounts) this.backpack.skillCounts = this.skillCounts;
+      }
+      this.emitState();
+      return;
+    }
+    if (event.type === 'SKILL_COUNT_CHANGED') {
+      if (event.playerId === this.playerId) {
+        if (event.skillCounts) this.skillCounts = event.skillCounts;
+        if (event.powerSlots) this.powerSlots = event.powerSlots;
+        if (this.backpack && this.skillCounts) this.backpack.skillCounts = this.skillCounts;
       }
       this.emitState();
       return;
@@ -1987,12 +2024,37 @@ export class GameEngine {
 
   activateAbility(ability) {
     if (this.activeRole !== 'player') return;
+
+    this.skillCounts = this.skillCounts || {};
+    const count = this.skillCounts[ability] ?? 0;
+    if (count <= 0) {
+      const def = MAGIC_POWERS[ability] || TRAP_DEFINITIONS[ability];
+      this.showToast(`⚠️ No charges remaining for ${def?.name || ability}! Craft more at the Arcane Altar [C].`);
+      for (let i = 0; i < this.powerSlots.length; i++) {
+        if (this.powerSlots[i] === ability) this.powerSlots[i] = null;
+      }
+      this.emitState();
+      return;
+    }
+
     if (TRAP_DEFINITIONS[ability]) {
       this.startTrapTargeting(ability);
       return;
     }
+
     if (MAGIC_POWERS[ability]) {
       const def = MAGIC_POWERS[ability];
+
+      // Optimistically decrement count for spell
+      this.skillCounts[ability] = Math.max(0, count - 1);
+      if (this.backpack) this.backpack.skillCounts = this.skillCounts;
+      if (this.skillCounts[ability] === 0) {
+        for (let i = 0; i < this.powerSlots.length; i++) {
+          if (this.powerSlots[i] === ability) this.powerSlots[i] = null;
+        }
+        this.showToast(`⚠️ ${def.name} charges depleted and removed from loadout!`);
+      }
+
       if (def.category === 'defense') {
         this.network?.castSpell(ability, this.runner.position, { x: 0, y: 1, z: 0 });
         if (audio.playShield) audio.playShield();
@@ -2007,9 +2069,11 @@ export class GameEngine {
         if (def.color === 0xff4411) audio.playPlasma();
         else audio.playSpark();
       }
+      this.emitState();
       return;
     }
     this.network?.useAbility(ability);
+    this.emitState();
   }
 
   initTrapSystems() {
@@ -2074,8 +2138,24 @@ export class GameEngine {
 
   confirmTrapPlacement() {
     if (!this.isPlacingTrap || !this.activeTargetingTrap) return;
+    const trapType = this.activeTargetingTrap;
     const trapPos = this.trapTargetingGroup.position.clone();
-    this.network?.deployTrap(this.activeTargetingTrap, trapPos);
+
+    // Optimistically decrement count for trap
+    this.skillCounts = this.skillCounts || {};
+    const count = this.skillCounts[trapType] ?? 0;
+    this.skillCounts[trapType] = Math.max(0, count - 1);
+    if (this.backpack) this.backpack.skillCounts = this.skillCounts;
+
+    if (this.skillCounts[trapType] === 0) {
+      const def = TRAP_DEFINITIONS[trapType] || MAGIC_POWERS[trapType];
+      for (let i = 0; i < this.powerSlots.length; i++) {
+        if (this.powerSlots[i] === trapType) this.powerSlots[i] = null;
+      }
+      this.showToast(`⚠️ ${def?.name || trapType} depleted and removed from loadout!`);
+    }
+
+    this.network?.deployTrap(trapType, trapPos);
     audio.playTrapArm();
     this.cancelTrapTargeting();
   }
@@ -2975,9 +3055,17 @@ export class GameEngine {
   }
 
   setPowerSlot(slotIndex, powerId) {
-    if (this.powerSlots) {
-      this.powerSlots[slotIndex] = powerId;
+    if (slotIndex < 0 || slotIndex >= 7) return;
+    this.powerSlots = this.powerSlots || [null, null, null, null, null, null, null];
+    if (powerId) {
+      const count = this.skillCounts?.[powerId] ?? 0;
+      if (count <= 0) {
+        const def = MAGIC_POWERS[powerId] || TRAP_DEFINITIONS[powerId];
+        this.showToast(`⚠️ Cannot equip ${def?.name || powerId}: 0 charges available! Craft at Arcane Altar [C].`);
+        return;
+      }
     }
+    this.powerSlots[slotIndex] = powerId;
     this.network?.setPowerSlot(slotIndex, powerId);
     this.emitState();
   }
@@ -3554,10 +3642,14 @@ export class GameEngine {
       equippedWeapon: this.equippedWeapon || 'APPRENTICE_STICK',
       equippedStick: this.equippedStick || 'APPRENTICE_STICK',
       powerSlots: this.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null],
-      backpack: this.backpack || {
-        sticks: ['APPRENTICE_STICK'],
-        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
-        resources: this.playerResources || {},
+      skillCounts: this.skillCounts || {},
+      backpack: {
+        ...(this.backpack || {
+          sticks: ['APPRENTICE_STICK'],
+          powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
+          resources: this.playerResources || {},
+        }),
+        skillCounts: this.skillCounts || {},
       },
       statusEffects: this.statusEffects || [],
       playerAmmo: this.playerAmmo || {},

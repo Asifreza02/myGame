@@ -21,6 +21,7 @@ export function CraftingModal({
   weapons = ['APPRENTICE_STICK'],
   equippedStick = 'APPRENTICE_STICK',
   powerSlots = [],
+  skillCounts = {},
   backpack = { sticks: [], powers: [], resources: {} },
   onCraft,
   onEquip,
@@ -78,9 +79,10 @@ export function CraftingModal({
         message: `✨ Forged ${recipe.name}! It is now equipped as your primary weapon.`,
       });
     } else {
+      const currentCount = skillCounts[recipe.powerId] || 0;
       setFeedback({
         type: 'success',
-        message: `✨ Forged ${recipe.name}! Added to your Backpack [B] and active spells.`,
+        message: `✨ Forged ${recipe.name}! (+1 charge, total: ${currentCount + 1}). Added to active loadout!`,
       });
     }
   };
@@ -213,14 +215,14 @@ export function CraftingModal({
               else if (canCraft) actionLabel = 'FORGE & EQUIP 🔮';
               else actionLabel = 'NEED MATERIALS 🔒';
             } else if (isTrapRecipe) {
-              if (canCraft) actionLabel = 'FORGE TRAP 🕸️';
+              if (canCraft) actionLabel = 'FORGE TRAP (+1) 🕸️';
               else actionLabel = 'NEED MATERIALS 🔒';
             } else {
-              if (isSlottedPower) actionLabel = 'SLOTTED ⚡';
-              else if (isOwnedPower) actionLabel = 'LEARNED 📜';
-              else if (canCraft) actionLabel = 'FORGE SPELL ✨';
+              if (canCraft) actionLabel = 'FORGE SPELL (+1) ✨';
               else actionLabel = 'NEED MATERIALS 🔒';
             }
+
+            const currentCharges = !isStickRecipe ? (skillCounts[recipe.powerId] || 0) : null;
 
             return (
               <div
@@ -236,8 +238,12 @@ export function CraftingModal({
                       <span className="recipe-name">{recipe.name}</span>
                       {isEquippedStick && <span className="equipped-badge">EQUIPPED</span>}
                       {!isEquippedStick && isOwnedStick && <span className="owned-badge">OWNED</span>}
-                      {isSlottedPower && <span className="equipped-badge">SLOTTED</span>}
-                      {!isSlottedPower && isOwnedPower && <span className="owned-badge">LEARNED</span>}
+                      {currentCharges !== null && currentCharges > 0 && (
+                        <span className="charges-stock-badge">⚡ {currentCharges} OWNED</span>
+                      )}
+                      {currentCharges !== null && currentCharges === 0 && (
+                        <span className="depleted-stock-badge">0 CHARGES</span>
+                      )}
                       {isTrapRecipe && <span className="trap-badge">GROUND TRAP</span>}
                     </div>
 

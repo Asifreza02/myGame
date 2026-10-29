@@ -221,9 +221,31 @@ class GameRoom {
       equippedWeapon: 'APPRENTICE_STICK',
       equippedStick: 'APPRENTICE_STICK',
       powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null],
+      skillCounts: {
+        FIREBALL: 3,
+        FROST_LANCE: 3,
+        FROST_TRAP: 2,
+        REJUVENATION: 2,
+        LIGHTNING_BOLT: 0,
+        FLAME_SIGIL: 0,
+        GRAVITY_SNARE: 0,
+        AEGIS_WARD: 0,
+        AETHER_WAVE: 1,
+      },
       backpack: {
         sticks: ['APPRENTICE_STICK'],
         powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
+        skillCounts: {
+          FIREBALL: 3,
+          FROST_LANCE: 3,
+          FROST_TRAP: 2,
+          REJUVENATION: 2,
+          LIGHTNING_BOLT: 0,
+          FLAME_SIGIL: 0,
+          GRAVITY_SNARE: 0,
+          AEGIS_WARD: 0,
+          AETHER_WAVE: 1,
+        },
         resources: {
           ELDER_WOOD: 3,
           ARCANE_QUARTZ: 1,
@@ -315,9 +337,31 @@ class GameRoom {
       equippedWeapon: 'APPRENTICE_STICK',
       equippedStick: 'APPRENTICE_STICK',
       powerSlots: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null],
+      skillCounts: {
+        FIREBALL: 3,
+        FROST_LANCE: 3,
+        FROST_TRAP: 2,
+        REJUVENATION: 2,
+        LIGHTNING_BOLT: 0,
+        FLAME_SIGIL: 0,
+        GRAVITY_SNARE: 0,
+        AEGIS_WARD: 0,
+        AETHER_WAVE: 1,
+      },
       backpack: {
         sticks: ['APPRENTICE_STICK'],
         powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'],
+        skillCounts: {
+          FIREBALL: 3,
+          FROST_LANCE: 3,
+          FROST_TRAP: 2,
+          REJUVENATION: 2,
+          LIGHTNING_BOLT: 0,
+          FLAME_SIGIL: 0,
+          GRAVITY_SNARE: 0,
+          AEGIS_WARD: 0,
+          AETHER_WAVE: 1,
+        },
         resources: {
           ELDER_WOOD: 3,
           ARCANE_QUARTZ: 1,
@@ -486,12 +530,13 @@ class GameRoom {
       id, name, slot, color, colorHex, isBot, x, y, z, ry, pitch,
       health, maxHealth, alive, connected, inventory, abilityReadyAt,
       activeAbilities, resources, weapons, equippedWeapon, ammo,
-      equippedStick, powerSlots, backpack, statusEffects,
+      equippedStick, powerSlots, skillCounts, backpack, statusEffects,
     } = player;
     const stats = {
       ...player.stats,
       survivalTime: Math.floor(player.stats.survivalTime),
     };
+    const resolvedSkillCounts = skillCounts || backpack?.skillCounts || {};
     return {
       id, name, slot, color, colorHex, isBot: Boolean(isBot), x, y, z, ry, pitch: pitch || 0,
       health, maxHealth, alive, connected,
@@ -500,9 +545,11 @@ class GameRoom {
       equippedWeapon: equippedWeapon || 'APPRENTICE_STICK',
       equippedStick: equippedStick || 'APPRENTICE_STICK',
       powerSlots: powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', null, null, null, null],
-      backpack: backpack || {
-        sticks: ['APPRENTICE_STICK'],
-        powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+      skillCounts: resolvedSkillCounts,
+      backpack: {
+        sticks: backpack?.sticks || ['APPRENTICE_STICK'],
+        powers: backpack?.powers || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP'],
+        skillCounts: resolvedSkillCounts,
         resources: resources || {},
       },
       statusEffects: statusEffects || [],
@@ -969,13 +1016,20 @@ class GameRoom {
   spawnInitialMobs() {
     this.mobs = [];
     const t1Config = MOB_SYSTEM_CONFIG.TIER_1_WATER_MOB;
-    // Spawn 16 Tier 1 Aqua Zombies: 4 close-range (16-24m) for instant encounters + 12 perimeter (28-85m)
-    for (let i = 0; i < 16; i++) {
-      const isClose = i < 4;
-      const angle = (i / 16) * Math.PI * 2 + (this.seed % 7) * 0.2;
-      const radius = isClose ? (24 + i * 1.5) : (34 + (i % 4) * 16 + Math.random() * 14);
-      const x = Math.round(Math.cos(angle) * radius);
-      const z = Math.round(Math.sin(angle) * radius);
+    // Spawn 8 Tier 1 Aqua Zombies (halved from 16) spread evenly across the map (28m up to ~880m)
+    const mobCount = 8;
+    for (let i = 0; i < mobCount; i++) {
+      // Evenly distribute angles around 360 degrees across sectors
+      const angle = (i / mobCount) * Math.PI * 2 + (this.seed % 7) * 0.35;
+      // Progressive map-wide radii:
+      // i = 0: starter sector (27-28m) so player starting sector has an immediate encounter
+      // i = 1..7: broadly distributed across inner, middle, and outer wilderness up to world radius
+      const radius = i === 0
+        ? (27 + (this.seed % 3))
+        : Math.round(65 + (i / (mobCount - 1)) * (WORLD_RADIUS - 180) + ((i * 37 + this.seed) % 40) - 20);
+      const clamped = clampToWorld(Math.round(Math.cos(angle) * radius), Math.round(Math.sin(angle) * radius));
+      const x = clamped.x;
+      const z = clamped.z;
       const y = this.getTerrainHeight(x, z) + 1.0;
       this.mobs.push({
         id: `mob-t1-${i}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1009,7 +1063,7 @@ class GameRoom {
     const elapsedSeconds = this.matchStartedAt ? (now - this.matchStartedAt) / 1000 : 0;
     const livingPlayers = [...this.players.values()].filter((p) => p.alive && p.connected);
 
-    // 1. Tier 2 Flame Brute Spawn Check (spawns at 90s)
+    // 1. Tier 2 Flame Brute Spawn Check (spawns at 90s, capped at 2 active mobs - halved from 5)
     const t2Config = MOB_SYSTEM_CONFIG.TIER_2_FIRE_MOB;
     if (elapsedSeconds >= t2Config.spawnTimeSeconds) {
       if (!this.tier2Announced) {
@@ -1022,11 +1076,12 @@ class GameRoom {
         });
       }
       const activeT2Count = this.mobs.filter((m) => m.tier === 2 && m.alive).length;
-      if (activeT2Count < 5) {
+      if (activeT2Count < 2) {
         const angle = Math.random() * Math.PI * 2;
-        const radius = 35 + Math.random() * 45;
-        const x = Math.round(Math.cos(angle) * radius);
-        const z = Math.round(Math.sin(angle) * radius);
+        const radius = 80 + Math.random() * (WORLD_RADIUS - 220);
+        const clamped = clampToWorld(Math.round(Math.cos(angle) * radius), Math.round(Math.sin(angle) * radius));
+        const x = clamped.x;
+        const z = clamped.z;
         const y = this.getTerrainHeight(x, z) + 1.0;
         const mob = {
           id: `mob-t2-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1058,8 +1113,9 @@ class GameRoom {
       }
     }
 
-    // 2. Respawn defeated mobs & replenish low density
+    // 2. Respawn defeated mobs & replenish low density (threshold halved to 4, total capped at 8)
     const activeT1Count = this.mobs.filter((m) => m.tier === 1 && m.alive).length;
+    const totalT1Count = this.mobs.filter((m) => m.tier === 1).length;
     for (const mob of this.mobs) {
       if (!mob.alive && mob.respawnAt && now >= mob.respawnAt) {
         mob.alive = true;
@@ -1073,11 +1129,12 @@ class GameRoom {
         this.broadcast({ type: 'MOB_SPAWNED', mob });
       }
     }
-    if (activeT1Count < 8) {
+    if (activeT1Count < 4 && totalT1Count < 8) {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 22 + Math.random() * 35;
-      const x = Math.round(Math.cos(angle) * radius);
-      const z = Math.round(Math.sin(angle) * radius);
+      const radius = 50 + Math.random() * (WORLD_RADIUS - 180);
+      const clamped = clampToWorld(Math.round(Math.cos(angle) * radius), Math.round(Math.sin(angle) * radius));
+      const x = clamped.x;
+      const z = clamped.z;
       const y = this.getTerrainHeight(x, z) + 1.0;
       const t1Config = MOB_SYSTEM_CONFIG.TIER_1_WATER_MOB;
       const newMob = {
@@ -1790,14 +1847,23 @@ class GameRoom {
     } else if (recipe.type === 'power' || recipe.powerId) {
       const powerId = recipe.powerId;
       player.backpack = player.backpack || { sticks: [], powers: [], resources: {} };
+      player.skillCounts = player.skillCounts || {};
+      player.backpack.skillCounts = player.backpack.skillCounts || {};
+
+      const countToAdd = recipe.countGranted || 1;
+      player.skillCounts[powerId] = (player.skillCounts[powerId] || 0) + countToAdd;
+      player.backpack.skillCounts[powerId] = player.skillCounts[powerId];
+
       if (!player.backpack.powers.includes(powerId)) {
         player.backpack.powers.push(powerId);
       }
       if (!player.inventory.includes(powerId)) player.inventory.push(powerId);
       player.powerSlots = player.powerSlots || [null, null, null, null, null, null, null];
-      const openSlotIndex = player.powerSlots.findIndex((s) => s === null);
-      if (openSlotIndex !== -1 && !player.powerSlots.includes(powerId)) {
-        player.powerSlots[openSlotIndex] = powerId;
+      if (!player.powerSlots.includes(powerId)) {
+        const openSlotIndex = player.powerSlots.findIndex((s) => s === null);
+        if (openSlotIndex !== -1) {
+          player.powerSlots[openSlotIndex] = powerId;
+        }
       }
     } else if (recipe.weaponId) {
       if (!player.weapons.includes(recipe.weaponId)) {
@@ -1819,6 +1885,7 @@ class GameRoom {
       weapons: player.weapons,
       resources: player.resources,
       backpack: player.backpack,
+      skillCounts: player.skillCounts,
       equippedStick: player.equippedStick,
       powerSlots: player.powerSlots,
       equippedWeapon: player.equippedWeapon,
@@ -2046,9 +2113,43 @@ class GameRoom {
     const trapDef = TRAP_DEFINITIONS[trapType] || MAGIC_POWERS[trapType];
     if (!trapDef) return;
 
+    player.skillCounts = player.skillCounts || {};
+    const count = player.skillCounts[trapType] ?? 0;
+    if (count <= 0) {
+      let slotRemoved = false;
+      if (player.powerSlots && player.powerSlots.includes(trapType)) {
+        for (let i = 0; i < player.powerSlots.length; i++) {
+          if (player.powerSlots[i] === trapType) {
+            player.powerSlots[i] = null;
+            slotRemoved = true;
+          }
+        }
+        if (slotRemoved) {
+          this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: player.id, powerSlots: player.powerSlots });
+          this.broadcastState();
+        }
+      }
+      return;
+    }
+
     const now = Date.now();
     player.powerCooldowns = player.powerCooldowns || {};
     if ((player.powerCooldowns[trapType] || 0) > now) return;
+
+    // Decrement count
+    player.skillCounts[trapType] = Math.max(0, count - 1);
+    if (player.backpack) player.backpack.skillCounts = player.skillCounts;
+
+    // If zero count, remove from loadout!
+    let slotRemoved = false;
+    if (player.skillCounts[trapType] === 0 && player.powerSlots) {
+      for (let i = 0; i < player.powerSlots.length; i++) {
+        if (player.powerSlots[i] === trapType) {
+          player.powerSlots[i] = null;
+          slotRemoved = true;
+        }
+      }
+    }
 
     const cooldownMs = trapDef.cooldownMs || 12000;
     player.powerCooldowns[trapType] = now + cooldownMs;
@@ -2081,7 +2182,20 @@ class GameRoom {
       trap,
       cooldownMs,
       readyAt: player.powerCooldowns[trapType],
+      skillCounts: player.skillCounts,
+      remainingCount: player.skillCounts[trapType],
     });
+    this.broadcast({
+      type: 'SKILL_COUNT_CHANGED',
+      playerId: player.id,
+      powerId: trapType,
+      remainingCount: player.skillCounts[trapType],
+      skillCounts: player.skillCounts,
+      powerSlots: player.powerSlots,
+    });
+    if (slotRemoved) {
+      this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: player.id, powerSlots: player.powerSlots });
+    }
     this.broadcastState();
   }
 
@@ -2279,11 +2393,58 @@ class GameRoom {
     const def = MAGIC_POWERS[powerId];
     if (!def) return;
 
+    player.skillCounts = player.skillCounts || {};
+    const count = player.skillCounts[powerId] ?? 0;
+    if (count <= 0) {
+      let slotRemoved = false;
+      if (player.powerSlots && player.powerSlots.includes(powerId)) {
+        for (let i = 0; i < player.powerSlots.length; i++) {
+          if (player.powerSlots[i] === powerId) {
+            player.powerSlots[i] = null;
+            slotRemoved = true;
+          }
+        }
+        if (slotRemoved) {
+          this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: player.id, powerSlots: player.powerSlots });
+          this.broadcastState();
+        }
+      }
+      if (ws) safeSend(ws, { type: 'SKILL_EMPTY', powerId, reason: 'Zero count! Craft more at the Altar.' });
+      return;
+    }
+
     player.powerCooldowns = player.powerCooldowns || {};
     if ((player.powerCooldowns[powerId] || 0) > now) {
       if (ws) safeSend(ws, { type: 'POWER_COOLDOWN', powerId, readyAt: player.powerCooldowns[powerId] });
       return;
     }
+
+    // Decrement count
+    player.skillCounts[powerId] = Math.max(0, count - 1);
+    if (player.backpack) player.backpack.skillCounts = player.skillCounts;
+
+    // If zero count, remove from loadout!
+    let slotRemoved = false;
+    if (player.skillCounts[powerId] === 0 && player.powerSlots) {
+      for (let i = 0; i < player.powerSlots.length; i++) {
+        if (player.powerSlots[i] === powerId) {
+          player.powerSlots[i] = null;
+          slotRemoved = true;
+        }
+      }
+    }
+    this.broadcast({
+      type: 'SKILL_COUNT_CHANGED',
+      playerId: player.id,
+      powerId,
+      remainingCount: player.skillCounts[powerId],
+      skillCounts: player.skillCounts,
+      powerSlots: player.powerSlots,
+    });
+    if (slotRemoved) {
+      this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: player.id, powerSlots: player.powerSlots });
+    }
+
     const cooldownMs = def.cooldownMs || 5000;
     player.powerCooldowns[powerId] = now + cooldownMs;
 
@@ -2591,6 +2752,7 @@ class GameRoom {
         ARCANE_QUARTZ: 2,
         RIVER_DEW: 2,
         EMBER_ORE: 2,
+        MOON_HERB: 2,
         AETHER_ESSENCE: 2,
       };
       player.resources = player.resources || {};
@@ -2627,10 +2789,21 @@ class GameRoom {
       const powerId = message.powerId ? String(message.powerId) : null;
       if (Number.isInteger(slotIndex) && slotIndex >= 0 && slotIndex < 7) {
         player.powerSlots = player.powerSlots || [null, null, null, null, null, null, null];
-        if (powerId === null || (player.backpack?.powers && player.backpack.powers.includes(powerId)) || MAGIC_POWERS[powerId]) {
-          player.powerSlots[slotIndex] = powerId;
-          this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: id, slotIndex, powerId, powerSlots: player.powerSlots });
+        player.skillCounts = player.skillCounts || {};
+
+        if (powerId === null) {
+          player.powerSlots[slotIndex] = null;
+          this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: id, slotIndex, powerId: null, powerSlots: player.powerSlots, skillCounts: player.skillCounts });
           this.broadcastState();
+        } else if ((player.backpack?.powers && player.backpack.powers.includes(powerId)) || MAGIC_POWERS[powerId] || TRAP_DEFINITIONS[powerId]) {
+          const count = player.skillCounts[powerId] ?? 0;
+          if (count > 0) {
+            player.powerSlots[slotIndex] = powerId;
+            this.broadcast({ type: 'POWER_SLOT_CHANGED', playerId: id, slotIndex, powerId, powerSlots: player.powerSlots, skillCounts: player.skillCounts });
+            this.broadcastState();
+          } else {
+            if (ws) safeSend(ws, { type: 'EQUIP_FAILED', reason: 'Zero count! Craft more at the Arcane Altar [C] to equip.' });
+          }
         }
       }
       return;

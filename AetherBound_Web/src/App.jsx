@@ -474,6 +474,7 @@ export function App() {
           equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
           powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null]}
           backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'], resources: {} }}
+          skillCounts={engineState.skillCounts || engineState.backpack?.skillCounts || {}}
           abilityCooldowns={engineState.abilityCooldowns || {}}
           stickCooldownMs={engineState.knifeCooldownMs || 0}
           onEquipStick={handleEquipStick}
@@ -541,6 +542,7 @@ export function App() {
         weapons={engineState.weapons || ['APPRENTICE_STICK']}
         equippedStick={engineState.equippedStick || 'APPRENTICE_STICK'}
         powerSlots={engineState.powerSlots || []}
+        skillCounts={engineState.skillCounts || engineState.backpack?.skillCounts || {}}
         backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: [], resources: {} }}
         onCraft={handleCraftWeapon}
         onEquip={handleEquipStick}
@@ -554,6 +556,7 @@ export function App() {
         backpack={engineState.backpack || { sticks: ['APPRENTICE_STICK'], powers: ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION'], resources: {} }}
         equippedStick={engineState.equippedStick || engineState.equippedWeapon || 'APPRENTICE_STICK'}
         powerSlots={engineState.powerSlots || ['FIREBALL', 'FROST_LANCE', 'FROST_TRAP', 'REJUVENATION', null, null, null]}
+        skillCounts={engineState.skillCounts || engineState.backpack?.skillCounts || {}}
         resources={engineState.playerResources || {}}
         onEquipStick={handleEquipStick}
         onSetPowerSlot={handleSetPowerSlot}
